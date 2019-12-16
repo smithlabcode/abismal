@@ -1,11 +1,8 @@
 ## ABISMAL ##
 
 ***ABISMAL***
-(Wildcard ALignment Tool... 2!) is a read mapping program
-for bisulfite sequencing in DNA methylation studies. ABISMAL was
-originally intended as an improved version of ABISMAL. However, after
-looking at the source code for ABISMAL, I decided to write ABISMAL from the
-ground-up.
+(Another Bisulfite Mapping Algorithm) is a read mapping program
+for bisulfite sequencing in DNA methylation studies.
 
 ### Requirements ###
 
