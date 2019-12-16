@@ -112,8 +112,7 @@ methylation analysis.
 * QNAME (read name)
 * MISMATCH (number of mismatches)
 * STRAND (forward or reverse strand)
-* QSEQ (the raw read file)
-* CIGAR (compressed representation of the read alignment)
+* QSEQ (the original input read)
 
 If paired-end reads are mapped in proper pair, the QNAME is added
 "FRAG:" in the beginning of the read name, the STRAND is the strand of
