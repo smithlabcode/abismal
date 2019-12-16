@@ -1,8 +1,8 @@
 ## ABISMAL ##
 
-***ABISMAL***
-(Another Bisulfite Mapping Algorithm) is a read mapping program
-for bisulfite sequencing in DNA methylation studies.
+**A**nother **Bis**ulfite **M**apping **Al**gorithm (ABISMAL) is
+a read mapping program for bisulfite sequencing in DNA methylation
+studies.
 
 ### Requirements ###
 
@@ -10,7 +10,7 @@ Currently ABISMAL requires a C++ compiler that supports the C++11
 standard and OpenMP. The default compiler assumed is g++ (comes with
 GCC, available on your Linux or OS X machine). The g++ compiler has
 supported the C++11 standard since roughly 2012 (GCC 4.7) so this
-should not cause any problems. ABISMAL also requires an OMP library and
+should not cause any problems. It also requires an OMP library and
 headers to be available, which rarely causes problems. ABISMAL also is
 capable of reading input files (FASTQ format) that are gzip
 compressed.  This requires that the ZLib library is installed on the
@@ -34,13 +34,14 @@ If you are using this method, then you do not need to build any of the
 (2) Clone the `abismal` source code repo from Github:
 ```
 $ cd /where/you_want/the_code
-$ git clone git@github.com:andrewdavidsmith/abismal.git
+$ git clone git@github.com:smithlabcode/abismal.git
 ```
 
 (3) Build the `abismal` and `abismalidx` programs:
 ```
-$ cd abismal/src
-$ make -f original_makefile.mk OPT=1 abismal abismalidx
+$ ./configure
+$ make all
+$ make install
 ```
 
 ### Indexing the genome ###
@@ -62,11 +63,11 @@ paired-end reads
 $ abismal [options] -i <index-file> -o <output-file> <read_1.fq> <read_2.fq>
 ```
 
-### Walt2 Options ###
+### ABISMAL Options ###
 
 |option|long version |arg type |default|description                           |
 |:-----|:------------|:--------|------:|:-------------------------------------|
-| -i   | -index      | string  |       | index files from abismalidx [reqd]     |
+| -i   | -index      | string  |       | index files from abismal [reqd]      |
 | -o   | -outfile    | string  |       | output file name [reqd]              |
 | -t   | -threads    | integer | 1     | number of threads to use             |
 | -m   | -mismatches | integer | 6     | max allowed mismatches               |
@@ -87,7 +88,7 @@ $ abismal [options] -i <index-file> -o <output-file> <read_1.fq> <read_2.fq>
 
 To make an index for hg38:
 ```
-$ ./abismalidx hg38.fa hg38.abismalidx
+$ abismalidx hg38.fa hg38.abismalidx
 ```
 In the process of building the index, the names of chromosomes will be
 truncated at the first whitespace character.
@@ -96,7 +97,7 @@ truncated at the first whitespace character.
 
 To map reads to human genome hg38:
 ```
-$ ./abismal -i hg38.abismalidx -o reads.mr reads.fq
+$ abismal -i hg38.abismalidx -o reads.mr reads.fq
 ```
 ### Output Format ###
 
@@ -111,7 +112,8 @@ methylation analysis.
 * QNAME (read name)
 * MISMATCH (number of mismatches)
 * STRAND (forward or reverse strand)
-* QSEQ
+* QSEQ (the raw read file)
+* CIGAR (compressed representation of the read alignment)
 
 If paired-end reads are mapped in proper pair, the QNAME is added
 "FRAG:" in the beginning of the read name, the STRAND is the strand of
