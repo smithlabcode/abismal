@@ -70,20 +70,17 @@ int main(int argc, const char **argv) {
     }
     /****************** END COMMAND LINE OPTIONS *****************/
 
-    const AbismalSeed ws(pattern_arg, key_weight, n_solid_positions);
+    const AbismalSeed as(pattern_arg, key_weight, n_solid_positions);
 
-    cerr << ws << endl;
+    cerr << as << endl;
 
-    ws.write(output_file);
+    as.write(output_file);
 
-    AbismalSeed ws2;
-    ws2.read(output_file);
+    AbismalSeed as2;
+    as2.read(output_file);
 
-    if (!(ws == ws2)) {
-      cerr << ws2 << endl;
-
-    }
-
+    if (!(as == as2))
+      cerr << as2 << endl;
   }
   catch (const runtime_error &e) {
     cerr << e.what() << endl;
