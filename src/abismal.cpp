@@ -590,7 +590,6 @@ map_single_ended(const bool VERBOSE,
     }
     total_mapping_time += (omp_get_wtime() - start_time);
 
-#pragma omp parallel for
     for (size_t i = 0 ; i < n_reads; ++i) {
       se_stats.update(reads[i], res[i]);
       if (res[i].valid())
