@@ -254,6 +254,9 @@ format_pe(const pe_result &res, const ChromLookup &cl,
   if (!chrom_and_posn(cl, read2, res.r2.pos, r_p2, r_e2, chr2)) return; // cowardly
   // GenomicRegion gr2(cl.names[chr2], r_p2, r_e2, name2, res.r2.diffs, res.r2.strand());
   // out << gr2 << '\t' << read2 << endl;
+
+  if (chr1 != chr2) return; //cowardly
+
   revcomp_inplace(read2);
 
   // Select the end points based on orientation, which indicates which
