@@ -659,6 +659,83 @@ map_single_ended(const bool VERBOSE,
   }
 }
 
+void
+map_single_ended_rand(const bool VERBOSE,
+                      const string &reads_file,
+                      const size_t batch_size,
+                      const size_t max_candidates,
+                      const AbismalIndex &abismal_index,
+                      se_map_stats &se_stats,
+                      ofstream &out) {
+
+  const uint32_t genome_size = abismal_index.genome.size();
+  const Genome::const_iterator genome_st(begin(abismal_index.genome));
+
+  vector<string> names, reads;
+  reads.reserve(batch_size);
+  names.reserve(batch_size);
+
+  vector<se_result> res(batch_size);
+
+  ReadLoader rl(reads_file, batch_size);
+
+  ProgressBar progress(get_filesize(reads_file), "mapping reads");
+  if (VERBOSE)
+    progress.report(cerr, 0);
+
+  double total_mapping_time = 0;
+  while (rl.good()) {
+
+    if (VERBOSE && progress.time_to_report(rl.get_current_byte()))
+      progress.report(cerr, rl.get_current_byte());
+
+    rl.load_reads(names, reads);
+    const size_t n_reads = reads.size();
+
+#pragma omp parallel for
+    for (size_t i = 0 ; i < n_reads; ++i) res[i].reset();
+
+    const double start_time = omp_get_wtime();
+#pragma omp parallel
+    {
+      vector<uint32_t> hits;
+      hits.reserve(max_candidates);
+#pragma omp for
+      for (size_t i = 0; i < reads.size(); ++i)
+        if (!reads[i].empty()) {
+          process_seeds<comp_ct,
+                        get_strand_code('+', t_rich)>(genome_size, max_candidates,
+                                                      abismal_index, genome_st,
+                                                      reads[i], hits, res[i]);
+          process_seeds<comp_ga,
+                        get_strand_code('+', a_rich)>(genome_size, max_candidates,
+                                                      abismal_index, genome_st,
+                                                      reads[i], hits, res[i]);
+          const string read_rc(revcomp(reads[i]));
+          process_seeds<comp_ct,
+                        get_strand_code('-', a_rich)>(genome_size, max_candidates,
+                                                      abismal_index, genome_st,
+                                                      read_rc, hits, res[i]);
+          process_seeds<comp_ga,
+                        get_strand_code('-', t_rich)>(genome_size, max_candidates,
+                                                      abismal_index, genome_st,
+                                                      read_rc, hits, res[i]);
+        }
+    }
+    total_mapping_time += (omp_get_wtime() - start_time);
+
+    for (size_t i = 0 ; i < n_reads; ++i) {
+      se_stats.update(reads[i], res[i]);
+      if (res[i].valid())
+        format_se(res[i], abismal_index.cl, reads[i], names[i], out);
+    }
+  }
+  if (VERBOSE) {
+    progress.report(cerr, get_filesize(reads_file));
+    cerr << "[total mapping time: " << total_mapping_time << endl;
+  }
+}
+
 
 template <cmp_t (*cmp)(const char, const char),
           const uint8_t strand_code1, const uint8_t strand_code2, class T>
@@ -1008,6 +1085,9 @@ int main(int argc, const char **argv) {
         map_single_ended<comp_ga, comp_ct, a_rich>(VERBOSE, reads_file, batch_size,
                                                    max_candidates, abismal_index,
                                                    se_stats, out);
+      else if (random_pbat)
+        map_single_ended_rand(VERBOSE, reads_file, batch_size, max_candidates,
+                              abismal_index, se_stats, out);
       else
         map_single_ended<comp_ct, comp_ga, t_rich>(VERBOSE, reads_file, batch_size,
                                                    max_candidates, abismal_index,
