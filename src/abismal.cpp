@@ -20,6 +20,7 @@
 #include "OptionParser.hpp"
 #include "zlib_wrapper.hpp"
 #include "AbismalIndex.hpp"
+#include "GenomicRegion.hpp"
 
 #include <cstdint>
 #include <iostream>
@@ -44,6 +45,27 @@ using std::count;
 
 using std::max;
 using std::min;
+
+enum conversion_type { t_rich, a_rich };
+constexpr conversion_type
+flip_conv(const conversion_type &ct) {return ct == t_rich ? a_rich : t_rich;}
+
+static const uint8_t rc_strand_mask = 1;
+static const uint8_t a_rich_mask = 2;
+
+constexpr uint8_t
+get_strand_code(const char strand, const conversion_type conv) {
+  return ((strand == '-') ? 1 : 0) | ((conv == a_rich) ? 2 : 0);
+}
+
+constexpr uint8_t
+flip_strand_code(const uint8_t sc) {return (sc ^ rc_strand_mask) ^ a_rich_mask;}
+
+constexpr bool
+is_a_rich(const uint8_t strand_code) {return (strand_code & a_rich_mask) != 0;}
+
+constexpr bool
+is_rc(const uint8_t strand_code) {return (strand_code & rc_strand_mask) != 0;}
 
 
 struct ReadLoader {
@@ -99,29 +121,32 @@ typedef bool cmp_t;
 struct se_result {
   uint32_t pos;
   uint16_t diffs;
-  char strand;
+  uint8_t strand_code;
   bool ambig;
 
-  se_result() : pos(0), diffs(max_diffs + 1), strand('+'), ambig(false) {}
+  se_result() : pos(0), diffs(max_diffs + 1), strand_code(0), ambig(false) {}
 
-  se_result(const uint32_t p, const uint16_t d, const char s) :
-    pos(p), diffs(d), strand(s), ambig(false) {}
+  se_result(const uint32_t p, const uint16_t d, const uint8_t s) :
+    pos(p), diffs(d), strand_code(s), ambig(false) {}
 
   bool operator==(const se_result &rhs) const {
    return diffs == rhs.diffs && pos == rhs.pos;
   }
 
-  bool rc() const {return strand == '-';}
+  bool rc() const {return is_rc(strand_code);}
+  bool a_rich() const {return is_a_rich(strand_code);}
+  char strand() const {return rc() ? '-' : '+';}
+  void flip_strand() {strand_code = flip_strand_code(strand_code);}
   bool operator<(const se_result &rhs) const {return diffs < rhs.diffs;}
   void reset() {diffs = max_diffs + 1; ambig = false;}
   bool valid_hit() const {return diffs < invalid_hit_diffs;}
   bool valid() const {return diffs <= max_diffs;}
 
-  void update(const uint32_t p, const scr_t d, const char s) {
+  void update(const uint32_t p, const scr_t d, const uint8_t s) {
     if (d < diffs) {
       pos = p;
       diffs = d;
-      strand = s;
+      strand_code = s;
       ambig = false;
     }
     else if (d == diffs && pos != p)
@@ -132,7 +157,6 @@ struct se_result {
   }
   uint32_t get_cutoff() const {return diffs;}
 
-  static char global_strand;
   static uint16_t max_diffs;
   static uint16_t invalid_hit_diffs;
 };
@@ -140,25 +164,22 @@ struct se_result {
 uint16_t se_result::invalid_hit_diffs = 50;
 uint16_t se_result::max_diffs = 6;
 
-inline char
-flip_strand(const char s) {return s=='+' ? '-' : '+';}
-
 void
-format_se(const se_result &res, const ChromLookup &cl,
+format_se(se_result res, const ChromLookup &cl,
           string &read, const string &read_name,
-          const bool rc, ofstream &out) {
+          ofstream &out) {
   uint32_t offset = 0, chrom_idx = 0;
-  if (cl.get_chrom_idx_and_offset(res.pos, read.length(),
-                                  chrom_idx, offset)) {
-
-    if (rc) // when doing SE, this is only for GA conversion
+  if (cl.get_chrom_idx_and_offset(res.pos, read.size(), chrom_idx, offset)) {
+    if (res.a_rich()) { // since SE, this is only for GA conversion
       revcomp_inplace(read);
+      res.flip_strand();
+    }
     out << cl.names[chrom_idx] << '\t'
         << offset << '\t'
         << offset + read.length() << '\t'
         << read_name << '\t'
         << res.diffs << '\t'
-        << (rc ? flip_strand(res.strand) : res.strand) << '\t'
+        << res.strand() << '\t'
         << read << '\n';
   }
 }
@@ -167,30 +188,24 @@ struct pe_result { // assert(sizeof(pe_result) == 16);
   se_result r1;
   se_result r2;
   pe_result() {}
-  pe_result(const uint32_t p1, const uint32_t p2,
-            const scr_t d1, const scr_t d2, const char s) :
-    r1(se_result(p1, d1, s)), r2(se_result(p2, d2, s)) {}
   pe_result(const se_result &a, const se_result &b) : r1(a), r2(b) {}
-  bool rc() const {return r1.strand == '-';}
+  bool rc() const {return r1.rc();}
   scr_t diffs() const {return r1.diffs + r2.diffs;}
   bool valid() const {return r1.diffs + r2.diffs < 2*se_result::max_diffs;}
   bool valid_hit() const {
     return r1.diffs + r2.diffs < se_result::invalid_hit_diffs;}
-  size_t frag_len(const size_t r2_len) const {return r2.pos + r2_len - r1.pos;}
   void reset() {r1.reset(); r2.reset();}
   bool ambig() const {return r1.ambig;}
   void set_ambig() {r1.ambig = true;}
-  char strand() const {return r1.strand;}
-  bool is_better_than(const pe_result &rhs, const size_t r2_len) const {
-    return diffs() < rhs.diffs() ||
-                     (diffs() == rhs.diffs() &&
-                      frag_len(r2_len) < rhs.frag_len(r2_len));
+  char strand() const {return r1.strand();}
+  bool is_better_than(const pe_result &rhs) const {
+    return diffs() < rhs.diffs();
   }
-  bool is_equal_to(const pe_result &rhs, const size_t r2_len) const {
-    const scr_t d = diffs();
-    const size_t f = frag_len(r2_len);
-    return d == rhs.diffs() && f > 0 && f == rhs.frag_len(r2_len);
+  bool is_equal_to(const pe_result &rhs) const {
+    return diffs() == rhs.diffs() && !(r1.pos == rhs.r1.pos &&
+                                       r2.pos == rhs.r2.pos);
   }
+  bool a_rich() const {return r1.a_rich();}
 
   static uint32_t min_dist;
   static uint32_t max_dist;
@@ -198,40 +213,85 @@ struct pe_result { // assert(sizeof(pe_result) == 16);
 uint32_t pe_result::min_dist = 32;
 uint32_t pe_result::max_dist = 3000;
 
+static size_t
+get_spacer_rlen(const pe_result &res, const size_t s1, const size_t e1,
+                const size_t s2, const size_t e2) {
+  return (!res.rc() && e1 < s2) ? s2 - e1 : (res.rc() && e2 < s1 ? s1 - e2 : 0);
+}
+
+static size_t
+get_head_rlen(const pe_result &res, const size_t s1, const size_t e1,
+              const size_t s2, const size_t e2) {
+  return (!res.rc() && s1 < s2) ? s2 - s1 : (res.rc() && e2 < e1 ? e1 - e2 : 0);
+}
+
+static size_t
+get_overlap_rlen(const pe_result &res, const size_t s1, const size_t e1,
+                 const size_t s2, const size_t e2) {
+  return (!res.rc() && s1 < e2) ? e2 - s1 : (res.rc() && s2 < e1 ? e1 - s2 : 0);
+}
+
+inline bool
+chrom_and_posn(const ChromLookup &cl, const string &read, const uint32_t p,
+               uint32_t &r_p, uint32_t &r_e, uint32_t &r_chr) {
+  const uint32_t ref_ops = read.size();
+  if (!cl.get_chrom_idx_and_offset(p, ref_ops, r_chr, r_p)) return false;
+  r_e = r_p + ref_ops;
+  return true;
+}
+
 void
 format_pe(const pe_result &res, const ChromLookup &cl,
           string &read1, string &read2,
           const string &name1, const string &name2, ofstream &out) {
 
-  const size_t frag_len = res.frag_len(read2.length());
-  uint32_t offset = 0, chrom_idx = 0;
-  if (!cl.get_chrom_idx_and_offset(res.r1.pos, frag_len, chrom_idx, offset))
-    return;
-  string read;
-  if (frag_len < read1.length()) {
-    read.swap(read1);
-    read.resize(frag_len);
+  uint32_t r_p1 = 0, r_e1 = 0, chr1 = 0;
+  if (!chrom_and_posn(cl, read1, res.r1.pos, r_p1, r_e1, chr1)) return; // cowardly
+  // GenomicRegion gr1(cl.names[chr1], r_p1, r_e1, name1, res.r1.diffs, res.r1.strand());
+  // out << gr1 << '\t' << read1 << endl;
+
+  uint32_t r_p2 = 0, r_e2 = 0, chr2 = 0;
+  if (!chrom_and_posn(cl, read2, res.r2.pos, r_p2, r_e2, chr2)) return; // cowardly
+  // GenomicRegion gr2(cl.names[chr2], r_p2, r_e2, name2, res.r2.diffs, res.r2.strand());
+  // out << gr2 << '\t' << read2 << endl;
+  revcomp_inplace(read2);
+
+  // Select the end points based on orientation, which indicates which
+  // end is to the left (first) in the genome. Set the strand and read
+  // name based on the first end.
+  auto gr = res.rc() ?
+    GenomicRegion(cl.names[chr2], r_p2, r_e1, name1, res.diffs(), res.strand()) :
+    GenomicRegion(cl.names[chr1], r_p1, r_e2, name1, res.diffs(), res.strand());
+
+  const size_t spacer = get_spacer_rlen(res, r_p1, r_e1, r_p2, r_e2);
+  if (spacer > 0) {// fragments longer than 2x read length
+    gr.set_name("FRAG_L:" + gr.get_name()); // DEBUG
+    read1 += string(spacer, 'N');
+    read1 += read2;
   }
-  else {
-    revcomp_inplace(read2);
-    if (frag_len < read2.length()) {
-      read.swap(read2);
-      read.resize(frag_len);
+  else { // fragments shorter than 2x read length
+    const size_t head = get_head_rlen(res, r_p1, r_e1, r_p2, r_e2);
+    if (head > 0) { // fragment longer than read length
+      gr.set_name("FRAG_M:" + gr.get_name()); // DEBUG
+      read1.resize(head);
+      read1 += read2;
     }
-    else {
-      read.resize(frag_len, 'N');
-      copy(begin(read1), end(read1), begin(read));
-      copy(begin(read2), end(read2), end(read) - read2.length());
+    else { // fragments shorter than read length
+      const size_t overlap = get_overlap_rlen(res, r_p1, r_e1, r_p2, r_e2);
+      if (overlap > 0) {
+        gr.set_name("FRAG_S:" + gr.get_name()); // DEBUG
+        read1.resize(overlap);
+      }
+      else throw runtime_error("error: format_pe fall through");
     }
   }
-  out << cl.names[chrom_idx] << '\t'
-      << offset << '\t'
-      << offset + read.length() << '\t'
-      << "FRAG:" + name1 << '\t'
-      << res.diffs() << '\t'
-      << res.strand() << '\t'
-      << read << '\n';
+  if (res.a_rich()) { // final revcomp if the first end was a-rich
+    gr.set_strand(gr.get_strand() == '+' ? '-' : '+');
+    revcomp_inplace(read1);
+  }
+  out << gr << '\t' << read1 << '\n';
 }
+
 
 struct pe_candidates {
   pe_candidates() : v(vector<se_result>(max_size)), sz(0) {}
@@ -266,25 +326,22 @@ struct pe_candidates {
 };
 uint32_t pe_candidates::max_size = 20;
 
-template <const char strand>
 static void
 best_single(const pe_candidates &pres, se_result &res) {
   auto lim(begin(pres.v) + pres.sz);
   for (auto i(begin(pres.v)); i != lim; ++i) {
     if (i->diffs < res.diffs)
-      res = se_result(i->pos, i->diffs, strand);
+      res = *i;
     else if (i->diffs == res.diffs && i->pos != res.pos)
       res.ambig = true;
   }
 }
 
-// ADS: currently read1 not used, but likely will be soon
-template <const char strand>
+template <const bool swap_ends>
 static void
 best_pair(const pe_candidates &res1, const pe_candidates &res2,
           const string &read1, const string &read2, pe_result &best) {
 
-  const size_t r2_len = read2.length();
   auto j1 = begin(res1.v);
   const auto j1_end = j1 + res1.sz;
   const auto j2_end = begin(res2.v) + res2.sz;
@@ -295,10 +352,10 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
     while (j1 != j1_end && j1->pos + pe_result::max_dist < lim) ++j1;
 
     while (j1 != j1_end && j1->pos + pe_result::min_dist <= lim) {
-      const pe_result p(*j1, *j2);
-      if (p.is_better_than(best, r2_len))
+      const pe_result p(swap_ends ? *j2 : *j1, swap_ends ? *j1 : *j2);
+      if (p.is_better_than(best))
         best = p;
-      else if (p.is_equal_to(best, r2_len))
+      else if (p.is_equal_to(best))
         best.set_ambig();
       ++j1;
     }
@@ -382,14 +439,13 @@ struct pe_map_stats {
 
 static void
 update_pe_stats(const pe_result &best,
-                const se_result &pos1, const se_result &neg1,
-                const se_result &pos2, const se_result &neg2,
+                const se_result &se1, const se_result &se2,
                 const string &read1, const string &read2,
                 pe_map_stats &pe_stats) {
   pe_stats.update_pair(best);
   if (!best.valid()) {
-    pe_stats.end1_stats.update(read1, pos1 < neg1 ? pos1 : neg1);
-    pe_stats.end2_stats.update(read2, pos2 < neg2 ? pos2 : neg2);
+    pe_stats.end1_stats.update(read1, se1);
+    pe_stats.end2_stats.update(read2, se2);
   }
 }
 
@@ -397,22 +453,17 @@ update_pe_stats(const pe_result &best,
 static void
 select_output(const ChromLookup &cl,
               const pe_result &best,
-              const se_result &pos1, const se_result &neg1,
-              const se_result &pos2, const se_result &neg2,
+              const se_result &se1, const se_result &se2,
               string &read1, const string &name1,
               string &read2, const string &name2,
-              const bool rc, ofstream &out) {
+              ofstream &out) {
   if (best.valid()) {
     if (!best.ambig())
       format_pe(best, cl, read1, read2, name1, name2, out);
   }
   else {
-    const se_result *best_mate1 = pos1 < neg1 ? &pos1 : &neg1;
-    if (best_mate1->valid() && !best_mate1->ambig)
-      format_se(*best_mate1, cl, read1, name1, rc, out);
-    const se_result *best_mate2 = pos2 < neg2 ? &pos2 : &neg2;
-    if (best_mate2->valid() && !best_mate2->ambig)
-      format_se(*best_mate2, cl, read2, name2, !rc, out);
+    if (se1.valid() && !se1.ambig) format_se(se1, cl, read1, name1, out);
+    if (se2.valid() && !se2.ambig) format_se(se2, cl, read2, name2, out);
   }
 }
 
@@ -436,7 +487,8 @@ inline cmp_t comp_ga(const char a, const char b) {
   return (a != b && !(b == 'G' && a == 'A')); // && b != 'N');
 }
 
-template <cmp_t (*F)(const char, const char), const char strand, class T>
+template <cmp_t (*F)(const char, const char),
+          const uint8_t strand_code, class T>
 void
 check_hits(vector<uint32_t>::const_iterator start_idx,
            const vector<uint32_t>::const_iterator end_idx,
@@ -447,10 +499,9 @@ check_hits(vector<uint32_t>::const_iterator start_idx,
   for (; start_idx < end_idx && !res.sure_ambig(0); ++start_idx) {
     const scr_t diffs = full_compare<F>(res.get_cutoff(), read_start,
                                         read_end, genome_st + *start_idx);
-    res.update(*start_idx, diffs, strand);
+    res.update(*start_idx, diffs, strand_code);
   }
 }
-
 
 
 struct compare_bases {
@@ -484,7 +535,8 @@ find_candidates(const string::const_iterator read_start,
   }
 }
 
-template <cmp_t (*F)(const char, const char), const char strand, class T>
+template <cmp_t (*F)(const char, const char),
+          const uint8_t strand_code, class T>
 void
 process_seeds(const uint32_t genome_size,
               const uint32_t max_candidates,
@@ -524,20 +576,20 @@ process_seeds(const uint32_t genome_size,
               hits.push_back(*s_idx - i);
       }
     }
-    check_hits<F, strand>(begin(hits), end(hits),
-                          read_start, read_end, genome_st, res);
+    check_hits<F, strand_code>(begin(hits), end(hits),
+                               read_start, read_end, genome_st, res);
   }
 }
 
 template <cmp_t (*pos_cmp)(const char, const char),
-          cmp_t (*neg_cmp)(const char, const char)>
+          cmp_t (*neg_cmp)(const char, const char),
+          conversion_type conv>
 void
 map_single_ended(const bool VERBOSE,
                  const string &reads_file,
                  const size_t batch_size,
                  const size_t max_candidates,
                  const AbismalIndex &abismal_index,
-                 const bool rc,
                  se_map_stats &se_stats,
                  ofstream &out) {
 
@@ -576,16 +628,18 @@ map_single_ended(const bool VERBOSE,
 #pragma omp for
       for (size_t i = 0; i < reads.size(); ++i)
         if (!reads[i].empty())
-          process_seeds<pos_cmp, '+'>(genome_size, max_candidates,
-                                      abismal_index, genome_st,
-                                      reads[i], hits, res[i]);
+          process_seeds<pos_cmp,
+                        get_strand_code('+', conv)>(genome_size, max_candidates,
+                                                    abismal_index, genome_st,
+                                                    reads[i], hits, res[i]);
 #pragma omp for
       for (size_t i = 0; i < reads.size(); ++i)
         if (!reads[i].empty()) {
           const string read_rc(revcomp(reads[i]));
-          process_seeds<neg_cmp, '-'>(genome_size, max_candidates,
-                                      abismal_index, genome_st,
-                                      read_rc, hits, res[i]);
+          process_seeds<neg_cmp,
+                        get_strand_code('-', conv)>(genome_size, max_candidates,
+                                                    abismal_index, genome_st,
+                                                    read_rc, hits, res[i]);
         }
     }
     total_mapping_time += (omp_get_wtime() - start_time);
@@ -593,7 +647,7 @@ map_single_ended(const bool VERBOSE,
     for (size_t i = 0 ; i < n_reads; ++i) {
       se_stats.update(reads[i], res[i]);
       if (res[i].valid())
-        format_se(res[i], abismal_index.cl, reads[i], names[i], rc, out);
+        format_se(res[i], abismal_index.cl, reads[i], names[i], out);
     }
   }
   if (VERBOSE) {
@@ -603,13 +657,19 @@ map_single_ended(const bool VERBOSE,
 }
 
 
-template <cmp_t (*cmp)(const char, const char), const char strand, class T>
+template <cmp_t (*cmp)(const char, const char),
+          const uint8_t strand_code1, const uint8_t strand_code2, class T>
 void
-map_pe_batch(const vector<string> &reads1,
-             const vector<string> &reads2,
+map_pe_batch(const vector<string> &reads1, const vector<string> &reads2,
              const uint32_t max_candidates,
              const AbismalIndex &abismal_index,
              vector<T> &res1, vector<T> &res2) {
+
+#pragma omp parallel for
+  for (size_t i = 0 ; i < res1.size(); ++i) {
+    res1[i].reset();
+    res2[i].reset();
+  }
 
   const uint32_t genome_size = abismal_index.genome.size();
   const Genome::const_iterator genome_st(begin(abismal_index.genome));
@@ -621,21 +681,38 @@ map_pe_batch(const vector<string> &reads1,
 #pragma omp for
     for (size_t i = 0; i < reads1.size(); ++i)
       if (!reads1[i].empty())
-        process_seeds<cmp, strand>(genome_size, max_candidates, abismal_index,
-                                   genome_st, reads1[i], hits, res1[i]);
+        process_seeds<cmp, strand_code1>(genome_size, max_candidates,
+                                         abismal_index, genome_st, reads1[i],
+                                         hits, res1[i]);
+
 #pragma omp for
     for (size_t i = 0; i < reads2.size(); ++i)
       if (!reads2[i].empty()) {
         const string read_rc(revcomp(reads2[i]));
-        process_seeds<cmp, strand>(genome_size, max_candidates, abismal_index,
-                                   genome_st, read_rc, hits, res2[i]);
+        process_seeds<cmp, strand_code2>(genome_size, max_candidates,
+                                         abismal_index, genome_st, read_rc,
+                                         hits, res2[i]);
       }
   }
 }
 
 
+template <const bool swap_ends>
+void
+select_maps(const string &read1, const string &read2,
+            pe_candidates &res1, pe_candidates &res2,
+            se_result &res_se1, se_result &res_se2, pe_result &best) {
+  res1.prepare_for_mating();
+  res2.prepare_for_mating();
+  best_pair<swap_ends>(res1, res2, read1, read2, best);
+  best_single(res1, res_se1);
+  best_single(res2, res_se2);
+}
+
+
 template <cmp_t (*pos_cmp)(const char, const char),
-          cmp_t (*neg_cmp)(const char, const char)>
+          cmp_t (*neg_cmp)(const char, const char),
+          conversion_type conv>
 void
 map_paired_ended(const bool VERBOSE,
                  const string &reads_file1,
@@ -643,7 +720,6 @@ map_paired_ended(const bool VERBOSE,
                  const size_t batch_size,
                  const size_t max_candidates,
                  const AbismalIndex &abismal_index,
-                 const bool rc,
                  pe_map_stats &pe_stats,
                  ofstream &out) {
 
@@ -652,22 +728,18 @@ map_paired_ended(const bool VERBOSE,
   ReadLoader rl1(reads_file1, batch_size);
   ReadLoader rl2(reads_file2, batch_size);
 
-  vector<string> names1, reads1, names2, reads2;
-  reads1.reserve(batch_size);
-  names1.reserve(batch_size);
-  reads2.reserve(batch_size);
-  names2.reserve(batch_size);
+  vector<string> names1(batch_size), reads1(batch_size),
+    names2(batch_size), reads2(batch_size);
 
   vector<pe_candidates> res1(batch_size), res2(batch_size);
   vector<pe_result> bests(batch_size);
-  vector<se_result>
-    res_se_p1(batch_size), res_se_p2(batch_size),
-    res_se_n1(batch_size), res_se_n2(batch_size);
+  vector<se_result> res_se1(batch_size), res_se2(batch_size);
 
   ProgressBar progress(get_filesize(reads_file1), "mapping reads");
   if (VERBOSE)
     progress.report(cerr, 0);
 
+  double start_time = omp_get_wtime();
   while (rl1.good() && rl2.good()) {
 
     if (VERBOSE && progress.time_to_report(rl1.get_current_byte()))
@@ -680,59 +752,142 @@ map_paired_ended(const bool VERBOSE,
 
 #pragma omp parallel for
     for (size_t i = 0 ; i < n_reads; ++i) {
-      res1[i].reset();
-      res2[i].reset();
-      res_se_p1[i].reset();
-      res_se_p2[i].reset();
+      res_se1[i].reset();
+      res_se2[i].reset();
       bests[i].reset();
     }
-    double start_time = omp_get_wtime();
-    map_pe_batch<pos_cmp, '+'>(reads1, reads2,
-                               max_candidates, abismal_index, res1, res2);
-    total_mapping_time += (omp_get_wtime() - start_time);
 
+    map_pe_batch<pos_cmp,
+                 get_strand_code('+', conv),
+                 get_strand_code('-', flip_conv(conv))>(reads1, reads2,
+                                                        max_candidates,
+                                                        abismal_index,
+                                                        res1, res2);
 #pragma omp parallel for
-    for (size_t i = 0 ; i < n_reads; ++i) {
-      res1[i].prepare_for_mating();
-      res2[i].prepare_for_mating();
-      best_pair<'+'>(res1[i], res2[i], reads1[i], reads2[i], bests[i]);
-      if (!bests[i].valid()) {
-        best_single<'+'>(res1[i], res_se_p1[i]);
-        best_single<'-'>(res2[i], res_se_p2[i]);
-      }
-    }
-
-#pragma omp parallel for
-    for (size_t i = 0 ; i < n_reads; ++i) {
-      res1[i].reset();
-      res2[i].reset();
-      res_se_n1[i].reset();
-      res_se_n2[i].reset();
-    }
-    start_time = omp_get_wtime();
-    map_pe_batch<neg_cmp, '-'>(reads2, reads1,
-                               max_candidates, abismal_index, res2, res1);
-    total_mapping_time += (omp_get_wtime() - start_time);
-
-#pragma omp parallel for
-    for (size_t i = 0 ; i < n_reads; ++i) {
-      res1[i].prepare_for_mating();
-      res2[i].prepare_for_mating();
-      best_pair<'-'>(res2[i], res1[i], reads2[i], reads1[i], bests[i]);
-      if (!bests[i].valid()) {
-        best_single<'-'>(res1[i], res_se_n1[i]);
-        best_single<'+'>(res2[i], res_se_n2[i]);
-      }
-    }
     for (size_t i = 0 ; i < n_reads; ++i)
-      update_pe_stats(bests[i], res_se_p1[i], res_se_n1[i], res_se_p2[i],
-                      res_se_n2[i], reads1[i], reads2[i], pe_stats);
+      select_maps<false>(reads1[i], reads2[i], res1[i], res2[i],
+                         res_se1[i], res_se2[i], bests[i]);
+
+    map_pe_batch<neg_cmp,
+                 get_strand_code('+', flip_conv(conv)),
+                 get_strand_code('-', conv)>(reads2, reads1, max_candidates,
+                                             abismal_index, res2, res1);
+#pragma omp parallel for
+    for (size_t i = 0 ; i < n_reads; ++i)
+      select_maps<true>(reads2[i], reads1[i], res2[i], res1[i],
+                        res_se2[i], res_se1[i], bests[i]);
 
     for (size_t i = 0 ; i < n_reads; ++i)
-      select_output(abismal_index.cl, bests[i],
-                    res_se_p1[i], res_se_n1[i], res_se_p2[i], res_se_n2[i],
-                    reads1[i], names1[i], reads2[i], names2[i], rc, out);
+      update_pe_stats(bests[i], res_se1[i], res_se2[i], reads1[i],
+                      reads2[i], pe_stats);
+
+    for (size_t i = 0 ; i < n_reads; ++i)
+      select_output(abismal_index.cl, bests[i], res_se1[i], res_se2[i],
+                    reads1[i], names1[i], reads2[i], names2[i], out);
   }
+
+  total_mapping_time += (omp_get_wtime() - start_time);
+  if (VERBOSE) {
+    progress.report(cerr, get_filesize(reads_file1));
+    cerr << "[total mapping time: " << total_mapping_time << endl;
+  }
+}
+
+
+void
+map_paired_ended_rand(const bool VERBOSE,
+                      const string &reads_file1,
+                      const string &reads_file2,
+                      const size_t batch_size,
+                      const size_t max_candidates,
+                      const AbismalIndex &abismal_index,
+                      pe_map_stats &pe_stats,
+                      ofstream &out) {
+
+  double total_mapping_time = 0;
+
+  ReadLoader rl1(reads_file1, batch_size);
+  ReadLoader rl2(reads_file2, batch_size);
+
+  vector<string> names1(batch_size), reads1(batch_size),
+    names2(batch_size), reads2(batch_size);
+
+  vector<pe_candidates> res1(batch_size), res2(batch_size);
+  vector<pe_result> bests(batch_size);
+  vector<se_result> res_se1(batch_size), res_se2(batch_size);
+
+  ProgressBar progress(get_filesize(reads_file1), "mapping reads");
+  if (VERBOSE)
+    progress.report(cerr, 0);
+
+  double start_time = omp_get_wtime();
+  while (rl1.good() && rl2.good()) {
+
+    if (VERBOSE && progress.time_to_report(rl1.get_current_byte()))
+      progress.report(cerr, rl1.get_current_byte());
+
+    rl1.load_reads(names1, reads1);
+    rl2.load_reads(names2, reads2);
+
+    const size_t n_reads = reads1.size();
+
+#pragma omp parallel for
+    for (size_t i = 0 ; i < n_reads; ++i) {
+      res_se1[i].reset();
+      res_se2[i].reset();
+      bests[i].reset();
+    }
+
+    // t-rich end1, pos-strand end1
+    map_pe_batch<comp_ct,
+                 get_strand_code('+', t_rich),
+                 get_strand_code('-', a_rich)>(reads1, reads2, max_candidates,
+                                               abismal_index, res1, res2);
+#pragma omp parallel for
+    for (size_t i = 0 ; i < n_reads; ++i)
+      select_maps<false>(reads1[i], reads2[i], res1[i], res2[i],
+                         res_se1[i], res_se2[i], bests[i]);
+
+    // t-rich end1, neg-strand end1
+    map_pe_batch<comp_ga,
+                 get_strand_code('+', a_rich),
+                 get_strand_code('-', t_rich)>(reads2, reads1, max_candidates,
+                                               abismal_index, res2, res1);
+#pragma omp parallel for
+    for (size_t i = 0 ; i < n_reads; ++i)
+      select_maps<true>(reads2[i], reads1[i], res2[i], res1[i],
+                        res_se2[i], res_se1[i], bests[i]);
+
+    // a-rich end1, pos-strand end1
+    map_pe_batch<comp_ga,
+                 get_strand_code('+', a_rich),
+                 get_strand_code('-', t_rich)>(reads1, reads2, max_candidates,
+                                               abismal_index, res1, res2);
+#pragma omp parallel for
+    for (size_t i = 0 ; i < n_reads; ++i)
+      select_maps<false>(reads1[i], reads2[i], res1[i], res2[i],
+                         res_se1[i], res_se2[i], bests[i]);
+
+    // a-rich end1, neg-strand end1
+    map_pe_batch<comp_ct,
+                 get_strand_code('+', t_rich),
+                 get_strand_code('-', a_rich)>(reads2, reads1, max_candidates,
+                                               abismal_index, res2, res1);
+#pragma omp parallel for
+    for (size_t i = 0 ; i < n_reads; ++i)
+      select_maps<true>(reads2[i], reads1[i], res2[i], res1[i],
+                        res_se2[i], res_se1[i], bests[i]);
+
+    for (size_t i = 0 ; i < n_reads; ++i)
+      update_pe_stats(bests[i], res_se1[i], res_se2[i], reads1[i],
+                      reads2[i], pe_stats);
+
+    for (size_t i = 0 ; i < n_reads; ++i)
+      select_output(abismal_index.cl, bests[i], res_se1[i], res_se2[i],
+                    reads1[i], names1[i], reads2[i], names2[i], out);
+  }
+
+  total_mapping_time += (omp_get_wtime() - start_time);
   if (VERBOSE) {
     progress.report(cerr, get_filesize(reads_file1));
     cerr << "[total mapping time: " << total_mapping_time << endl;
@@ -750,6 +905,7 @@ int main(int argc, const char **argv) {
     bool GA_conversion = false;
     bool allow_ambig = false;
     bool pbat_mode = false;
+    bool random_pbat = false;
     uint32_t max_candidates = 3000;
     size_t max_diffs = 6;
     size_t batch_size = 1000000;
@@ -781,6 +937,8 @@ int main(int argc, const char **argv) {
                       false, allow_ambig);
     opt_parse.add_opt("pbat", 'P', "input data follow the PBAT protocol",
                       false, pbat_mode);
+    opt_parse.add_opt("random-pbat", 'R', "input data follow random PBAT",
+                      false, random_pbat);
     opt_parse.add_opt("a-rich", 'A', "indicates reads are a-rich (se mode)",
                       false, GA_conversion);
     opt_parse.add_opt("verbose", 'v', "print more run info", false, VERBOSE);
@@ -844,24 +1002,29 @@ int main(int argc, const char **argv) {
 
     if (reads_file2.empty()) {
       if (GA_conversion || pbat_mode)
-        map_single_ended<comp_ga, comp_ct>(VERBOSE, reads_file, batch_size,
-                                           max_candidates,
-                                           abismal_index, true, se_stats, out);
+        map_single_ended<comp_ga, comp_ct, a_rich>(VERBOSE, reads_file, batch_size,
+                                                   max_candidates, abismal_index,
+                                                   se_stats, out);
       else
-        map_single_ended<comp_ct, comp_ga>(VERBOSE, reads_file, batch_size,
-                                           max_candidates,
-                                           abismal_index, false, se_stats, out);
+        map_single_ended<comp_ct, comp_ga, t_rich>(VERBOSE, reads_file, batch_size,
+                                                   max_candidates, abismal_index,
+                                                   se_stats, out);
     }
     else {
       if (pbat_mode)
-        map_paired_ended<comp_ga, comp_ct>(VERBOSE, reads_file, reads_file2,
-                                           batch_size,
-                                           max_candidates, abismal_index,
-                                           true, pe_stats, out);
-      else map_paired_ended<comp_ct, comp_ga>(VERBOSE, reads_file, reads_file2,
-                                              batch_size,
-                                              max_candidates, abismal_index,
-                                              false, pe_stats, out);
+        map_paired_ended<comp_ga,
+                         comp_ct, a_rich>(VERBOSE, reads_file, reads_file2,
+                                          batch_size, max_candidates,
+                                          abismal_index, pe_stats, out);
+      else if (random_pbat)
+        map_paired_ended_rand(VERBOSE, reads_file, reads_file2,
+                              batch_size, max_candidates,
+                              abismal_index, pe_stats, out);
+      else
+        map_paired_ended<comp_ct,
+                         comp_ga, t_rich>(VERBOSE, reads_file, reads_file2,
+                                          batch_size, max_candidates,
+                                          abismal_index, pe_stats, out);
     }
 
     std::ofstream stat_out(outfile + ".mapstats");
