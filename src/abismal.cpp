@@ -213,22 +213,22 @@ struct pe_result { // assert(sizeof(pe_result) == 16);
 uint32_t pe_result::min_dist = 32;
 uint32_t pe_result::max_dist = 3000;
 
-static size_t
-get_spacer_rlen(const pe_result &res, const size_t s1, const size_t e1,
-                const size_t s2, const size_t e2) {
-  return (!res.rc() && e1 < s2) ? s2 - e1 : (res.rc() && e2 < s1 ? s1 - e2 : 0);
+static int
+get_spacer_rlen(const pe_result &res, const long int s1, const long int e1,
+                const long int s2, const long int e2) {
+  return res.rc() ? s1 - e2 : s2 - e1;
 }
 
-static size_t
-get_head_rlen(const pe_result &res, const size_t s1, const size_t e1,
-              const size_t s2, const size_t e2) {
-  return (!res.rc() && s1 < s2) ? s2 - s1 : (res.rc() && e2 < e1 ? e1 - e2 : 0);
+static int
+get_head_rlen(const pe_result &res, const long int s1, const long int e1,
+              const long int s2, const long int e2) {
+  return res.rc() ? e1 - e2 : s2 - s1;
 }
 
-static size_t
-get_overlap_rlen(const pe_result &res, const size_t s1, const size_t e1,
-                 const size_t s2, const size_t e2) {
-  return (!res.rc() && s1 < e2) ? e2 - s1 : (res.rc() && s2 < e1 ? e1 - s2 : 0);
+static int
+get_overlap_rlen(const pe_result &res, const long int s1, const long int e1,
+                 const long int s2, const long int e2) {
+  return res.rc() ? e1 - s2 : e2 - s1;
 }
 
 inline bool
@@ -245,14 +245,14 @@ format_pe(const pe_result &res, const ChromLookup &cl,
           string &read1, string &read2,
           const string &name1, const string &name2, ofstream &out) {
 
-  uint32_t r_p1 = 0, r_e1 = 0, chr1 = 0;
-  if (!chrom_and_posn(cl, read1, res.r1.pos, r_p1, r_e1, chr1)) return; // cowardly
-  // GenomicRegion gr1(cl.names[chr1], r_p1, r_e1, name1, res.r1.diffs, res.r1.strand());
+  uint32_t r_s1 = 0, r_e1 = 0, chr1 = 0;
+  if (!chrom_and_posn(cl, read1, res.r1.pos, r_s1, r_e1, chr1)) return; // cowardly
+  // GenomicRegion gr1(cl.names[chr1], r_s1, r_e1, name1, res.r1.diffs, res.r1.strand());
   // out << gr1 << '\t' << read1 << endl;
 
-  uint32_t r_p2 = 0, r_e2 = 0, chr2 = 0;
-  if (!chrom_and_posn(cl, read2, res.r2.pos, r_p2, r_e2, chr2)) return; // cowardly
-  // GenomicRegion gr2(cl.names[chr2], r_p2, r_e2, name2, res.r2.diffs, res.r2.strand());
+  uint32_t r_s2 = 0, r_e2 = 0, chr2 = 0;
+  if (!chrom_and_posn(cl, read2, res.r2.pos, r_s2, r_e2, chr2)) return; // cowardly
+  // GenomicRegion gr2(cl.names[chr2], r_s2, r_e2, name2, res.r2.diffs, res.r2.strand());
   // out << gr2 << '\t' << read2 << endl;
 
   if (chr1 != chr2) return; //cowardly
@@ -263,24 +263,55 @@ format_pe(const pe_result &res, const ChromLookup &cl,
   // end is to the left (first) in the genome. Set the strand and read
   // name based on the first end.
   auto gr = res.rc() ?
-    GenomicRegion(cl.names[chr2], r_p2, r_e1, name1, res.diffs(), res.strand()) :
-    GenomicRegion(cl.names[chr1], r_p1, r_e2, name1, res.diffs(), res.strand());
+    GenomicRegion(cl.names[chr2], r_s2, r_e1, name2, res.diffs(), res.strand()) :
+    GenomicRegion(cl.names[chr1], r_s1, r_e2, name1, res.diffs(), res.strand());
 
-  const size_t spacer = get_spacer_rlen(res, r_p1, r_e1, r_p2, r_e2);
-  if (spacer > 0) {// fragments longer than 2x read length
+  const int spacer = get_spacer_rlen(res, r_s1, r_e1, r_s2, r_e2);
+  if (spacer >= 0) {
+    /* fragments longer than or equal to 2x read length: this size of
+     * the spacer ("_") is determined based on the reference positions
+     * of the two ends, and depends on whether the mapping is on the
+     * negative strand of the genome.
+     *
+     * left                                                             right
+     * r_s1                         r_e1   r_s2                         r_e2
+     * [------------end1------------]______[------------end2------------]
+     */
     gr.set_name("FRAG_L:" + gr.get_name()); // DEBUG
     read1 += string(spacer, 'N');
     read1 += read2;
   }
-  else { // fragments shorter than 2x read length
-    const size_t head = get_head_rlen(res, r_p1, r_e1, r_p2, r_e2);
-    if (head > 0) { // fragment longer than read length
+  else {
+    const int head = get_head_rlen(res, r_s1, r_e1, r_s2, r_e2);
+    if (head >= 0) { //
+    /* fragment longer than or equal to the read length, but shorter
+     * than twice the read length: this is determined by obtaining the
+     * size of the "head" in the diagram below: the portion of end1
+     * that is not within [=]. If the read maps to the positive
+     * strand, this depends on the reference start of end2 minus the
+     * reference start of end1. For negative strand, this is reference
+     * start of end1 minus reference start of end2.
+     *
+     * left                                                 right
+     * r_s1                   r_s2   r_e1                   r_e2
+     * [------------end1------[======]------end2------------]
+     */
       gr.set_name("FRAG_M:" + gr.get_name()); // DEBUG
       read1.resize(head);
       read1 += read2;
     }
-    else { // fragments shorter than read length
-      const size_t overlap = get_overlap_rlen(res, r_p1, r_e1, r_p2, r_e2);
+    else {
+      /* dovetail fragments shorter than read length: this is
+       * identified if the above conditions are not satisfied, but
+       * there is still some overlap. The overlap will be at the 5'
+       * ends of reads, which in theory shouldn't happen unless the
+       * two ends are covering identical genomic intervals.
+       *
+       * left                                           right
+       * r_s2             r_s1         r_e2             r_e1
+       * [--end2----------[============]----------end1--]
+       */
+      const int overlap = get_overlap_rlen(res, r_s1, r_e1, r_s2, r_e2);
       if (overlap > 0) {
         gr.set_name("FRAG_S:" + gr.get_name()); // DEBUG
         read1.resize(overlap);
