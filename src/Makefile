@@ -24,13 +24,13 @@ CXX = g++
 CXXFLAGS = -Wall -std=c++11 -fopenmp
 LDLIBS = -lz
 CPPFLAGS = -I $(SMITHLAB_CPP)
-
-ifdef OPT
-CXXFLAGS += -O3
-endif
+OPTFLAGS = -O3
+DEBUGFLAGS = -g
 
 ifdef DEBUG
-CXXFLAGS += -g
+CXXFLAGS += $(DEBUGFLAGS)
+else
+CXXFLAGS += $(OPTFLAGS)
 endif
 
 all: $(PROGS)
