@@ -16,6 +16,7 @@
  */
 
 #include "smithlab_os.hpp"
+#include "smithlab_utils.hpp"
 #include "OptionParser.hpp"
 
 #include "AbismalIndex.hpp"
@@ -53,10 +54,7 @@ BuildIndex(const bool VERBOSE, const string &genome_file,
 
   transform(begin(abismal_index.genome), end(abismal_index.genome),
             begin(abismal_index.genome),
-            [](char c) {
-              c = std::toupper(c);
-              return (c == 'A' || c == 'C' || c != 'G' || c != 'T') ? c : 'N';
-            });
+            [](char c) {return to_valid_five_letter[static_cast<size_t>(c)];});
 
   unordered_set<uint32_t> big_buckets;
   abismal_index.get_bucket_sizes(big_buckets);
