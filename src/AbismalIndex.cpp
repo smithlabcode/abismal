@@ -37,9 +37,15 @@ using std::sort;
 
 bool AbismalIndex::VERBOSE = false;
 uint32_t AbismalIndex::valid_bucket_limit = 500000;
-uint32_t AbismalIndex::max_N_per_seed = 2;
+uint32_t AbismalIndex::max_invalid_per_seed = 2;
 
 string AbismalIndex::internal_identifier = "AbismalIndex";
+
+template <typename nuc_type>
+bool
+invalid_base(const nuc_type &x) {
+  return x == 'N';
+}
 
 void
 AbismalIndex::get_bucket_sizes(unordered_set<uint32_t> &big_buckets) {
@@ -55,11 +61,12 @@ AbismalIndex::get_bucket_sizes(unordered_set<uint32_t> &big_buckets) {
     progress.report(cerr, 0);
 
   // start counting the Ns in the seed region
-  Genome::const_iterator start_N_counter(begin(genome));
-  Genome::const_iterator end_N_counter(start_N_counter);
-  uint32_t N_count = 0;
-  while (end_N_counter < start_N_counter + seed::n_seed_positions - 1)
-    N_count += (*end_N_counter++ == 'N');
+  Genome::const_iterator start_invalid_counter(begin(genome));
+  Genome::const_iterator end_invalid_counter(start_invalid_counter);
+  uint32_t invalid_count = 0;
+  while (end_invalid_counter <
+         start_invalid_counter + seed::n_seed_positions - 1)
+    invalid_count += invalid_base(*end_invalid_counter++);
 
   // start building up the hash key
   Genome::const_iterator gi(begin(genome));
@@ -71,10 +78,10 @@ AbismalIndex::get_bucket_sizes(unordered_set<uint32_t> &big_buckets) {
     if (VERBOSE && progress.time_to_report(i))
       progress.report(cerr, i);
     shift_hash_key(*gi++, hash_key);
-    N_count += (*end_N_counter++ == 'N');
-    if (N_count < max_N_per_seed)
+    invalid_count += invalid_base(*end_invalid_counter++);
+    if (invalid_count < max_invalid_per_seed)
       counter[hash_key]++;
-    N_count -= (*start_N_counter++ == 'N');
+    invalid_count -= invalid_base(*start_invalid_counter++);
   }
   if (VERBOSE)
     progress.report(cerr, lim);
@@ -107,11 +114,11 @@ AbismalIndex::hash_genome(const unordered_set<uint32_t> &big_buckets) {
   ProgressBar progress(lim, "hashing genome");
 
   // start counting Ns in the seed windows
-  Genome::const_iterator start_N_counter(begin(genome));
-  Genome::const_iterator end_N_counter(start_N_counter);
-  uint32_t N_count = 0;
-  while (end_N_counter < begin(genome) + (seed::n_seed_positions - 1))
-    N_count += (*end_N_counter++ == 'N');
+  Genome::const_iterator start_invalid_counter(begin(genome));
+  Genome::const_iterator end_invalid_counter(start_invalid_counter);
+  uint32_t invalid_count = 0;
+  while (end_invalid_counter < begin(genome) + (seed::n_seed_positions - 1))
+    invalid_count += invalid_base(*end_invalid_counter++);
 
   // start building up the hash key
   Genome::const_iterator gi(begin(genome));
@@ -122,13 +129,13 @@ AbismalIndex::hash_genome(const unordered_set<uint32_t> &big_buckets) {
   for (size_t i = 0; i < lim; ++i) {
     if (VERBOSE && progress.time_to_report(i))
       progress.report(cerr, i);
-    N_count += (*end_N_counter++ == 'N');
+    invalid_count += invalid_base(*end_invalid_counter++);
     shift_hash_key(*gi++, hash_key);
-    if (N_count < max_N_per_seed) {
+    if (invalid_count < max_invalid_per_seed) {
       if (big_buckets.find(hash_key) == end(big_buckets))
         index[--counter[hash_key]] = i;
     }
-    N_count -= (*start_N_counter++ == 'N');
+    invalid_count -= invalid_base(*start_invalid_counter++);
   }
   if (VERBOSE)
     progress.report(cerr, lim);

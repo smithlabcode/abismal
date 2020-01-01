@@ -90,7 +90,7 @@ struct AbismalIndex {
 
   static bool VERBOSE;
   static uint32_t valid_bucket_limit;
-  static uint32_t max_N_per_seed;
+  static uint32_t max_invalid_per_seed;
 
   uint32_t counter_size; // number of kmers indexed
   uint32_t index_size; // size of the index
