@@ -37,7 +37,7 @@ using std::sort;
 
 bool AbismalIndex::VERBOSE = false;
 uint32_t AbismalIndex::valid_bucket_limit = 500000;
-uint32_t AbismalIndex::max_invalid_per_seed = 2;
+uint32_t AbismalIndex::max_invalid_per_seed = 1;
 
 string AbismalIndex::internal_identifier = "AbismalIndex";
 
@@ -79,7 +79,7 @@ AbismalIndex::get_bucket_sizes(unordered_set<uint32_t> &big_buckets) {
       progress.report(cerr, i);
     shift_hash_key(*gi++, hash_key);
     invalid_count += invalid_base(*end_invalid_counter++);
-    if (invalid_count < max_invalid_per_seed)
+    if (invalid_count <= max_invalid_per_seed)
       counter[hash_key]++;
     invalid_count -= invalid_base(*start_invalid_counter++);
   }
@@ -131,7 +131,7 @@ AbismalIndex::hash_genome(const unordered_set<uint32_t> &big_buckets) {
       progress.report(cerr, i);
     invalid_count += invalid_base(*end_invalid_counter++);
     shift_hash_key(*gi++, hash_key);
-    if (invalid_count < max_invalid_per_seed) {
+    if (invalid_count <= max_invalid_per_seed) {
       if (big_buckets.find(hash_key) == end(big_buckets))
         index[--counter[hash_key]] = i;
     }
