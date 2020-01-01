@@ -176,7 +176,7 @@ AbismalIndex::sort_buckets() {
 
 /* ADS: original io functions using streams didn't work on mac os, so
    removed. Using the C file I/O rather than the streams...
- */
+*/
 
 static void
 write_internal_identifier(FILE *out) {
@@ -196,9 +196,9 @@ AbismalIndex::write(const string &index_file) const {
   write_internal_identifier(out);
 
   const AbismalSeed the_seed(seed::n_seed_positions,
-                          seed::key_weight,
-                          seed::n_solid_positions,
-                          seed::solid_positions);
+                             seed::key_weight,
+                             seed::n_solid_positions,
+                             seed::solid_positions);
 
   the_seed.write(out);
 
@@ -243,9 +243,9 @@ AbismalIndex::read(const string &index_file) {
   the_seed.read(in);
 
   const AbismalSeed expected_seed(seed::n_seed_positions,
-                               seed::key_weight,
-                               seed::n_solid_positions,
-                               seed::solid_positions);
+                                  seed::key_weight,
+                                  seed::n_solid_positions,
+                                  seed::solid_positions);
 
   if (!(the_seed == expected_seed))
     throw runtime_error("inconsistent seeds (expected, indexed):\n" +
