@@ -111,6 +111,7 @@ struct AbismalIndex {
   /* Sort each bucket, if the seed length is more than 12, then use
    * binary search for the rest part of the seed */
   void sort_buckets();
+  void remove_big_buckets(const size_t max_candidates);
 
   void write(const std::string &index_file) const;
   void read(const std::string &index_file);

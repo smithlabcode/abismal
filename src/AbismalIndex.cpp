@@ -37,7 +37,7 @@ using std::sort;
 
 bool AbismalIndex::VERBOSE = false;
 uint32_t AbismalIndex::valid_bucket_limit = 500000;
-uint32_t AbismalIndex::max_invalid_per_seed = 1;
+uint32_t AbismalIndex::max_invalid_per_seed = 0;
 
 string AbismalIndex::internal_identifier = "AbismalIndex";
 
@@ -65,7 +65,7 @@ AbismalIndex::get_bucket_sizes(unordered_set<uint32_t> &big_buckets) {
   Genome::const_iterator end_invalid_counter(start_invalid_counter);
   uint32_t invalid_count = 0;
   while (end_invalid_counter <
-         start_invalid_counter + seed::n_seed_positions - 1)
+         start_invalid_counter + (seed::n_seed_positions - 1))
     invalid_count += invalid_base(*end_invalid_counter++);
 
   // start building up the hash key
@@ -144,17 +144,13 @@ AbismalIndex::hash_genome(const unordered_set<uint32_t> &big_buckets) {
 struct BucketLess {
   BucketLess(const Genome &g) : g_start(begin(g)) {}
   bool operator()(const uint32_t a, const uint32_t b) const {
-    const Genome::const_iterator idx1(g_start + a);
-    const Genome::const_iterator idx2(g_start + b);
-
-    for (size_t j = seed::key_weight; j < seed::n_solid_positions; ++j) {
-      // const size_t offset = seed::solid_positions[j];
-      // const char c1 = get_bit(*(idx1 + offset));
-      // const char c2 = get_bit(*(idx2 + offset));
-      const char c1 = get_bit(*(idx1 + j));
-      const char c2 = get_bit(*(idx2 + j));
-      if (c1 < c2) return true;
-      else if (c2 < c1) return false;
+    auto idx1(g_start + a + seed::key_weight);
+    auto lim1(g_start + a + seed::n_solid_positions);
+    auto idx2(g_start + b + seed::key_weight);
+    while (idx1 != lim1) {
+      const char c1 = get_bit(*(idx1++));
+      const char c2 = get_bit(*(idx2++));
+      if (c1 != c2) return c1 < c2;
     }
     return false;
   }
@@ -167,17 +163,66 @@ AbismalIndex::sort_buckets() {
   const vector<uint32_t>::iterator b(begin(index));
   if (VERBOSE)
     cerr << "[sorting buckets]" << endl;
-  /* Commenting out progress report as it doesn't work with threads */
-  // ProgressBar progress(counter_size, "sorting buckets");
 #pragma omp parallel for
   for (size_t i = 0; i < counter_size; ++i) {
-    //     if (VERBOSE && progress.time_to_report(i))
-    //       progress.report(cerr, i);
     if (counter[i + 1] > counter[i] + 1)
       sort(b + counter[i], b + counter[i + 1], bucket_less);
   }
-  // if (VERBOSE)
-  // progress.report(cerr, counter_size);
+}
+
+struct BucketEqual {
+  BucketEqual(const Genome &g) : g_start(begin(g)) {}
+  bool operator()(const uint32_t a, const uint32_t b) const {
+    auto idx1(g_start + a + seed::n_solid_positions);
+    auto lim1(g_start + a + seed::key_weight);
+    auto idx2(g_start + b + seed::n_solid_positions);
+    while (idx1 != lim1)
+      if (get_bit(*(--idx1)) != get_bit(*(--idx2))) return false;
+    return true;
+  }
+  const Genome::const_iterator g_start;
+};
+
+void
+AbismalIndex::remove_big_buckets(const size_t max_candidates) {
+  // first mark the positions to keep
+  if (VERBOSE)
+    cerr << "[finding bad buckets]" << endl;
+  const BucketEqual bucket_equal(genome);
+  const auto b(begin(index));
+  vector<bool> keep(index_size, true);
+#pragma omp parallel for
+  for (size_t i = 0; i < counter_size; ++i) {
+    uint32_t j = counter[i];
+    while (j < counter[i+1]) {
+      uint32_t k = j + 1;
+      const uint32_t first_idx = *(b + j);
+      while (k < counter[i+1] && bucket_equal(first_idx, *(b + k))) ++k;
+      if (k - j > max_candidates)
+        fill(begin(keep) + j, begin(keep) + k, false);
+      j = k;
+    }
+  }
+
+  // remove the indices that correspond to large buckets
+  if (VERBOSE)
+    cerr << "[removing bad buckets]" << endl;
+  size_t j = 0;
+  for (size_t i = 0; i < index_size; ++i)
+    if (keep[i])
+      index[j++] = index[i];
+  index.resize(j);
+  index_size = j;
+
+  // update the hash table to the positions of retained indices
+  uint32_t total = 0;
+  auto k_beg(begin(keep));
+  uint32_t prev_counter = 0;
+  for (size_t i = 1; i < counter.size(); ++i) {
+    total += count(k_beg + prev_counter, k_beg + counter[i], false);
+    prev_counter = counter[i];
+    counter[i] -= total;
+  }
 }
 
 
