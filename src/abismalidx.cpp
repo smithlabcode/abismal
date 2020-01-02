@@ -37,9 +37,9 @@ using std::string;
 using std::cerr;
 using std::endl;
 
-void
-BuildIndex(const bool VERBOSE, const string &genome_file,
-           AbismalIndex &abismal_index) {
+static void
+BuildIndex(const bool VERBOSE, const uint32_t max_candidates,
+           const string &genome_file, AbismalIndex &abismal_index) {
 
   std::ifstream in(genome_file);
   if (!in)
@@ -62,6 +62,8 @@ BuildIndex(const bool VERBOSE, const string &genome_file,
   abismal_index.hash_genome(big_buckets);
 
   abismal_index.sort_buckets();
+  if (max_candidates != std::numeric_limits<uint32_t>::max())
+    abismal_index.remove_big_buckets(max_candidates);
 }
 
 int main(int argc, const char **argv) {
@@ -70,6 +72,7 @@ int main(int argc, const char **argv) {
     bool VERBOSE = false;
 
     size_t n_threads = 1;
+    uint32_t max_candidates = std::numeric_limits<uint32_t>::max();
 
     /****************** COMMAND LINE OPTIONS ********************/
     OptionParser opt_parse(strip_path(argv[0]), "build abismal index",
@@ -78,6 +81,8 @@ int main(int argc, const char **argv) {
     opt_parse.add_opt("too-big", 'B', "ignore buckets bigger than this",
                       false, AbismalIndex::valid_bucket_limit);
     opt_parse.add_opt("threads", 't', "number of threads", false, n_threads);
+    opt_parse.add_opt("max-candidates", 'c', "maximum candidates per seed",
+                      false, max_candidates);
     opt_parse.add_opt("verbose", 'v', "print more run info", false, VERBOSE);
     vector<string> leftover_args;
     opt_parse.parse(argc, argv, leftover_args);
@@ -106,7 +111,7 @@ int main(int argc, const char **argv) {
     AbismalIndex::VERBOSE = VERBOSE;
 
     AbismalIndex abismal_index;
-    BuildIndex(VERBOSE, genome_file, abismal_index);
+    BuildIndex(VERBOSE, max_candidates, genome_file, abismal_index);
 
     if (VERBOSE)
       cerr << "[writing abismal index to: " << outfile << "]" << endl;
