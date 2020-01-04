@@ -18,11 +18,11 @@
 #ifndef ABISMAL_INDEX_HPP
 #define ABISMAL_INDEX_HPP
 
-#include <unordered_set>
 #include <vector>
 #include <string>
 #include <iostream>
 #include <fstream>
+#include <unordered_set>
 
 #include "AbismalSeed.hpp"
 
@@ -44,6 +44,8 @@ struct ChromLookup {
 
   uint32_t
   get_pos(const std::string &chrom, const uint32_t offset) const;
+  uint32_t
+  get_genome_size() const {return starts.back();}
 
   FILE * read(FILE *in);
   std::istream & read(std::istream &in);
@@ -112,6 +114,9 @@ struct AbismalIndex {
    * binary search for the rest part of the seed */
   void sort_buckets();
   void remove_big_buckets(const size_t max_candidates);
+
+  // convert the genome to 4-bit encoding
+  void encode_genome();
 
   void write(const std::string &index_file) const;
   void read(const std::string &index_file);
