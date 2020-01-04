@@ -18,28 +18,29 @@
 #include "smithlab_os.hpp"
 #include "smithlab_utils.hpp"
 #include "OptionParser.hpp"
+#include "dna_four_bit.hpp"
 
 #include "AbismalIndex.hpp"
 #include <omp.h>
 
 #include <iostream>
 #include <fstream>
-#include <unordered_set>
 #include <string>
 #include <vector>
 #include <stdexcept>
 #include <algorithm>
+#include <unordered_set>
 
 using std::vector;
-using std::unordered_set;
 using std::runtime_error;
 using std::string;
 using std::cerr;
 using std::endl;
+using std::unordered_set;
 
 static void
 BuildIndex(const bool VERBOSE, const uint32_t max_candidates,
-           const string &genome_file, AbismalIndex &abismal_index) {
+           const string &genome_file, AbismalIndex &ai) {
 
   std::ifstream in(genome_file);
   if (!in)
@@ -47,23 +48,16 @@ BuildIndex(const bool VERBOSE, const uint32_t max_candidates,
 
   if (VERBOSE)
     cerr << "[loading genome]" << endl;
-  load_genome(genome_file, abismal_index.genome, abismal_index.cl);
+  load_genome(genome_file, ai.genome, ai.cl);
 
-  if (VERBOSE)
-    cerr << "[validating genome]" << endl;
-
-  transform(begin(abismal_index.genome), end(abismal_index.genome),
-            begin(abismal_index.genome),
-            [](char c) {return to_valid_five_letter[static_cast<size_t>(c)];});
-
+  ai.encode_genome();
   unordered_set<uint32_t> big_buckets;
-  abismal_index.get_bucket_sizes(big_buckets);
+  ai.get_bucket_sizes(big_buckets);
+  ai.hash_genome(big_buckets);
 
-  abismal_index.hash_genome(big_buckets);
-
-  abismal_index.sort_buckets();
+  ai.sort_buckets();
   if (max_candidates != std::numeric_limits<uint32_t>::max())
-    abismal_index.remove_big_buckets(max_candidates);
+    ai.remove_big_buckets(max_candidates);
 }
 
 int main(int argc, const char **argv) {
