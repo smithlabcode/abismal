@@ -19,6 +19,7 @@
 
 #include "smithlab_os.hpp"
 #include "smithlab_utils.hpp"
+#include "dna_four_bit.hpp"
 
 #include <iostream>
 #include <fstream>
@@ -34,17 +35,38 @@ using std::cerr;
 using std::endl;
 using std::runtime_error;
 using std::sort;
+using std::cout;
+using std::min;
 
 bool AbismalIndex::VERBOSE = false;
-uint32_t AbismalIndex::valid_bucket_limit = 500000;
 uint32_t AbismalIndex::max_invalid_per_seed = 0;
+uint32_t AbismalIndex::valid_bucket_limit = 500000;
 
 string AbismalIndex::internal_identifier = "AbismalIndex";
 
+using genome_iterator = genome_four_bit_itr;
+
 template <typename nuc_type>
 bool
-invalid_base(const nuc_type &x) {
-  return x == 'N';
+invalid_base(const nuc_type &x) {return x == 15;/*N*/}
+
+// A/T nucleotide to 1-bit number
+inline uint32_t
+get_bit_4bit(const uint8_t nt) {return (nt & 5) == 0;}
+
+inline void
+shift_hash_key_4bit(const uint8_t c, size_t &hash_key) {
+  hash_key = ((hash_key << 1) | get_bit_4bit(c)) & seed::hash_mask;
+}
+
+void
+AbismalIndex::encode_genome() {
+  if (VERBOSE)
+    cerr << "[encoding genome]" << endl;
+  auto updated_end =
+    encode_dna_four_bit(begin(genome), end(genome), begin(genome));
+  genome.erase(updated_end, end(genome));
+  vector<uint8_t>(genome).swap(genome); // shrink to fit
 }
 
 void
@@ -55,29 +77,30 @@ AbismalIndex::get_bucket_sizes(unordered_set<uint32_t> &big_buckets) {
   // the "counter" has an additional entry for convenience
   counter.resize(counter_size + 1, 0);
 
-  const size_t lim = genome.size() - seed::n_seed_positions;
+  const size_t lim = cl.get_genome_size() - seed::n_seed_positions;
   ProgressBar progress(lim, "counting bucket sizes");
   if (VERBOSE)
     progress.report(cerr, 0);
 
   // start counting the Ns in the seed region
-  Genome::const_iterator start_invalid_counter(begin(genome));
-  Genome::const_iterator end_invalid_counter(start_invalid_counter);
+  genome_iterator start_invalid_counter(begin(genome));
+  auto end_invalid_counter(start_invalid_counter);
   uint32_t invalid_count = 0;
-  while (end_invalid_counter <
+  while (end_invalid_counter !=
          start_invalid_counter + (seed::n_seed_positions - 1))
     invalid_count += invalid_base(*end_invalid_counter++);
 
   // start building up the hash key
-  Genome::const_iterator gi(begin(genome));
+  genome_iterator gi(begin(genome));
+  const auto gi_lim(gi + (seed::key_weight - 1));
   size_t hash_key = 0;
-  while (gi < begin(genome) + (seed::key_weight - 1))
-    shift_hash_key(*gi++, hash_key);
+  while (gi != gi_lim)
+    shift_hash_key_4bit(*gi++, hash_key);
 
   for (size_t i = 0; i < lim; ++i) {
     if (VERBOSE && progress.time_to_report(i))
       progress.report(cerr, i);
-    shift_hash_key(*gi++, hash_key);
+    shift_hash_key_4bit(*gi++, hash_key);
     invalid_count += invalid_base(*end_invalid_counter++);
     if (invalid_count <= max_invalid_per_seed)
       counter[hash_key]++;
@@ -110,31 +133,32 @@ AbismalIndex::hash_genome(const unordered_set<uint32_t> &big_buckets) {
   index.resize(index_size, 0);
 
   // ADS: make sure this works even if genome super small
-  const size_t lim = genome.size() - seed::n_seed_positions;
+  const size_t lim = cl.get_genome_size() - seed::n_seed_positions;
   ProgressBar progress(lim, "hashing genome");
 
   // start counting Ns in the seed windows
-  Genome::const_iterator start_invalid_counter(begin(genome));
-  Genome::const_iterator end_invalid_counter(start_invalid_counter);
+  genome_iterator start_invalid_counter(begin(genome));
+  auto end_invalid_counter(start_invalid_counter);
   uint32_t invalid_count = 0;
-  while (end_invalid_counter < begin(genome) + (seed::n_seed_positions - 1))
+  while (end_invalid_counter !=
+         start_invalid_counter + (seed::n_seed_positions - 1))
     invalid_count += invalid_base(*end_invalid_counter++);
 
   // start building up the hash key
-  Genome::const_iterator gi(begin(genome));
+  genome_iterator gi(begin(genome));
+  const auto gi_lim(gi + (seed::key_weight - 1));
   size_t hash_key = 0;
-  while (gi < begin(genome) + (seed::key_weight - 1))
-    shift_hash_key(*gi++, hash_key);
+  while (gi != gi_lim)
+    shift_hash_key_4bit(*gi++, hash_key);
 
   for (size_t i = 0; i < lim; ++i) {
     if (VERBOSE && progress.time_to_report(i))
       progress.report(cerr, i);
     invalid_count += invalid_base(*end_invalid_counter++);
-    shift_hash_key(*gi++, hash_key);
-    if (invalid_count <= max_invalid_per_seed) {
-      if (big_buckets.find(hash_key) == end(big_buckets))
-        index[--counter[hash_key]] = i;
-    }
+    shift_hash_key_4bit(*gi++, hash_key);
+    if (invalid_count <= max_invalid_per_seed &&
+        big_buckets.find(hash_key) == end(big_buckets))
+      index[--counter[hash_key]] = i;
     invalid_count -= invalid_base(*start_invalid_counter++);
   }
   if (VERBOSE)
@@ -148,13 +172,13 @@ struct BucketLess {
     auto lim1(g_start + a + seed::n_solid_positions);
     auto idx2(g_start + b + seed::key_weight);
     while (idx1 != lim1) {
-      const char c1 = get_bit(*(idx1++));
-      const char c2 = get_bit(*(idx2++));
+      const char c1 = get_bit_4bit(*(idx1++));
+      const char c2 = get_bit_4bit(*(idx2++));
       if (c1 != c2) return c1 < c2;
     }
     return false;
   }
-  const Genome::const_iterator g_start;
+  const genome_iterator g_start;
 };
 
 void
@@ -164,10 +188,9 @@ AbismalIndex::sort_buckets() {
   if (VERBOSE)
     cerr << "[sorting buckets]" << endl;
 #pragma omp parallel for
-  for (size_t i = 0; i < counter_size; ++i) {
+  for (size_t i = 0; i < counter_size; ++i)
     if (counter[i + 1] > counter[i] + 1)
       sort(b + counter[i], b + counter[i + 1], bucket_less);
-  }
 }
 
 struct BucketEqual {
@@ -177,17 +200,17 @@ struct BucketEqual {
     auto lim1(g_start + a + seed::key_weight);
     auto idx2(g_start + b + seed::n_solid_positions);
     while (idx1 != lim1)
-      if (get_bit(*(--idx1)) != get_bit(*(--idx2))) return false;
+      if (get_bit_4bit(*(--idx1)) != get_bit_4bit(*(--idx2))) return false;
     return true;
   }
-  const Genome::const_iterator g_start;
+  const genome_iterator g_start;
 };
 
 void
 AbismalIndex::remove_big_buckets(const size_t max_candidates) {
   // first mark the positions to keep
   if (VERBOSE)
-    cerr << "[finding bad buckets]" << endl;
+    cerr << "[finding big buckets]" << endl;
   const BucketEqual bucket_equal(genome);
   const auto b(begin(index));
   vector<bool> keep(index_size, true);
@@ -206,7 +229,7 @@ AbismalIndex::remove_big_buckets(const size_t max_candidates) {
 
   // remove the indices that correspond to large buckets
   if (VERBOSE)
-    cerr << "[removing bad buckets]" << endl;
+    cerr << "[removing big buckets]" << endl;
   size_t j = 0;
   for (size_t i = 0; i < index_size; ++i)
     if (keep[i])
@@ -306,9 +329,17 @@ AbismalIndex::read(const string &index_file) {
 
   cl.read(in);
 
-  genome.resize(cl.starts.back());
-  if (fread((char*)&genome[0], 1, genome.size(), in) != genome.size())
+  const size_t genome_to_read = (cl.get_genome_size() + 1)/2;
+  vector<uint8_t> enc_genome(genome_to_read);
+  /* read the 4-bit encoded genome */
+  if (fread((char*)&enc_genome[0], 1, genome_to_read, in) != genome_to_read)
     throw runtime_error(error_msg);
+
+  /* expand the 4-bit encoded genome to ascii */
+  genome.resize(cl.get_genome_size() + (cl.get_genome_size() % 2));
+  decode_dna_four_bit(begin(enc_genome), end(enc_genome), begin(genome));
+  vector<uint8_t>().swap(enc_genome); // release space
+  if (genome.back() == 'Z') genome.pop_back();
 
   /* read the sizes of counter and index vectors */
   if (fread((char*)&counter_size, sizeof(uint32_t), 1, in) != 1 ||
