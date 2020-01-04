@@ -421,7 +421,7 @@ struct se_map_stats {
     string t;
     for (size_t i = 0; i < n_tabs; ++i) t += tab;
     std::ostringstream oss;
-    
+
     oss << t     << "total_reads: " << tot_rds << endl
         << t     << "mapped: " << endl
         << t+tab << "percent_mapped: " << pct(uniq_rds+ambig_rds,
