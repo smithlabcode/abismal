@@ -26,7 +26,7 @@
 
 #include "AbismalSeed.hpp"
 
-typedef std::vector<char> Genome;
+typedef std::vector<uint8_t> Genome;
 
 struct ChromLookup {
   std::vector<std::string> names;
@@ -97,7 +97,7 @@ struct AbismalIndex {
 
   std::vector<uint32_t> index; // genome positions for each k-mer
   std::vector<uint32_t> counter; // offset of each k-mer in "index"
-  std::vector<char> genome; // the genome
+  Genome genome; // the genome
   ChromLookup cl;
 
   /* count how many positions must be stored for each hash value */
