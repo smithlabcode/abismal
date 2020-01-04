@@ -41,7 +41,7 @@ all: $(PROGS)
 $(PROGS): AbismalIndex.o AbismalSeed.o \
 	$(addprefix $(SMITHLAB_CPP)/, smithlab_os.o \
 	smithlab_utils.o OptionParser.o zlib_wrapper.o \
-	GenomicRegion.o MappedRead.o)
+	GenomicRegion.o MappedRead.o dna_four_bit.o)
 
 %: %.cpp
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(CPPFLAGS) $(LDLIBS)
