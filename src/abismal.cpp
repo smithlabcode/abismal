@@ -20,6 +20,7 @@
 #include "OptionParser.hpp"
 #include "zlib_wrapper.hpp"
 #include "AbismalIndex.hpp"
+#include "AbismalAlign.hpp"
 #include "GenomicRegion.hpp"
 
 #include <cstdint>
@@ -124,7 +125,7 @@ struct se_result {
   uint8_t strand_code;
   bool ambig;
 
-  se_result() : pos(0), diffs(max_diffs + 1), strand_code(0), ambig(false) {}
+  se_result() : pos(0), diffs(invalid_hit_diffs + 1), strand_code(0), ambig(false) {}
 
   se_result(const uint32_t p, const uint16_t d, const uint8_t s) :
     pos(p), diffs(d), strand_code(s), ambig(false) {}
@@ -141,7 +142,9 @@ struct se_result {
   void reset() {diffs = max_diffs + 1; ambig = false;}
   bool valid_hit() const {return diffs < invalid_hit_diffs;}
   bool valid() const {return diffs <= max_diffs;}
-
+  bool should_do_alignment (const scr_t mismatch_diffs) const {
+    return !valid() && valid_hit() && mismatch_diffs < invalid_hit_diffs;
+  }
   void update(const uint32_t p, const scr_t d, const uint8_t s) {
     if (d < diffs) {
       pos = p;
@@ -194,6 +197,11 @@ struct pe_result { // assert(sizeof(pe_result) == 16);
   bool valid() const {return r1.diffs + r2.diffs < 2*se_result::max_diffs;}
   bool valid_hit() const {
     return r1.diffs + r2.diffs < se_result::invalid_hit_diffs;}
+
+  bool should_do_alignment(const scr_t mismatch_diffs) const {
+    return r1.should_do_alignment(mismatch_diffs) ||
+           r2.should_do_alignment(mismatch_diffs);
+  }
   void reset() {r1.reset(); r2.reset();}
   bool ambig() const {return r1.ambig;}
   void set_ambig() {r1.ambig = true;}
@@ -247,6 +255,7 @@ format_pe(const pe_result &res, const ChromLookup &cl,
 
   uint32_t r_s1 = 0, r_e1 = 0, chr1 = 0;
   if (!chrom_and_posn(cl, read1, res.r1.pos, r_s1, r_e1, chr1)) return; // cowardly
+  // GS: print those out and exit to know stats of mismatch numbers
   // GenomicRegion gr1(cl.names[chr1], r_s1, r_e1, name1, res.r1.diffs, res.r1.strand());
   // out << gr1 << '\t' << read1 << endl;
 
@@ -354,6 +363,10 @@ struct pe_candidates {
     sz = unique(begin(v), begin(v) + sz) - begin(v);
   }
 
+  // GS todo: implement
+  bool should_do_alignment(const scr_t mismatch_diffs) const {
+    return false;
+  }
   vector<se_result> v;
   uint32_t sz;
   static uint32_t max_size;
@@ -524,6 +537,14 @@ inline cmp_t comp_ga(const char a, const char b) {
   return (a != b && !(b == 'G' && a == 'A')); // && b != 'N');
 }
 
+
+// match = 1, mismatch = 0
+template <cmp_t (*compare)(const char, const char)>
+inline scr_t match(const char a, const char b) {
+  return compare(a,b) ? 0 : 1;
+}
+
+
 template <cmp_t (*F)(const char, const char),
           const uint8_t strand_code, class T>
 void
@@ -531,11 +552,16 @@ check_hits(vector<uint32_t>::const_iterator start_idx,
            const vector<uint32_t>::const_iterator end_idx,
            const string::const_iterator read_start,
            const string::const_iterator read_end,
-           const Genome::const_iterator genome_st, T &res) {
+           const Genome::const_iterator genome_st,
+           const AbismalAlign<match<F>, -1> aln, T &res) {
 
   for (; start_idx < end_idx && !res.sure_ambig(0); ++start_idx) {
-    const scr_t diffs = full_compare<F>(res.get_cutoff(), read_start,
+    scr_t diffs = full_compare<F>(res.get_cutoff(), read_start,
                                         read_end, genome_st + *start_idx);
+
+    // align if diffs small enough
+    if (res.should_do_alignment(diffs))
+      diffs = min(diffs, static_cast<scr_t>(10));
     res.update(*start_idx, diffs, strand_code);
   }
 }
@@ -579,6 +605,7 @@ process_seeds(const uint32_t genome_size,
               const uint32_t max_candidates,
               const AbismalIndex &abismal_index,
               const Genome::const_iterator genome_st,
+              const AbismalAlign<match<F>, -1> &aln,
               const string &read,
               vector<uint32_t> &hits, T &res) {
 
@@ -609,12 +636,13 @@ process_seeds(const uint32_t genome_size,
 
         if (e_idx - s_idx <= max_candidates)
           for (; s_idx != e_idx && hits.size() < max_candidates; ++s_idx)
-            if (*s_idx > i && *s_idx <= genome_lim)
+            if (*s_idx >= i && *s_idx <= genome_lim)
               hits.push_back(*s_idx - i);
       }
     }
+    cerr << "read : " << read << " has " << end(hits) - begin(hits) << " hits\n";
     check_hits<F, strand_code>(begin(hits), end(hits),
-                               read_start, read_end, genome_st, res);
+                               read_start, read_end, genome_st, aln, res);
   }
 }
 
@@ -632,7 +660,6 @@ map_single_ended(const bool VERBOSE,
 
   const uint32_t genome_size = abismal_index.genome.size();
   const Genome::const_iterator genome_st(begin(abismal_index.genome));
-
   vector<string> names, reads;
   reads.reserve(batch_size);
   names.reserve(batch_size);
@@ -661,13 +688,15 @@ map_single_ended(const bool VERBOSE,
 #pragma omp parallel
     {
       vector<uint32_t> hits;
+      const AbismalAlign <match<pos_cmp>, -1> pos_aln(abismal_index.genome, 100, 2);
+      const AbismalAlign <match<neg_cmp>, -1> neg_aln(abismal_index.genome, 100, 2);
       hits.reserve(max_candidates);
 #pragma omp for
       for (size_t i = 0; i < reads.size(); ++i)
         if (!reads[i].empty())
           process_seeds<pos_cmp,
                         get_strand_code('+', conv)>(genome_size, max_candidates,
-                                                    abismal_index, genome_st,
+                                                    abismal_index, genome_st, pos_aln,
                                                     reads[i], hits, res[i]);
 #pragma omp for
       for (size_t i = 0; i < reads.size(); ++i)
@@ -675,7 +704,7 @@ map_single_ended(const bool VERBOSE,
           const string read_rc(revcomp(reads[i]));
           process_seeds<neg_cmp,
                         get_strand_code('-', conv)>(genome_size, max_candidates,
-                                                    abismal_index, genome_st,
+                                                    abismal_index, genome_st, neg_aln,
                                                     read_rc, hits, res[i]);
         }
     }
@@ -733,26 +762,28 @@ map_single_ended_rand(const bool VERBOSE,
 #pragma omp parallel
     {
       vector<uint32_t> hits;
+      const AbismalAlign <match<comp_ct>, -1> ct_aln(abismal_index.genome, 100, 2);
+      const AbismalAlign <match<comp_ga>, -1> ga_aln(abismal_index.genome, 100, 2);
       hits.reserve(max_candidates);
 #pragma omp for
       for (size_t i = 0; i < reads.size(); ++i)
         if (!reads[i].empty()) {
           process_seeds<comp_ct,
                         get_strand_code('+', t_rich)>(genome_size, max_candidates,
-                                                      abismal_index, genome_st,
+                                                      abismal_index, genome_st, ct_aln,
                                                       reads[i], hits, res[i]);
           process_seeds<comp_ga,
                         get_strand_code('+', a_rich)>(genome_size, max_candidates,
-                                                      abismal_index, genome_st,
+                                                      abismal_index, genome_st, ga_aln,
                                                       reads[i], hits, res[i]);
           const string read_rc(revcomp(reads[i]));
           process_seeds<comp_ct,
                         get_strand_code('-', a_rich)>(genome_size, max_candidates,
-                                                      abismal_index, genome_st,
+                                                      abismal_index, genome_st, ct_aln,
                                                       read_rc, hits, res[i]);
           process_seeds<comp_ga,
                         get_strand_code('-', t_rich)>(genome_size, max_candidates,
-                                                      abismal_index, genome_st,
+                                                      abismal_index, genome_st, ga_aln,
                                                       read_rc, hits, res[i]);
         }
     }
@@ -791,12 +822,13 @@ map_pe_batch(const vector<string> &reads1, const vector<string> &reads2,
 #pragma omp parallel
   {
     vector<uint32_t> hits;
+    const AbismalAlign <match<cmp>, -1> cmp_aln(abismal_index.genome, 100, 2);
     hits.reserve(max_candidates);
 #pragma omp for
     for (size_t i = 0; i < reads1.size(); ++i)
       if (!reads1[i].empty())
         process_seeds<cmp, strand_code1>(genome_size, max_candidates,
-                                         abismal_index, genome_st, reads1[i],
+                                         abismal_index, genome_st, cmp_aln, reads1[i],
                                          hits, res1[i]);
 
 #pragma omp for
@@ -804,7 +836,7 @@ map_pe_batch(const vector<string> &reads1, const vector<string> &reads2,
       if (!reads2[i].empty()) {
         const string read_rc(revcomp(reads2[i]));
         process_seeds<cmp, strand_code2>(genome_size, max_candidates,
-                                         abismal_index, genome_st, read_rc,
+                                         abismal_index, genome_st, cmp_aln, read_rc,
                                          hits, res2[i]);
       }
   }
@@ -1022,6 +1054,7 @@ int main(int argc, const char **argv) {
     bool random_pbat = false;
     uint32_t max_candidates = 3000;
     size_t max_diffs = 6;
+    size_t invalid_hit_diffs = 40;
     size_t batch_size = 1000000;
     size_t n_threads = 1;
 
@@ -1035,6 +1068,8 @@ int main(int argc, const char **argv) {
     opt_parse.add_opt("threads", 't', "number of threads", false, n_threads);
     opt_parse.add_opt("mismatches", 'm', "max allowed mismatches",
                       false, max_diffs);
+    opt_parse.add_opt("hits", 'h', "max allowed mismatches for alignment",
+                      false, invalid_hit_diffs);
     opt_parse.add_opt("shifts", 's', "number of seed shifts",
                       false, seed::n_shifts);
     opt_parse.add_opt("batch", 'b', "reads to load at once",
@@ -1084,6 +1119,7 @@ int main(int argc, const char **argv) {
     /****************** END COMMAND LINE OPTIONS *****************/
 
     se_result::max_diffs = max_diffs;
+    se_result::invalid_hit_diffs = invalid_hit_diffs;
 
     omp_set_num_threads(n_threads);
 
