@@ -29,6 +29,7 @@
 #include <stdexcept>
 #include <random>
 #include <functional>
+#include <cstdlib>
 
 using std::vector;
 using std::runtime_error;
@@ -37,6 +38,20 @@ using std::cerr;
 using std::endl;
 using std::function;
 using std::bind;
+using std::to_string;
+
+inline char
+random_base(function<double()> &unif) {
+ return int2base(static_cast<unsigned>(100*unif()) % 4);
+}
+
+inline void
+put_different_base(char &base, function<double()> &unif) {
+  const char orig = base;
+  do {
+    base = random_base(unif);
+  } while (base == orig);
+}
 
 static void
 sim_frag(const string &genome, const size_t frag_len,
@@ -59,13 +74,40 @@ mutate_frag(const double mutation_rate, const size_t max_mutations,
             size_t &n_mutations) {
   for (size_t i = 0; n_mutations < max_mutations && i < the_frag.length(); ++i)
     if (unif() < mutation_rate) {
-      char mut = int2base(static_cast<unsigned>(100*unif()) % 4);
-      while (mut == the_frag[i])
-        mut = int2base(static_cast<unsigned>(100*unif()) % 4);
-      the_frag[i] = mut;
-      ++n_mutations ;
+      put_different_base(the_frag[i], unif);
+      ++n_mutations;
     }
 }
+
+static void
+insert_frag(const double insertion_rate, const size_t max_insertions,
+            function<double()> &unif,
+            string &the_frag,
+            size_t &n_insertions) {
+  for (size_t i = 0; i < max_insertions; ++i)
+    if (unif() < insertion_rate) {
+      const size_t the_idx =
+        static_cast<unsigned>(100.0*unif()) % the_frag.size();
+      the_frag.insert(begin(the_frag) + the_idx, random_base(unif));
+      ++n_insertions;
+    }
+}
+
+static void
+delete_frag(const double deletion_rate, const size_t max_deletions,
+            function<double()> &unif,
+            string &the_frag,
+            size_t &n_deletions) {
+  for (size_t i = 0; i < max_deletions; ++i)
+    if (unif() < deletion_rate) {
+      const size_t the_idx =
+        static_cast<unsigned>(100.0*unif()) % the_frag.size();
+      the_frag.erase(begin(the_frag) + the_idx);
+      ++n_deletions;
+    }
+}
+
+
 
 
 static void
@@ -112,7 +154,11 @@ int main(int argc, const char **argv) {
     size_t rng_seed = std::numeric_limits<size_t>::max();
 
     double mutation_rate = 0.0;
+    double insertion_rate = 0.0;
+    double deletion_rate = 0.0;
     size_t max_mutations = std::numeric_limits<size_t>::max();
+    size_t max_insertions = 5;
+    size_t max_deletions = 5;
 
     /****************** COMMAND LINE OPTIONS ********************/
     OptionParser opt_parse(strip_path(argv[0]), "simulate reads for "
@@ -124,7 +170,11 @@ int main(int argc, const char **argv) {
     opt_parse.add_opt("frag", 'f', "fragment length", false, frag_len);
     opt_parse.add_opt("n-reads", 'n', "number of reads", false, n_reads);
     opt_parse.add_opt("mut", 'm', "mutation rate", false, mutation_rate);
+    opt_parse.add_opt("ins", 'i', "insertion rate", false, insertion_rate);
+    opt_parse.add_opt("del", 'd', "deletion rate", false, deletion_rate);
     opt_parse.add_opt("max-mut", 'M', "max mutations", false, max_mutations);
+    opt_parse.add_opt("max-in", 'I', "max insertions", false, max_insertions);
+    opt_parse.add_opt("max-del", 'D', "max deletions", false, max_deletions);
     opt_parse.add_opt("pbat", 'a', "pbat", false, pbat);
     opt_parse.add_opt("strand", 's', "strand {f, r, b}", false, strand_arg);
     opt_parse.add_opt("seed", '\0', "rng seed (default: from system)", false, rng_seed);
@@ -195,6 +245,16 @@ int main(int argc, const char **argv) {
         mutate_frag(mutation_rate, max_mutations, distr,
                     the_frag, n_mutations);
 
+      size_t n_insertions = 0;
+      if (insertion_rate > 0.0)
+        insert_frag(insertion_rate, max_insertions, distr,
+                    the_frag, n_insertions);
+
+      size_t n_deletions = 0;
+      if (deletion_rate > 0.0)
+        delete_frag(deletion_rate, max_deletions, distr,
+                    the_frag, n_deletions);
+
       // flip the strand of the fragment if appropriate
       char strand = '+';
       if (strand_arg == 'r' ||
@@ -216,26 +276,30 @@ int main(int argc, const char **argv) {
       if (strand == '-')
         std::swap(read1_pos, read2_pos);
 
+      
       uint32_t offset = 0, chrom_idx = 0;
       cl.get_chrom_idx_and_offset(read1_pos, chrom_idx, offset);
+      const string read_prefix = "@read" + i;
+      const string read_suffix = to_string(n_mutations) + ":" +
+                                 to_string(n_insertions) + ":" +
+                                 to_string(n_deletions);
 
-      out1 << "@read"
-           << i << ":"
-           << cl.names[chrom_idx] << ':'
+      out1 << read_prefix << ":"
+           << cl.names[chrom_idx] << ":"
            << offset << ":"
            << strand << ":"
-           << n_mutations << endl
+           << read_suffix << endl
            << read1 << endl
            << "+" << endl
            << string(read_len, 'B') << endl;
 
       const char strand_two = (strand == '+' ? '-' : '+');
       cl.get_chrom_idx_and_offset(read2_pos, chrom_idx, offset);
-      out2 << "@read" << i << ":"
-           << cl.names[chrom_idx] << ':'
+      out2 << read_prefix << ":"
+           << cl.names[chrom_idx] << ":"
            << offset << ":"
            << strand_two << ":"
-           << n_mutations << endl
+           << read_suffix << endl
            << read2 << endl
            << "+" << endl
            << string(read_len, 'B') << endl;
