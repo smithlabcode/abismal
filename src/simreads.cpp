@@ -29,7 +29,6 @@
 #include <stdexcept>
 #include <random>
 #include <functional>
-#include <cstdlib>
 
 using std::vector;
 using std::runtime_error;
@@ -276,14 +275,13 @@ int main(int argc, const char **argv) {
       if (strand == '-')
         std::swap(read1_pos, read2_pos);
 
-      
-      uint32_t offset = 0, chrom_idx = 0;
-      cl.get_chrom_idx_and_offset(read1_pos, chrom_idx, offset);
-      const string read_prefix = "@read" + i;
+      const string read_prefix = "@read" + to_string(i);
       const string read_suffix = to_string(n_mutations) + ":" +
                                  to_string(n_insertions) + ":" +
                                  to_string(n_deletions);
 
+      uint32_t offset = 0, chrom_idx = 0;
+      cl.get_chrom_idx_and_offset(read1_pos, chrom_idx, offset);
       out1 << read_prefix << ":"
            << cl.names[chrom_idx] << ":"
            << offset << ":"
