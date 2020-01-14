@@ -20,7 +20,6 @@
 #include "OptionParser.hpp"
 #include "zlib_wrapper.hpp"
 #include "AbismalIndex.hpp"
-#include "AbismalAlign.hpp"
 #include "GenomicRegion.hpp"
 
 #include <cstdint>
@@ -553,7 +552,7 @@ check_hits(vector<uint32_t>::const_iterator start_idx,
            const string::const_iterator read_start,
            const string::const_iterator read_end,
            const Genome::const_iterator genome_st,
-           const AbismalAlign<match<F>, -1> aln, T &res) {
+           T &res) {
 
   for (; start_idx < end_idx && !res.sure_ambig(0); ++start_idx) {
     scr_t diffs = full_compare<F>(res.get_cutoff(), read_start,
@@ -602,7 +601,6 @@ process_seeds(const uint32_t genome_size,
               const uint32_t max_candidates,
               const AbismalIndex &abismal_index,
               const Genome::const_iterator genome_st,
-              const AbismalAlign<match<F>, -1> &aln,
               const string &read,
               vector<uint32_t> &hits, T &res) {
 
@@ -638,7 +636,7 @@ process_seeds(const uint32_t genome_size,
       }
     }
     check_hits<F, strand_code>(begin(hits), end(hits),
-                               read_start, read_end, genome_st, aln, res);
+                               read_start, read_end, genome_st, res);
   }
 }
 
@@ -684,15 +682,13 @@ map_single_ended(const bool VERBOSE,
 #pragma omp parallel
     {
       vector<uint32_t> hits;
-      const AbismalAlign <match<pos_cmp>, -1> pos_aln(abismal_index.genome, 100, 2);
-      const AbismalAlign <match<neg_cmp>, -1> neg_aln(abismal_index.genome, 100, 2);
       hits.reserve(max_candidates);
 #pragma omp for
       for (size_t i = 0; i < reads.size(); ++i)
         if (!reads[i].empty())
           process_seeds<pos_cmp,
                         get_strand_code('+', conv)>(genome_size, max_candidates,
-                                                    abismal_index, genome_st, pos_aln,
+                                                    abismal_index, genome_st,
                                                     reads[i], hits, res[i]);
 #pragma omp for
       for (size_t i = 0; i < reads.size(); ++i)
@@ -700,7 +696,7 @@ map_single_ended(const bool VERBOSE,
           const string read_rc(revcomp(reads[i]));
           process_seeds<neg_cmp,
                         get_strand_code('-', conv)>(genome_size, max_candidates,
-                                                    abismal_index, genome_st, neg_aln,
+                                                    abismal_index, genome_st,
                                                     read_rc, hits, res[i]);
         }
     }
@@ -758,28 +754,26 @@ map_single_ended_rand(const bool VERBOSE,
 #pragma omp parallel
     {
       vector<uint32_t> hits;
-      const AbismalAlign <match<comp_ct>, -1> ct_aln(abismal_index.genome, 100, 2);
-      const AbismalAlign <match<comp_ga>, -1> ga_aln(abismal_index.genome, 100, 2);
       hits.reserve(max_candidates);
 #pragma omp for
       for (size_t i = 0; i < reads.size(); ++i)
         if (!reads[i].empty()) {
           process_seeds<comp_ct,
                         get_strand_code('+', t_rich)>(genome_size, max_candidates,
-                                                      abismal_index, genome_st, ct_aln,
+                                                      abismal_index, genome_st,
                                                       reads[i], hits, res[i]);
           process_seeds<comp_ga,
                         get_strand_code('+', a_rich)>(genome_size, max_candidates,
-                                                      abismal_index, genome_st, ga_aln,
+                                                      abismal_index, genome_st,
                                                       reads[i], hits, res[i]);
           const string read_rc(revcomp(reads[i]));
           process_seeds<comp_ct,
                         get_strand_code('-', a_rich)>(genome_size, max_candidates,
-                                                      abismal_index, genome_st, ct_aln,
+                                                      abismal_index, genome_st,
                                                       read_rc, hits, res[i]);
           process_seeds<comp_ga,
                         get_strand_code('-', t_rich)>(genome_size, max_candidates,
-                                                      abismal_index, genome_st, ga_aln,
+                                                      abismal_index, genome_st,
                                                       read_rc, hits, res[i]);
         }
     }
@@ -818,13 +812,12 @@ map_pe_batch(const vector<string> &reads1, const vector<string> &reads2,
 #pragma omp parallel
   {
     vector<uint32_t> hits;
-    const AbismalAlign <match<cmp>, -1> cmp_aln(abismal_index.genome, 100, 2);
     hits.reserve(max_candidates);
 #pragma omp for
     for (size_t i = 0; i < reads1.size(); ++i)
       if (!reads1[i].empty())
         process_seeds<cmp, strand_code1>(genome_size, max_candidates,
-                                         abismal_index, genome_st, cmp_aln, reads1[i],
+                                         abismal_index, genome_st, reads1[i],
                                          hits, res1[i]);
 
 #pragma omp for
@@ -832,7 +825,7 @@ map_pe_batch(const vector<string> &reads1, const vector<string> &reads2,
       if (!reads2[i].empty()) {
         const string read_rc(revcomp(reads2[i]));
         process_seeds<cmp, strand_code2>(genome_size, max_candidates,
-                                         abismal_index, genome_st, cmp_aln, read_rc,
+                                         abismal_index, genome_st, read_rc,
                                          hits, res2[i]);
       }
   }
