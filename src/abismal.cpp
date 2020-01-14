@@ -559,9 +559,6 @@ check_hits(vector<uint32_t>::const_iterator start_idx,
     scr_t diffs = full_compare<F>(res.get_cutoff(), read_start,
                                         read_end, genome_st + *start_idx);
 
-    // align if diffs small enough
-    if (res.should_do_alignment(diffs))
-      diffs = min(diffs, static_cast<scr_t>(10));
     res.update(*start_idx, diffs, strand_code);
   }
 }
@@ -640,7 +637,6 @@ process_seeds(const uint32_t genome_size,
               hits.push_back(*s_idx - i);
       }
     }
-    cerr << "read : " << read << " has " << end(hits) - begin(hits) << " hits\n";
     check_hits<F, strand_code>(begin(hits), end(hits),
                                read_start, read_end, genome_st, aln, res);
   }
