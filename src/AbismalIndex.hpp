@@ -66,7 +66,7 @@ load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
   if (!in)
     throw std::runtime_error("bad genome file: " + genome_file);
 
-  const size_t begin_pos = in.tellg();
+  const auto begin_pos = in.tellg();
   in.seekg(0, std::ios_base::end);
   const size_t file_size = in.tellg() - begin_pos;
   in.seekg(0, std::ios_base::beg);
