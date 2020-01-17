@@ -704,7 +704,7 @@ map_single_ended(const bool VERBOSE,
 
     for (size_t i = 0 ; i < n_reads; ++i) {
       se_stats.update(reads[i], res[i]);
-      if (res[i].valid())
+      if (res[i].valid() && !res[i].ambig)
         format_se(res[i], abismal_index.cl, reads[i], names[i], out);
     }
   }
