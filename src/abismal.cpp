@@ -605,7 +605,6 @@ process_seeds(const uint32_t genome_size,
               vector<uint32_t> &hits, T &res) {
 
   const uint32_t readlen = read.length();
-  const uint32_t genome_lim = genome_size - readlen;
 
   const auto read_start(begin(read));
   const auto read_end(end(read));
@@ -619,21 +618,17 @@ process_seeds(const uint32_t genome_size,
   for (uint32_t i = 0; i <= n_starts && !res.sure_ambig(i); i += shift) {
     hits.clear(); // hits.capacity() == max_candidates;
 
-    uint32_t k_low, k_high;
-    get_1bit_hash_low_high(read_start + i, readlen - i, k_low, k_high);
+    uint32_t k = 0;
+    get_1bit_hash(read_start + i, k);
 
-    for (uint32_t k = k_low; k < k_high; ++k) {
-      auto s_idx(index_st + *(counter_st + k));
-      auto e_idx(index_st + *(counter_st + k+1));
+    auto s_idx(index_st + *(counter_st + k));
+    auto e_idx(index_st + *(counter_st + k + 1));
 
-      if (s_idx < e_idx) {
-        find_candidates(read_start + i, genome_st, readlen - i, s_idx, e_idx);
-
-        if (e_idx - s_idx <= max_candidates)
-          for (; s_idx != e_idx && hits.size() < max_candidates; ++s_idx)
-            if (*s_idx >= i && *s_idx <= genome_lim)
-              hits.push_back(*s_idx - i);
-      }
+    if (s_idx < e_idx) {
+      find_candidates(read_start + i, genome_st, readlen - i, s_idx, e_idx);
+      if (e_idx - s_idx <= max_candidates)
+        for (; s_idx != e_idx && hits.size() < max_candidates; ++s_idx)
+          hits.push_back(*s_idx - i);
     }
     check_hits<F, strand_code>(begin(hits), end(hits),
                                read_start, read_end, genome_st, res);

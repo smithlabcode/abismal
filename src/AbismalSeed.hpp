@@ -104,19 +104,13 @@ get_1bit_hash(const std::vector<char>::const_iterator r) {
 }
 
 inline void
-get_1bit_hash_low_high(std::string::const_iterator r,
-                       const uint32_t readlen,
-                       uint32_t &k_low, uint32_t &k_high) {
-  uint32_t val = 0;
-  uint32_t p = 0;
-  const uint32_t lim = std::min(seed::key_weight, readlen);
-  while (p < lim) {
-    val <<= 1;
-    val += get_bit(*(r + p++));
+get_1bit_hash(std::string::const_iterator r, uint32_t &k) {
+  const auto lim = r + seed::key_weight;
+  while (r != lim) {
+    k <<= 1;
+    k += get_bit(*r);
+    ++r;
   }
-  const uint32_t shift = (seed::key_weight > p ? seed::key_weight - p : 0);
-  k_low = (val << shift);
-  k_high = ((val + 1) << shift);
 }
 
 inline void
