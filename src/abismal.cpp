@@ -611,11 +611,11 @@ process_seeds(const uint32_t genome_size,
   const auto index_st(begin(abismal_index.index));
   const auto counter_st(begin(abismal_index.counter));
 
-  const size_t n_starts =
+  const size_t shift_lim =
     readlen > seed::n_solid_positions ? readlen - seed::n_solid_positions : 0;
-  const size_t shift = std::max(1ul, n_starts/(seed::n_shifts - 1));
+  const size_t shift = std::max(1ul, shift_lim/(seed::n_shifts - 1));
 
-  for (uint32_t i = 0; i <= n_starts && !res.sure_ambig(i); i += shift) {
+  for (uint32_t i = 0; i <= shift_lim && !res.sure_ambig(i); i += shift) {
     hits.clear(); // hits.capacity() == max_candidates;
 
     uint32_t k = 0;
