@@ -62,6 +62,12 @@ template <class G>
 void
 load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
 
+  // the purpose of padding the left and right ends of the
+  // concatenated genome is so that later we can avoid having to check
+  // the (unlikely) case that a read maps partly off either end of the
+  // genome.
+  static const size_t padding_size = 1024;
+
   std::ifstream in(genome_file);
   if (!in)
     throw std::runtime_error("bad genome file: " + genome_file);
@@ -72,7 +78,18 @@ load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
   in.seekg(0, std::ios_base::beg);
 
   genome.clear();
-  genome.reserve(file_size);
+  genome.reserve(file_size + padding_size); // pad on at start; the
+                                            // space for padding at
+                                            // the end will be
+                                            // available because of
+                                            // the newlines and names
+                                            // within the file.
+
+  // pad the start of the concatenated sequence
+  cl.names.push_back("pad_start");
+  for (size_t i = 0; i < padding_size; ++i)
+    genome.push_back('N');
+  cl.starts.push_back(genome.size());
 
   std::string line;
   while (getline(in, line))
@@ -82,6 +99,13 @@ load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
       cl.names.push_back(line.substr(1, line.find_first_of(" \t")));
       cl.starts.push_back(genome.size());
     }
+
+  // now pad the end of the concatenated sequence
+  cl.names.push_back("pad_end");
+  cl.starts.push_back(genome.size());
+  for (size_t i = 0; i < padding_size; ++i)
+    genome.push_back('N');
+
   cl.starts.push_back(genome.size());
 }
 
