@@ -1,4 +1,4 @@
-/* Copyright (C) 2018-2019 Andrew D. Smith
+/* Copyright (C) 2018-2020 Andrew D. Smith
  *
  * Authors: Andrew D. Smith
  *
@@ -21,6 +21,7 @@
 #include "zlib_wrapper.hpp"
 #include "AbismalIndex.hpp"
 #include "GenomicRegion.hpp"
+#include "dna_four_bit.hpp"
 
 #include <cstdint>
 #include <iostream>
@@ -45,6 +46,7 @@ using std::count;
 
 using std::max;
 using std::min;
+
 
 enum conversion_type { t_rich, a_rich };
 constexpr conversion_type
@@ -113,20 +115,20 @@ struct ReadLoader {
 };
 uint32_t ReadLoader::min_length = 32;
 
-typedef int16_t scr_t;
+typedef int16_t score_t;
 
 // type returned from atomic (e.g. nucleotide) comparisons
 typedef bool cmp_t;
 
 struct se_result {
   uint32_t pos;
-  uint16_t diffs;
+  score_t diffs;
   uint8_t strand_code;
   bool ambig;
 
   se_result() : pos(0), diffs(invalid_hit_diffs + 1), strand_code(0), ambig(false) {}
 
-  se_result(const uint32_t p, const uint16_t d, const uint8_t s) :
+  se_result(const uint32_t p, const score_t d, const uint8_t s) :
     pos(p), diffs(d), strand_code(s), ambig(false) {}
 
   bool operator==(const se_result &rhs) const {
@@ -141,10 +143,10 @@ struct se_result {
   void reset() {diffs = max_diffs + 1; ambig = false;}
   bool valid_hit() const {return diffs < invalid_hit_diffs;}
   bool valid() const {return diffs <= max_diffs;}
-  bool should_do_alignment (const scr_t mismatch_diffs) const {
+  bool should_do_alignment (const score_t mismatch_diffs) const {
     return !valid() && valid_hit() && mismatch_diffs < invalid_hit_diffs;
   }
-  void update(const uint32_t p, const scr_t d, const uint8_t s) {
+  void update(const uint32_t p, const score_t d, const uint8_t s) {
     if (d < diffs) {
       pos = p;
       diffs = d;
@@ -159,12 +161,12 @@ struct se_result {
   }
   uint32_t get_cutoff() const {return diffs;}
 
-  static uint16_t max_diffs;
-  static uint16_t invalid_hit_diffs;
+  static score_t max_diffs;
+  static score_t invalid_hit_diffs;
 };
 
-uint16_t se_result::invalid_hit_diffs = 50;
-uint16_t se_result::max_diffs = 6;
+score_t se_result::invalid_hit_diffs = 50;
+score_t se_result::max_diffs = 6;
 
 void
 format_se(se_result res, const ChromLookup &cl,
@@ -192,12 +194,12 @@ struct pe_result { // assert(sizeof(pe_result) == 16);
   pe_result() {}
   pe_result(const se_result &a, const se_result &b) : r1(a), r2(b) {}
   bool rc() const {return r1.rc();}
-  scr_t diffs() const {return r1.diffs + r2.diffs;}
+  score_t diffs() const {return r1.diffs + r2.diffs;}
   bool valid() const {return r1.diffs + r2.diffs < 2*se_result::max_diffs;}
   bool valid_hit() const {
     return r1.diffs + r2.diffs < se_result::invalid_hit_diffs;}
 
-  bool should_do_alignment(const scr_t mismatch_diffs) const {
+  bool should_do_alignment(const score_t mismatch_diffs) const {
     return r1.should_do_alignment(mismatch_diffs) ||
            r2.should_do_alignment(mismatch_diffs);
   }
@@ -246,6 +248,7 @@ chrom_and_posn(const ChromLookup &cl, const string &read, const uint32_t p,
   r_e = r_p + ref_ops;
   return true;
 }
+
 
 void
 format_pe(const pe_result &res, const ChromLookup &cl,
@@ -339,8 +342,8 @@ struct pe_candidates {
   pe_candidates() : v(vector<se_result>(max_size)), sz(0) {}
   bool full() const {return sz == max_size;}
   void reset() {v.front().reset(); sz = 0;}
-  uint16_t get_cutoff() const {return v.front().diffs;}
-  void update(const uint32_t p, const scr_t d, const char s) {
+  score_t get_cutoff() const {return v.front().diffs;}
+  void update(const uint32_t p, const score_t d, const char s) {
     if (full()) {
       if (d < v.front().diffs) {
         std::pop_heap(begin(v), end(v));
@@ -363,7 +366,7 @@ struct pe_candidates {
   }
 
   // GS todo: implement
-  bool should_do_alignment(const scr_t mismatch_diffs) const {
+  bool should_do_alignment(const score_t mismatch_diffs) const {
     return false;
   }
   vector<se_result> v;
@@ -516,48 +519,41 @@ select_output(const ChromLookup &cl,
   }
 }
 
-template <cmp_t (*compare)(const char, const char)>
-uint16_t
-full_compare(const uint16_t best_diffs,
-             string::const_iterator read_itr,
-             const string::const_iterator &read_end,
+
+typedef vector<char> Read;
+
+inline cmp_t
+the_comp(const char a, const char b) {
+  return (a & b) == 0;
+}
+
+score_t
+full_compare(const score_t best_diffs,
+             Read::const_iterator read_itr,
+             const Read::const_iterator &read_end,
              Genome::const_iterator genome_itr) {
-  uint16_t d = 0;
+
+  score_t d = 0;
   while (d <= best_diffs && read_itr != read_end)
-    d += compare(*read_itr++, *genome_itr++);
+    d += the_comp(*read_itr++, *genome_itr++);
   return d;
 }
 
-inline cmp_t comp_ct(const char a, const char b) {
-  return (a != b && !(b == 'C' && a == 'T')); // && b != 'N');
-}
+enum { comp_ct = false,
+       comp_ga = true };
 
-inline cmp_t comp_ga(const char a, const char b) {
-  return (a != b && !(b == 'G' && a == 'A')); // && b != 'N');
-}
-
-
-// match = 1, mismatch = 0
-template <cmp_t (*compare)(const char, const char)>
-inline scr_t match(const char a, const char b) {
-  return compare(a,b) ? 0 : 1;
-}
-
-
-template <cmp_t (*F)(const char, const char),
-          const uint8_t strand_code, class T>
+template <const uint8_t strand_code, class T>
 void
 check_hits(vector<uint32_t>::const_iterator start_idx,
            const vector<uint32_t>::const_iterator end_idx,
-           const string::const_iterator read_start,
-           const string::const_iterator read_end,
+           const Read::const_iterator read_start,
+           const Read::const_iterator read_end,
            const Genome::const_iterator genome_st,
            T &res) {
 
   for (; start_idx < end_idx && !res.sure_ambig(0); ++start_idx) {
-    scr_t diffs = full_compare<F>(res.get_cutoff(), read_start,
-                                        read_end, genome_st + *start_idx);
-
+    const score_t diffs = full_compare(res.get_cutoff(), read_start,
+                                       read_end, genome_st + *start_idx);
     res.update(*start_idx, diffs, strand_code);
   }
 }
@@ -566,14 +562,14 @@ check_hits(vector<uint32_t>::const_iterator start_idx,
 struct compare_bases {
   compare_bases(const Genome::const_iterator g_) : g(g_) {}
   bool operator()(const uint32_t mid, const uint32_t chr) const {
-    return (get_bit(*(g + mid)) < chr);
+    return (get_bit_4bit(*(g + mid)) < chr);
   }
   const Genome::const_iterator g;
 };
 
 
 void
-find_candidates(const string::const_iterator read_start,
+find_candidates(const Read::const_iterator read_start,
                 const Genome::const_iterator genome_start,
                 const uint32_t read_lim, // not necessarily read len
                 vector<uint32_t>::const_iterator &low,
@@ -582,7 +578,7 @@ find_candidates(const string::const_iterator read_start,
   const size_t lim = std::min(read_lim, seed::n_solid_positions);
   while (p < lim) {
     auto first_1 = lower_bound(low, high, 1, compare_bases(genome_start + p));
-    if (get_bit(*(read_start + p)) == 0) {
+    if (get_bit_4bit(*(read_start + p)) == 0) {
       if (first_1 == high) return; // need 0s; whole range is 0s
       high = first_1;
     }
@@ -594,17 +590,16 @@ find_candidates(const string::const_iterator read_start,
   }
 }
 
-template <cmp_t (*F)(const char, const char),
-          const uint8_t strand_code, class T>
+template <const uint8_t strand_code, class Read, class T>
 void
 process_seeds(const uint32_t genome_size,
               const uint32_t max_candidates,
               const AbismalIndex &abismal_index,
               const Genome::const_iterator genome_st,
-              const string &read,
+              const Read &read,
               vector<uint32_t> &hits, T &res) {
 
-  const uint32_t readlen = read.length();
+  const uint32_t readlen = read.size();
 
   const auto read_start(begin(read));
   const auto read_end(end(read));
@@ -618,26 +613,41 @@ process_seeds(const uint32_t genome_size,
   for (uint32_t i = 0; i <= shift_lim && !res.sure_ambig(i); i += shift) {
     hits.clear(); // hits.capacity() == max_candidates;
 
+    // uint32_t k_low, k_high;
+    // get_1bit_hash_low_high_4bit(read_start + i, readlen - i, k_low, k_high);
     uint32_t k = 0;
-    get_1bit_hash(read_start + i, k);
+    get_1bit_hash_4bit(read_start + i, k);
 
+    // for (uint32_t k = k_low; k < k_high; ++k) {
     auto s_idx(index_st + *(counter_st + k));
     auto e_idx(index_st + *(counter_st + k + 1));
 
     if (s_idx < e_idx) {
       find_candidates(read_start + i, genome_st, readlen - i, s_idx, e_idx);
-      if (e_idx - s_idx <= max_candidates)
+      if (e_idx - s_idx <= max_candidates) {
         for (; s_idx != e_idx && hits.size() < max_candidates; ++s_idx)
           hits.push_back(*s_idx - i);
+      }
     }
-    check_hits<F, strand_code>(begin(hits), end(hits),
-                               read_start, read_end, genome_st, res);
+    // }
+    check_hits<strand_code>(begin(hits), end(hits),
+                            read_start, read_end, genome_st, res);
   }
 }
 
-template <cmp_t (*pos_cmp)(const char, const char),
-          cmp_t (*neg_cmp)(const char, const char),
-          conversion_type conv>
+
+template <const bool convert_a_to_g>
+static void
+prep_read(const string &r, Read &pread) {
+  pread.resize(r.size());
+  for (size_t i = 0; i < r.size(); ++i)
+    pread[i] = encode_dna_four_bit(convert_a_to_g ?
+                                   (r[i] == 'A' ? 'R' : r[i]) :
+                                   (r[i] == 'T' ? 'Y' : r[i]));
+}
+
+
+template <const bool cmp, conversion_type conv>
 void
 map_single_ended(const bool VERBOSE,
                  const string &reads_file,
@@ -676,23 +686,25 @@ map_single_ended(const bool VERBOSE,
     const double start_time = omp_get_wtime();
 #pragma omp parallel
     {
+      vector<char> pread;
       vector<uint32_t> hits;
       hits.reserve(max_candidates);
 #pragma omp for
       for (size_t i = 0; i < reads.size(); ++i)
-        if (!reads[i].empty())
-          process_seeds<pos_cmp,
-                        get_strand_code('+', conv)>(genome_size, max_candidates,
+        if (!reads[i].empty()) {
+          prep_read<cmp>(reads[i], pread);
+          process_seeds<get_strand_code('+', conv)>(genome_size, max_candidates,
                                                     abismal_index, genome_st,
-                                                    reads[i], hits, res[i]);
+                                                    pread, hits, res[i]);
+        }
 #pragma omp for
       for (size_t i = 0; i < reads.size(); ++i)
         if (!reads[i].empty()) {
           const string read_rc(revcomp(reads[i]));
-          process_seeds<neg_cmp,
-                        get_strand_code('-', conv)>(genome_size, max_candidates,
+          prep_read<!cmp>(read_rc, pread);
+          process_seeds<get_strand_code('-', conv)>(genome_size, max_candidates,
                                                     abismal_index, genome_st,
-                                                    read_rc, hits, res[i]);
+                                                    pread, hits, res[i]);
         }
     }
     total_mapping_time += (omp_get_wtime() - start_time);
@@ -748,28 +760,29 @@ map_single_ended_rand(const bool VERBOSE,
     const double start_time = omp_get_wtime();
 #pragma omp parallel
     {
+      Read pread;
       vector<uint32_t> hits;
       hits.reserve(max_candidates);
 #pragma omp for
       for (size_t i = 0; i < reads.size(); ++i)
         if (!reads[i].empty()) {
-          process_seeds<comp_ct,
-                        get_strand_code('+', t_rich)>(genome_size, max_candidates,
+          prep_read<comp_ct>(reads[i], pread);
+          process_seeds<get_strand_code('+', t_rich)>(genome_size, max_candidates,
                                                       abismal_index, genome_st,
-                                                      reads[i], hits, res[i]);
-          process_seeds<comp_ga,
-                        get_strand_code('+', a_rich)>(genome_size, max_candidates,
+                                                      pread, hits, res[i]);
+          prep_read<comp_ga>(reads[i], pread);
+          process_seeds<get_strand_code('+', a_rich)>(genome_size, max_candidates,
                                                       abismal_index, genome_st,
-                                                      reads[i], hits, res[i]);
+                                                      pread, hits, res[i]);
           const string read_rc(revcomp(reads[i]));
-          process_seeds<comp_ct,
-                        get_strand_code('-', a_rich)>(genome_size, max_candidates,
+          prep_read<comp_ct>(read_rc, pread);
+          process_seeds<get_strand_code('-', a_rich)>(genome_size, max_candidates,
                                                       abismal_index, genome_st,
-                                                      read_rc, hits, res[i]);
-          process_seeds<comp_ga,
-                        get_strand_code('-', t_rich)>(genome_size, max_candidates,
+                                                      pread, hits, res[i]);
+          prep_read<comp_ga>(read_rc, pread);
+          process_seeds<get_strand_code('-', t_rich)>(genome_size, max_candidates,
                                                       abismal_index, genome_st,
-                                                      read_rc, hits, res[i]);
+                                                      pread, hits, res[i]);
         }
     }
     total_mapping_time += (omp_get_wtime() - start_time);
@@ -787,7 +800,7 @@ map_single_ended_rand(const bool VERBOSE,
 }
 
 
-template <cmp_t (*cmp)(const char, const char),
+template <const bool cmp,
           const uint8_t strand_code1, const uint8_t strand_code2, class T>
 void
 map_pe_batch(const vector<string> &reads1, const vector<string> &reads2,
@@ -806,22 +819,26 @@ map_pe_batch(const vector<string> &reads1, const vector<string> &reads2,
 
 #pragma omp parallel
   {
+    Read pread;
     vector<uint32_t> hits;
     hits.reserve(max_candidates);
 #pragma omp for
     for (size_t i = 0; i < reads1.size(); ++i)
-      if (!reads1[i].empty())
-        process_seeds<cmp, strand_code1>(genome_size, max_candidates,
-                                         abismal_index, genome_st, reads1[i],
-                                         hits, res1[i]);
+      if (!reads1[i].empty()) {
+        prep_read<cmp>(reads1[i], pread);
+        process_seeds<strand_code1>(genome_size, max_candidates,
+                                    abismal_index, genome_st, pread,
+                                    hits, res1[i]);
+      }
 
 #pragma omp for
     for (size_t i = 0; i < reads2.size(); ++i)
       if (!reads2[i].empty()) {
         const string read_rc(revcomp(reads2[i]));
-        process_seeds<cmp, strand_code2>(genome_size, max_candidates,
-                                         abismal_index, genome_st, read_rc,
-                                         hits, res2[i]);
+        prep_read<cmp>(read_rc, pread);
+        process_seeds<strand_code2>(genome_size, max_candidates,
+                                    abismal_index, genome_st, pread,
+                                    hits, res2[i]);
       }
   }
 }
@@ -840,9 +857,7 @@ select_maps(const string &read1, const string &read2,
 }
 
 
-template <cmp_t (*pos_cmp)(const char, const char),
-          cmp_t (*neg_cmp)(const char, const char),
-          conversion_type conv>
+template <const bool cmp, conversion_type conv>
 void
 map_paired_ended(const bool VERBOSE,
                  const string &reads_file1,
@@ -887,7 +902,7 @@ map_paired_ended(const bool VERBOSE,
       bests[i].reset();
     }
 
-    map_pe_batch<pos_cmp,
+    map_pe_batch<cmp,
                  get_strand_code('+', conv),
                  get_strand_code('-', flip_conv(conv))>(reads1, reads2,
                                                         max_candidates,
@@ -898,7 +913,7 @@ map_paired_ended(const bool VERBOSE,
       select_maps<false>(reads1[i], reads2[i], res1[i], res2[i],
                          res_se1[i], res_se2[i], bests[i]);
 
-    map_pe_batch<neg_cmp,
+    map_pe_batch<!cmp,
                  get_strand_code('+', flip_conv(conv)),
                  get_strand_code('-', conv)>(reads2, reads1, max_candidates,
                                              abismal_index, res2, res1);
@@ -1114,6 +1129,10 @@ int main(int argc, const char **argv) {
     AbismalIndex abismal_index;
     const double start_time = omp_get_wtime();
     abismal_index.read(index_file);
+    transform(begin(abismal_index.genome), end(abismal_index.genome),
+              begin(abismal_index.genome),
+              [](const uint8_t x) {return encode_dna_four_bit(x);});
+
     const double end_time = omp_get_wtime();
     if (VERBOSE)
       cerr << "[loading time: " << (end_time - start_time) << "]" << endl;
@@ -1136,21 +1155,20 @@ int main(int argc, const char **argv) {
 
     if (reads_file2.empty()) {
       if (GA_conversion || pbat_mode)
-        map_single_ended<comp_ga, comp_ct, a_rich>(VERBOSE, reads_file, batch_size,
-                                                   max_candidates, abismal_index,
-                                                   se_stats, out);
+        map_single_ended<comp_ga, a_rich>(VERBOSE, reads_file, batch_size,
+                                          max_candidates, abismal_index,
+                                          se_stats, out);
       else if (random_pbat)
         map_single_ended_rand(VERBOSE, reads_file, batch_size, max_candidates,
                               abismal_index, se_stats, out);
       else
-        map_single_ended<comp_ct, comp_ga, t_rich>(VERBOSE, reads_file, batch_size,
-                                                   max_candidates, abismal_index,
-                                                   se_stats, out);
+        map_single_ended<comp_ct, t_rich>(VERBOSE, reads_file, batch_size,
+                                          max_candidates, abismal_index,
+                                          se_stats, out);
     }
     else {
       if (pbat_mode)
-        map_paired_ended<comp_ga,
-                         comp_ct, a_rich>(VERBOSE, reads_file, reads_file2,
+        map_paired_ended<comp_ga, a_rich>(VERBOSE, reads_file, reads_file2,
                                           batch_size, max_candidates,
                                           abismal_index, pe_stats, out);
       else if (random_pbat)
@@ -1158,8 +1176,7 @@ int main(int argc, const char **argv) {
                               batch_size, max_candidates,
                               abismal_index, pe_stats, out);
       else
-        map_paired_ended<comp_ct,
-                         comp_ga, t_rich>(VERBOSE, reads_file, reads_file2,
+        map_paired_ended<comp_ct, t_rich>(VERBOSE, reads_file, reads_file2,
                                           batch_size, max_candidates,
                                           abismal_index, pe_stats, out);
     }

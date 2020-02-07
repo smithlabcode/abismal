@@ -118,4 +118,19 @@ shift_hash_key(const char c, size_t &hash_key) {
   hash_key = ((hash_key << 1) | get_bit(c)) & seed::hash_mask;
 }
 
+// A/T nucleotide to 1-bit number
+inline uint32_t
+get_bit_4bit(const uint8_t nt) {return (nt & 5) == 0;}
+
+template <class T>
+inline void
+get_1bit_hash_4bit(T r, uint32_t &k) {
+  const auto lim = r + seed::key_weight;
+  while (r != lim) {
+    k <<= 1;
+    k += get_bit_4bit(*r);
+    ++r;
+  }
+}
+
 #endif
