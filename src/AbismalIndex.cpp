@@ -50,10 +50,6 @@ template <typename nuc_type>
 bool
 invalid_base(const nuc_type &x) {return x == 15;/*N*/}
 
-// A/T nucleotide to 1-bit number
-inline uint32_t
-get_bit_4bit(const uint8_t nt) {return (nt & 5) == 0;}
-
 inline void
 shift_hash_key_4bit(const uint8_t c, size_t &hash_key) {
   hash_key = ((hash_key << 1) | get_bit_4bit(c)) & seed::hash_mask;
