@@ -140,7 +140,7 @@ struct se_result {
   char strand() const {return rc() ? '-' : '+';}
   void flip_strand() {strand_code = flip_strand_code(strand_code);}
   bool operator<(const se_result &rhs) const {return diffs < rhs.diffs;}
-  void reset() {diffs = max_diffs + 1; ambig = false;}
+  void reset() {diffs = invalid_hit_diffs; ambig = false;}
   bool valid_hit() const {return diffs < invalid_hit_diffs;}
   bool valid() const {return diffs <= max_diffs;}
   bool should_do_alignment (const score_t mismatch_diffs) const {
