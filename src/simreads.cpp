@@ -21,6 +21,7 @@
 #include "OptionParser.hpp"
 
 #include "AbismalIndex.hpp"
+#include "cigar_utils.hpp"
 
 #include <iostream>
 #include <fstream>
@@ -30,153 +31,335 @@
 #include <random>
 #include <functional>
 
+#include <unistd.h>
+
 using std::vector;
 using std::runtime_error;
 using std::string;
 using std::cerr;
 using std::endl;
 using std::function;
-using std::bind;
+using std::istream;
+using std::ostream;
+using std::ifstream;
+using std::ofstream;
+using std::ostringstream;
+using std::istringstream;
 using std::to_string;
 
-inline char
-random_base(function<double()> &unif) {
- return int2base(static_cast<unsigned>(100*unif()) % 4);
+char random_base() {return "ACGT"[rand() % 4];}
+
+
+static string
+format_fastq_record(const string &name, const string &read) {
+  assert(!name.empty());
+  ostringstream oss;
+  oss << '@' << name << endl << read << endl
+      << '+' << endl << string(read.length(), 'B');
+  return oss.str();
 }
 
-inline void
-put_different_base(char &base, function<double()> &unif) {
-  const char orig = base;
-  do {
-    base = random_base(unif);
-  } while (base == orig);
+
+struct FragInfo {
+  void set_sequential_name() {
+    name = "read" + to_string(frag_count++);
+  }
+  string
+  read1(const size_t read_length) const {
+    assert(!name.empty());
+    string read = seq.substr(0, read_length);
+    for (size_t i = 0; i < read_length - read.length(); ++i)
+      read += random_base();
+    return format_fastq_record(name + "_1", read);
+  }
+  string
+  read2(const size_t read_length) const {
+    assert(!name.empty());
+    string read(seq);
+    revcomp_inplace(read);
+    read = read.substr(0, read_length);
+    for (size_t i = 0; i < read_length - read.length(); ++i)
+      read += random_base();
+    return format_fastq_record(name + "_2", read);
+  }
+  void
+  erase_info_through_insert(const size_t read_length) {
+    const size_t orig_ref_len = end_pos - start_pos;
+    if (2*read_length < seq.length()) {
+      seq = seq.substr(0, read_length) +
+        seq.substr(seq.length() - read_length, read_length);
+      string cigar2(cigar);
+      truncate_cigar_q(cigar, read_length);
+      reverse_cigar(begin(cigar2), end(cigar2));
+      truncate_cigar_q(cigar2, read_length);
+      reverse_cigar(begin(cigar2), end(cigar2));
+      const size_t rseq_ops = cigar_rseq_ops(cigar) + cigar_rseq_ops(cigar2);
+      cigar = cigar + to_string(orig_ref_len - rseq_ops) + "N" + cigar2;
+    }
+  }
+  void
+  remove_cigar_match_symbols() {
+    replace(begin(cigar), end(cigar), '=', 'M');
+    merge_equal_neighbor_cigar_ops(cigar);
+  }
+  void
+  bisulfite_conversion() {
+    if (pbat) replace(begin(seq), end(seq), 'G', 'A');
+    else replace(begin(seq), end(seq), 'C', 'T');
+  }
+
+  string chrom;
+  size_t start_pos;
+  size_t end_pos;
+  string name;
+  double score;
+  char strand;
+  string seq;
+  string cigar;
+
+  static bool pbat;
+  static size_t frag_count;
+};
+bool FragInfo::pbat = false;
+size_t FragInfo::frag_count = 0;
+
+
+ostream &
+operator<<(ostream &out, FragInfo &the_info) {
+  return out << the_info.chrom << '\t' << the_info.start_pos << '\t'
+             << the_info.end_pos << '\t' << the_info.name << '\t'
+             << the_info.score << '\t' << the_info.strand << '\t'
+             << the_info.seq << '\t' << the_info.cigar;
 }
 
+istream &
+operator>>(istream &in, FragInfo &the_info) {
+  string line;
+  getline(in, line);
+  istringstream iss;
+  iss.rdbuf()->pubsetbuf(&line[0], line.length());
+  return iss >> the_info.chrom >> the_info.start_pos >> the_info.end_pos
+             >> the_info.name >> the_info.score >> the_info.strand
+             >> the_info.seq >> the_info.cigar;
+}
+
+
+// extract the position of the fragment checking all bases are valid
 static void
-sim_frag(const string &genome, const size_t frag_len,
-         string &the_frag, size_t &pos) {
+sim_frag_position(const string &genome, const size_t frag_len,
+                  string &the_frag, size_t &the_position) {
+  static auto is_invalid = [](const char c) {return !valid_base(c);};
 
   const size_t lim = genome.length() - frag_len + 1;
-
   do {
-    pos = rand() % lim;
-    the_frag = string(begin(genome) + pos,
-                      begin(genome) + pos + frag_len);
+    the_position = rand() % lim;
+    the_frag = string(begin(genome) + the_position,
+                      begin(genome) + the_position + frag_len);
   }
-  while (count(begin(the_frag), end(the_frag), 'N') > 0);
-}
-
-static void
-mutate_frag(const double mutation_rate, const size_t max_mutations,
-            function<double()> &unif,
-            string &the_frag,
-            size_t &n_mutations) {
-  for (size_t i = 0; n_mutations < max_mutations && i < the_frag.length(); ++i)
-    if (unif() < mutation_rate) {
-      put_different_base(the_frag[i], unif);
-      ++n_mutations;
-    }
-}
-
-static void
-insert_frag(const double insertion_rate, const size_t max_insertions,
-            function<double()> &unif,
-            string &the_frag,
-            size_t &n_insertions) {
-  for (size_t i = 0; i < max_insertions; ++i)
-    if (unif() < insertion_rate) {
-      const size_t the_idx =
-        static_cast<unsigned>(100.0*unif()) % the_frag.size();
-      the_frag.insert(begin(the_frag) + the_idx, random_base(unif));
-      ++n_insertions;
-    }
-}
-
-static void
-delete_frag(const double deletion_rate, const size_t max_deletions,
-            function<double()> &unif,
-            string &the_frag,
-            size_t &n_deletions) {
-  for (size_t i = 0; i < max_deletions; ++i)
-    if (unif() < deletion_rate) {
-      const size_t the_idx =
-        static_cast<unsigned>(100.0*unif()) % the_frag.size();
-      the_frag.erase(begin(the_frag) + the_idx);
-      ++n_deletions;
-    }
+  while (find_if(begin(the_frag), end(the_frag), is_invalid) != end(the_frag));
 }
 
 
-
-
-static void
-sim_reads(string the_frag, const size_t frag_pos,
-          size_t read_len,
-          string &read1, string &read2, size_t &read2_pos) {
-
-  read_len = std::min(read_len, the_frag.length());
-
-  read1 = the_frag.substr(0, read_len);
-
-  revcomp_inplace(the_frag);
-  read2 = the_frag.substr(0, read_len);
-  read2_pos = frag_pos + (the_frag.length() - read_len);
+// simulate from a uniform distribution in a range
+static size_t
+sim_frag_length(const size_t min_length, const size_t max_length) {
+  assert(max_length > min_length);
+  const size_t diff = max_length - min_length;
+  return min_length + (rand() % diff);
 }
 
-static void
-sim_conversion(const bool pbat, string &read1, string &read2) {
-  if (pbat) {
-    replace(begin(read1), end(read1), 'G', 'A');
-    replace(begin(read2), end(read2), 'C', 'T');
+
+struct FragSampler {
+  FragSampler(const string &g, const ChromLookup c, const char sc,
+              const size_t milen, const size_t malen) :
+    genome(g), cl(c), strand_code(sc), min_length(milen), max_length(malen) {}
+  void
+  sample_fragment(FragInfo &the_info) const {
+    const size_t frag_len = sim_frag_length(min_length, max_length);
+    sim_frag_position(genome, frag_len, the_info.seq, the_info.start_pos);
+
+    uint32_t offset = 0, chrom_idx = 0;
+    cl.get_chrom_idx_and_offset(the_info.start_pos, chrom_idx, offset);
+    the_info.chrom = cl.names[chrom_idx];
+    the_info.start_pos = offset;
+
+    the_info.end_pos = the_info.start_pos + frag_len;
+    the_info.set_sequential_name(); // default
+    the_info.strand = sim_strand(); // based on frag code
+    if (the_info.strand == '-')
+      revcomp_inplace(the_info.seq);
+    the_info.cigar = to_string(frag_len) + "M"; // default, no muts
+
+    the_info.bisulfite_conversion();
   }
-  else {
-    replace(begin(read1), end(read1), 'C', 'T');
-    replace(begin(read2), end(read2), 'G', 'A');
+  char sim_strand() const {
+    if (strand_code == 'f') return '+';
+    else if (strand_code == 'r') return '-';
+    else if (strand_code == 'b') return (rand() & 1) ? '+' : '-';
+    else throw runtime_error("bad strand code: " + to_string(strand_code));
+    return '\0';
+  }
+  const string &genome;
+  ChromLookup cl;
+  char strand_code;
+  size_t min_length;
+  size_t max_length;
+};
+
+
+ostream &
+operator<<(ostream &out, FragSampler &the_samp) {
+  return out << "strand_code=" << the_samp.strand_code << '\n'
+             << "min_length=" << the_samp.min_length << '\n'
+             << "max_length=" << the_samp.max_length << '\n'
+             << "cl=" << endl
+             << the_samp.cl.tostring();
+}
+
+
+struct FragMutator {
+  FragMutator(const double m, const double s, const double i, const double d) :
+    mutation_rate(m), substitution_rate(s),
+    insertion_rate(i), deletion_rate(d) {
+    const double total = substitution_rate + insertion_rate + deletion_rate;
+    substitution_rate /= total;
+    insertion_rate /= total;
+    deletion_rate /= total;
+    insertion_rate += substitution_rate;
+    deletion_rate += insertion_rate;
+  }
+  void mutate(FragInfo &the_info) const {
+    string seq, cigar;
+    size_t i = 0;
+    the_info.score = 0;
+    while (i < the_info.seq.length()) {
+      // select a mutation or not
+      const char mut = sample_mutation();
+      if (mut == 'I') {
+        cigar += "I";
+        seq += random_base();
+      }
+      else if (mut == 'D') {
+        cigar += "D";
+        ++i;
+      }
+      else if (mut == 'M') {
+        cigar += "M";
+        seq += random_base();
+        ++the_info.score;
+        ++i;
+      }
+      else { //if (mut == '=') {
+        cigar += "=";
+        seq += the_info.seq[i];
+        ++i;
+      }
+    }
+    the_info.cigar.resize(2*cigar.size());
+    compress_cigar(begin(cigar), end(cigar), the_info.cigar);
+    swap(seq, the_info.seq);
+  }
+  char sample_mutation() const {
+    double x  = (double)rand()/(double)RAND_MAX;
+    if (x > mutation_rate) return '=';
+    else {
+      double y  = (double)rand()/(double)RAND_MAX;
+      if (y < substitution_rate) return 'M';
+      else if (y < insertion_rate) return 'I';
+      else return 'D';
+    }
+  }
+  string tostring() const {
+    ostringstream oss;
+    oss << "mutation_rate=" << mutation_rate << endl
+        << "substitution_rate=" << substitution_rate << endl
+        << "insertion_rate=" << insertion_rate << endl
+        << "deletion_rate=" << deletion_rate;
+    return oss.str();
+  }
+  double mutation_rate;
+  double substitution_rate;
+  double insertion_rate;
+  double deletion_rate;
+};
+
+
+ostream &
+operator<<(ostream &out, FragMutator &the_mut) {
+  return out << the_mut.tostring();
+}
+
+
+static void
+extract_change_type_vals(const string &change_type_vals,
+                         double &substitution_rate,
+                         double &insertion_rate,
+                         double &deletion_rate) {
+  if (!change_type_vals.empty()) {
+    istringstream iss(change_type_vals);
+    char x;
+    iss >> substitution_rate;
+    iss >> x;
+    iss >> insertion_rate;
+    iss >> x;
+    iss >> deletion_rate;
   }
 }
 
 
 int main(int argc, const char **argv) {
-  srand (time(NULL));
+
   try {
     string chrom_file;
-    string outfile1, outfile2;
+    string output_prefix;
+    string locations_file;
+
     bool VERBOSE = false;
+    bool write_locations = false;
+    bool single_end = false;
+    bool show_cigar_matches = false;
 
     size_t n_reads = 100;
-    size_t read_len = 100;
-    size_t frag_len = 250;
+    size_t read_length = 100;
+    size_t min_frag_len = 100;
+    size_t max_frag_len = 250;
 
-    bool pbat = false;
-    char strand_arg = 'f';
+    char strand_arg = 'b';
 
     size_t rng_seed = std::numeric_limits<size_t>::max();
 
     double mutation_rate = 0.0;
-    double insertion_rate = 0.0;
-    double deletion_rate = 0.0;
+    string change_type_vals;
+    double substitution_rate = 1.0;
+    double insertion_rate = 1.0;
+    double deletion_rate = 1.0;
+
     size_t max_mutations = std::numeric_limits<size_t>::max();
-    size_t max_insertions = 5;
-    size_t max_deletions = 5;
 
     /****************** COMMAND LINE OPTIONS ********************/
     OptionParser opt_parse(strip_path(argv[0]), "simulate reads for "
-                           "testing abismal", "<reference-genome-fasta>", 1);
+                           "testing walt2", "<reference-genome-fasta>", 1);
     opt_parse.set_show_defaults();
-    opt_parse.add_opt("out1", 'o', "output file end1", true, outfile1);
-    opt_parse.add_opt("out2", 'p', "output file end2", true, outfile2);
-    opt_parse.add_opt("len", 'l', "read length", false, read_len);
-    opt_parse.add_opt("frag", 'f', "fragment length", false, frag_len);
+    opt_parse.add_opt("out", 'o', "output file prefix", true, output_prefix);
+    opt_parse.add_opt("single", '\0', "output single end", false, single_end);
+    opt_parse.add_opt("loc", '\0', "write locations", false, write_locations);
+    opt_parse.add_opt("read-len", 'l', "read length", false, read_length);
+    opt_parse.add_opt("min-fraglen", '\0', "min fragment length",
+                      false, min_frag_len);
+    opt_parse.add_opt("max-fraglen", '\0', "max fragment length",
+                      false, max_frag_len);
     opt_parse.add_opt("n-reads", 'n', "number of reads", false, n_reads);
     opt_parse.add_opt("mut", 'm', "mutation rate", false, mutation_rate);
-    opt_parse.add_opt("ins", 'i', "insertion rate", false, insertion_rate);
-    opt_parse.add_opt("del", 'd', "deletion rate", false, deletion_rate);
+    opt_parse.add_opt("show-matches", '\0', "show match symbols in cigar",
+                      false, show_cigar_matches);
+    opt_parse.add_opt("changes", 'c',
+                      "change types (comma sep relative vals)",
+                      false, change_type_vals);
     opt_parse.add_opt("max-mut", 'M', "max mutations", false, max_mutations);
-    opt_parse.add_opt("max-in", 'I', "max insertions", false, max_insertions);
-    opt_parse.add_opt("max-del", 'D', "max deletions", false, max_deletions);
-    opt_parse.add_opt("pbat", 'a', "pbat", false, pbat);
+    opt_parse.add_opt("pbat", 'a', "pbat", false, FragInfo::pbat);
     opt_parse.add_opt("strand", 's', "strand {f, r, b}", false, strand_arg);
-    opt_parse.add_opt("seed", '\0', "rng seed (default: from system)", false, rng_seed);
+    opt_parse.add_opt("seed", '\0', "rng seed (default: from system)",
+                      false, rng_seed);
     opt_parse.add_opt("verbose", 'v', "print more run info", false, VERBOSE);
     vector<string> leftover_args;
     opt_parse.parse(argc, argv, leftover_args);
@@ -199,111 +382,90 @@ int main(int argc, const char **argv) {
     const string genome_file(leftover_args.front());
     /****************** END COMMAND LINE OPTIONS *****************/
 
+    extract_change_type_vals(change_type_vals,
+                             substitution_rate, insertion_rate, deletion_rate);
+
     /* standard mersenne_twister_engine seeded with rd()*/
     if (rng_seed == std::numeric_limits<size_t>::max()) {
-      std::random_device rd;
-      rng_seed = rd();
+      rng_seed = time(0) + getpid();
     }
     if (VERBOSE)
       cerr << "rng seed: " << rng_seed << endl;
-    std::mt19937 gen(rng_seed);
-    std::uniform_real_distribution<double> unif(0.0, 1.0);
-    function<double()> distr(bind(unif, std::ref(gen)));
+    srand(rng_seed);
 
-    std::ifstream in(genome_file);
-    if (!in)
-      throw runtime_error("bad genome file: " + genome_file);
 
     if (VERBOSE)
       cerr << "[loading genome]" << endl;
+    std::ifstream in(genome_file);
+    if (!in)
+      throw runtime_error("bad genome file: " + genome_file);
     string genome;
     ChromLookup cl;
     load_genome(genome_file, genome, cl);
+    transform(begin(genome), end(genome), begin(genome),
+              [](unsigned char c){return toupper(c);});
 
-    std::transform(begin(genome), end(genome),
-                   begin(genome), toupper);
 
-    std::ofstream out1(outfile1);
-    std::ofstream out2(outfile2);
-
-    ProgressBar progress(n_reads);
+    FragSampler frag_samp(genome, cl, strand_arg, min_frag_len, max_frag_len);
     if (VERBOSE)
-      progress.report(cerr, 0);
-    for (size_t i = 0; i < n_reads; ++i) {
+      cerr << "[constructed fragment sampler]" << endl
+           << frag_samp << endl;
+    if (VERBOSE)
+      cerr << "[simulating clean frags]" << endl;
+    vector<FragInfo> the_info(n_reads);
+    for (size_t i = 0; i < n_reads; ++i)
+      frag_samp.sample_fragment(the_info[i]);
 
-      if (VERBOSE && progress.time_to_report(i))
-        progress.report(cerr, i);
 
-      // simulate a fragment and a position
-      string the_frag;
-      size_t frag_pos = 0;
-      sim_frag(genome, frag_len, the_frag, frag_pos);
+    if (VERBOSE)
+      cerr << "[mutating the frags]" << endl;
+    FragMutator frag_mut(mutation_rate, substitution_rate,
+                         insertion_rate, deletion_rate);
+    if (VERBOSE)
+      cerr << frag_mut << endl;
+    for (size_t i = 0; i < the_info.size(); ++i)
+      frag_mut.mutate(the_info[i]);
 
-      size_t n_mutations = 0;
-      if (mutation_rate > 0.0)
-        mutate_frag(mutation_rate, max_mutations, distr,
-                    the_frag, n_mutations);
 
-      size_t n_insertions = 0;
-      if (insertion_rate > 0.0)
-        insert_frag(insertion_rate, max_insertions, distr,
-                    the_frag, n_insertions);
+    if (!show_cigar_matches)
+      for (size_t i = 0; i < the_info.size(); ++i)
+        the_info[i].remove_cigar_match_symbols();
 
-      size_t n_deletions = 0;
-      if (deletion_rate > 0.0)
-        delete_frag(deletion_rate, max_deletions, distr,
-                    the_frag, n_deletions);
 
-      // flip the strand of the fragment if appropriate
-      char strand = '+';
-      if (strand_arg == 'r' ||
-          (strand_arg == 'b' && distr() > 0.5)) {
-        revcomp_inplace(the_frag);
-        strand = '-';
+    if (write_locations) {
+      const string locations_file = output_prefix + ".mr";
+      if (VERBOSE)
+        cerr << "[writing frag locations: " << locations_file << "]" << endl;
+      ofstream loc_out(locations_file);
+      if (!loc_out)
+        throw runtime_error("bad locations file: " + locations_file);
+      for (size_t i = 0; i < the_info.size(); ++i) {
+        the_info[i].erase_info_through_insert(read_length);
+        loc_out << the_info[i] << endl;
       }
-
-      // extract the reads from the ends of the frag
-      string read1, read2;
-      size_t read2_pos = 0;
-      sim_reads(the_frag, frag_pos, read_len,
-                read1, read2, read2_pos);
-
-      // simulate the conversion
-      sim_conversion(false, read1, read2);
-
-      size_t read1_pos = frag_pos;
-      if (strand == '-')
-        std::swap(read1_pos, read2_pos);
-
-      const string read_prefix = "@read" + to_string(i);
-      const string read_suffix = to_string(n_mutations) + ":" +
-                                 to_string(n_insertions) + ":" +
-                                 to_string(n_deletions);
-
-      uint32_t offset = 0, chrom_idx = 0;
-      cl.get_chrom_idx_and_offset(read1_pos, chrom_idx, offset);
-      out1 << read_prefix << ":"
-           << cl.names[chrom_idx] << ":"
-           << offset << ":"
-           << strand << ":"
-           << read_suffix << endl
-           << read1 << endl
-           << "+" << endl
-           << string(read_len, 'B') << endl;
-
-      const char strand_two = (strand == '+' ? '-' : '+');
-      cl.get_chrom_idx_and_offset(read2_pos, chrom_idx, offset);
-      out2 << read_prefix << ":"
-           << cl.names[chrom_idx] << ":"
-           << offset << ":"
-           << strand_two << ":"
-           << read_suffix << endl
-           << read2 << endl
-           << "+" << endl
-           << string(read_len, 'B') << endl;
     }
+
+
+    const string read1_outfile = output_prefix + "_1.fq";
     if (VERBOSE)
-      progress.report(cerr, n_reads);
+      cerr << "[writing read1 fastq: " << read1_outfile << "]" << endl;
+    ofstream read1_out(read1_outfile);
+    if (!read1_out)
+      throw runtime_error("bad output file: " + read1_outfile);
+    for (size_t i = 0; i < the_info.size(); ++i)
+      read1_out << the_info[i].read1(read_length) << endl;
+
+
+    if (!single_end) {
+      const string read2_outfile = output_prefix + "_2.fq";
+      if (VERBOSE)
+        cerr << "[writing read2 fastq: " << read2_outfile << "]" << endl;
+      ofstream read2_out(read2_outfile);
+      if (!read2_out)
+        throw runtime_error("bad output file: " + read2_outfile);
+      for (size_t i = 0; i < the_info.size(); ++i)
+        read2_out << the_info[i].read2(read_length) << endl;
+    }
   }
   catch (const runtime_error &e) {
     cerr << e.what() << endl;
