@@ -1118,7 +1118,7 @@ int main(int argc, const char **argv) {
     /****************** END COMMAND LINE OPTIONS *****************/
 
     se_result::max_diffs = max_diffs;
-    se_result::invalid_hit_diffs = invalid_hit_diffs;
+    se_result::invalid_hit_diffs = max(max_diffs, invalid_hit_diffs);
 
     omp_set_num_threads(n_threads);
 
