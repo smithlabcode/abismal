@@ -202,35 +202,34 @@ format_se(se_result res, const ChromLookup &cl,
   uint32_t offset = 0, chrom_idx = 0;
 
   // GS TODO: add information on second best hit, if necessary
-  if (cl.get_chrom_idx_and_offset(res.first.pos, read.size(), chrom_idx, offset)) {
-    if (res.first.pos > 0){
-      if (res.first.a_rich()) { // since SE, this is only for GA conversion
-        revcomp_inplace(read);
-        res.first.flip_strand();
-      }
-      out << cl.names[chrom_idx] << '\t'
-          << offset << '\t'
-          << offset + read.length() << '\t'
-          << read_name << '\t'
-          << res.first.diffs << '\t'
-          << res.first.strand() << '\t'
-          << read;
-      if (res.second.pos > 0) {
-        if (cl.get_chrom_idx_and_offset(res.second.pos, read.size(), chrom_idx, offset)) {
-          if (res.second.a_rich()) {
-            revcomp_inplace(read);
-            res.second.flip_strand();
-          }
-          out << '\t'
-              << cl.names[chrom_idx] << ':'
-              << offset << '-'
-              << offset + read.length();
-        }
-      }
-      out << '\n';
-    } else {
-      out << read_name << '\t' << read << '\n';
+  if (res.first.pos > 0 &&
+      cl.get_chrom_idx_and_offset(res.first.pos, read.size(), chrom_idx, offset)) {
+    if (res.first.a_rich()) { // since SE, this is only for GA conversion
+      revcomp_inplace(read);
+      res.first.flip_strand();
     }
+    out << cl.names[chrom_idx] << '\t'
+        << offset << '\t'
+        << offset + read.length() << '\t'
+        << read_name << '\t'
+        << res.first.diffs << '\t'
+        << res.first.strand() << '\t'
+        << read;
+    if (res.second.pos > 0) {
+      if (cl.get_chrom_idx_and_offset(res.second.pos, read.size(), chrom_idx, offset)) {
+        if (res.second.a_rich()) {
+          revcomp_inplace(read);
+          res.second.flip_strand();
+        }
+        out << '\t'
+            << cl.names[chrom_idx] << ':'
+            << offset << '-'
+            << offset + read.length();
+      }
+    }
+    out << '\n';
+  } else {
+    out << read_name << '\t' << read << '\n';
   }
 }
 
