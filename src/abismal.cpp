@@ -148,7 +148,7 @@ struct se_element {
   void reset() { diffs = invalid_hit_diffs + 1; }
 
   bool is_better_than (const se_element &rhs) const {
-    return rhs.diffs < diffs;
+    return diffs < rhs.diffs;
   }
 
   bool is_equal_to (const se_element &rhs) const {
@@ -373,9 +373,6 @@ get_pe_overlap(GenomicRegion &gr,
         read1.resize(overlap);
       }
       else {
-        cerr << (rc? "rc":"nn") << "\t" << r_s1 << '\t'
-             << r_e1 << '\t' << r_s2 << '\t' << r_e2 << '\t'
-             << spacer << '\t' << head << '\t' << overlap << '\n';
         throw runtime_error("error: format_pe fall through");
       }
     }
