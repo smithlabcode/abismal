@@ -30,37 +30,39 @@
 // operation between letters in a sequence. This function currently
 // returns a boolean value, so only computes longest common
 // subsequence.
-typedef int16_t scr_t;
+typedef int16_t score_t;
 
 using std::cerr;
 using std::endl;
 using std::max;
 
-template <scr_t (*scr_fun)(const char, const char),
-          scr_t indel_pen = -1>
+template <score_t (*scr_fun)(const char, const uint8_t),
+          score_t indel_pen = -1>
 struct AbismalAlign {
 
-  AbismalAlign(const std::vector<uint8_t> &target_sequence,
-            const uint16_t max_query_length, const uint16_t max_off_diag);
-  scr_t align(const std::string &query, uint32_t &t_pos, uint32_t &len,
+  AbismalAlign(const std::vector<uint8_t>::const_iterator &target_start,
+               const uint32_t target_size);
+  score_t align(const std::vector<char> &query, uint32_t &t_pos, uint32_t &len,
               std::string &cigar);
 
-  std::vector<scr_t> table;
-  std::vector<char> traceback;
-  std::vector<char> cigar_scratch;
+  std::vector<score_t> table;
+  std::vector<uint8_t> traceback;
+  std::vector<uint8_t> cigar_scratch;
   const std::vector<uint8_t>::const_iterator target;
   const size_t t_sz;
   const size_t q_sz_max;
   const size_t bw;
+
+  static const uint16_t max_off_diag = 2;
+  static const uint16_t max_query_length = 1000;
 };
 
-template <scr_t (*scr_fun)(const char, const char),
-          scr_t indel_pen>
-AbismalAlign<scr_fun,
-          indel_pen>::AbismalAlign(const std::vector<uint8_t> &target_sequence,
-                                const uint16_t max_query_length,
-                                const uint16_t max_off_diag) :
-            target(std::begin(target_sequence)), t_sz(target_sequence.size()),
+template <score_t (*scr_fun)(const char, const uint8_t),
+          score_t indel_pen>
+AbismalAlign<scr_fun, indel_pen>::AbismalAlign(
+    const std::vector<uint8_t>::const_iterator &target_start,
+    const uint32_t target_size) : 
+            target(target_start), t_sz(target_size),
             q_sz_max(max_query_length), bw(2*max_off_diag + 1) {
   // size of alignment matrix and traceback matrix is maximum query
   // length times the width of the band around the diagonal
@@ -71,30 +73,30 @@ AbismalAlign<scr_fun,
 }
 
 // for making the CIGAR string
-static const char left_symbol = 'I';
-static const char above_symbol = 'D';
-static const char diag_symbol = 'M';
-static const char soft_clip_symbol = 'S';
+static const uint8_t left_symbol = 'I';
+static const uint8_t above_symbol = 'D';
+static const uint8_t diag_symbol = 'M';
+static const uint8_t soft_clip_symbol = 'S';
 
 static inline bool
-is_deletion(const char c) {
+is_deletion(const uint8_t c) {
   return c == above_symbol; // consumes reference
 }
 static inline bool
-is_insertion(const char c) {
+is_insertion(const uint8_t c) {
   return c == left_symbol; // does not consume reference
 }
 
 
 static inline void
 get_traceback(const size_t n_col,
-              const std::vector<scr_t> &table,
-              const std::vector<char> &traceback,
-              std::vector<char>::iterator &c_itr,
+              const std::vector<score_t> &table,
+              const std::vector<uint8_t> &traceback,
+              std::vector<uint8_t>::iterator &c_itr,
               size_t &the_row, size_t &the_col) {
-  scr_t score = table[the_row*n_col + the_col];
+  score_t score = table[the_row*n_col + the_col];
   while (score > 0) {
-    const char the_arrow = traceback[the_row*n_col + the_col];
+    const uint8_t the_arrow = traceback[the_row*n_col + the_col];
     if (is_deletion(the_arrow)) {
       --the_row;
       ++the_col;
@@ -111,8 +113,8 @@ get_traceback(const size_t n_col,
 }
 
 
-static scr_t
-get_best_score(const std::vector<scr_t> &table, const size_t n_col,
+static score_t
+get_best_score(const std::vector<score_t> &table, const size_t n_col,
                const size_t t_lim, const size_t t_shift,
                size_t &best_i, size_t &best_j) {
   auto best_cell_itr = std::max_element(begin(table), end(table));
@@ -122,11 +124,11 @@ get_best_score(const std::vector<scr_t> &table, const size_t n_col,
   return *best_cell_itr;
 }
 
-template <scr_t (*scr_fun)(const char, const char),
+template <score_t (*scr_fun)(const char, const uint8_t),
           class T, class QueryConstItr, class U>
 void
 from_diag(T next_row, const T next_row_end, T cur_row,
-          QueryConstItr query_seq, char ref_base, U traceback) {
+          QueryConstItr query_seq, uint8_t ref_base, U traceback) {
   while (next_row != next_row_end) {
     auto score = scr_fun(*query_seq++, ref_base) + *cur_row++;
     if (score > *next_row) {
@@ -137,7 +139,7 @@ from_diag(T next_row, const T next_row_end, T cur_row,
   }
 }
 
-template <scr_t indel_pen, class T, class U>
+template <score_t indel_pen, class T, class U>
 void
 from_above(T above_itr, const T above_end, T target, U traceback) {
   while (above_itr != above_end) {
@@ -152,7 +154,7 @@ from_above(T above_itr, const T above_end, T target, U traceback) {
 
 // ADS: from_left is the same function as from_above, but uses
 // different order on arguments, so rewritten to be more intuitive.
-template <scr_t indel_pen, class T, class U>
+template <score_t indel_pen, class T, class U>
 void
 from_left(T left_itr, T target, const T target_end, U traceback) {
   while (target != target_end) {
@@ -167,16 +169,16 @@ from_left(T left_itr, T target, const T target_end, U traceback) {
 }
 
 
-template <scr_t (*scr_fun)(const char, const char), scr_t indel_pen>
-scr_t
-AbismalAlign<scr_fun, indel_pen>::align(const std::string &qseq,
-                                     uint32_t &t_pos, uint32_t &len,
-                                     std::string &cigar) {
+template <score_t (*scr_fun)(const char, const uint8_t), score_t indel_pen>
+score_t
+AbismalAlign<scr_fun, indel_pen>::align(const std::vector<char> &qseq,
+                                        uint32_t &t_pos, uint32_t &len,
+                                        std::string &cigar) {
 
   std::fill(std::begin(table), std::end(table), 0);
   std::fill(std::begin(traceback), std::end(traceback), ' ');
 
-  const size_t q_sz = qseq.length();
+  const size_t q_sz = qseq.size();
   const size_t t_beg = (t_pos > (bw - 1)/2 ? t_pos - (bw - 1)/2 : 0);
   const size_t t_shift = q_sz + bw;
   const size_t t_lim = std::min(t_shift, t_sz - t_beg); // iterations in target
@@ -207,7 +209,7 @@ AbismalAlign<scr_fun, indel_pen>::align(const std::string &qseq,
 
   // locate the end of the alignment as max score
   size_t the_row = 0, the_col = 0;
-  const scr_t r = get_best_score(table, bw, t_lim, t_shift, the_row, the_col);
+  const score_t r = get_best_score(table, bw, t_lim, t_shift, the_row, the_col);
 
   // soft clip "S" at the start of the (reverse) uncompressed cigar
   auto c_itr(std::begin(cigar_scratch));
@@ -220,7 +222,7 @@ AbismalAlign<scr_fun, indel_pen>::align(const std::string &qseq,
   // soft clip "S" at the end of the (reverse) uncompressed cigar
   const size_t soft_clip_top = (the_row + the_col) - (bw - 1);
   std::fill_n(c_itr, soft_clip_top, soft_clip_symbol);
-  len = qseq.length() - soft_clip_bottom - soft_clip_top;
+  len = qseq.size() - soft_clip_bottom - soft_clip_top;
   c_itr += soft_clip_top;
 
   // put the uncompressed cigar back in the forward orientation
