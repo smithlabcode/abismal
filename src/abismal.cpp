@@ -70,6 +70,12 @@ is_a_rich(const uint8_t strand_code) {return (strand_code & a_rich_mask) != 0;}
 constexpr bool
 is_rc(const uint8_t strand_code) {return (strand_code & rc_strand_mask) != 0;}
 
+typedef int16_t score_t;
+namespace align_scores {
+  const score_t match = 1,
+                mismatch = -1,
+                indel = -1;
+};
 
 struct ReadLoader {
   ReadLoader(const string &fn,
@@ -116,7 +122,6 @@ struct ReadLoader {
 };
 uint32_t ReadLoader::min_length = 32;
 
-typedef int16_t score_t;
 
 // type returned from atomic (e.g. nucleotide) comparisons
 typedef bool cmp_t;
@@ -791,11 +796,11 @@ prep_read(const string &r, Read &pread) {
                                    (r[i] == 'T' ? 'Y' : r[i]));
 }
 
-
 // the score is the opposite of the_comp: Match is 1, mismatch is 0
 score_t
 mismatch_score (const char q_base, const uint8_t t_base) {
-  return the_comp(q_base, t_base) ? 0 : 1;
+  return the_comp(q_base, t_base) ?
+    align_scores::mismatch : align_scores::match;
 }
 
 inline bool
@@ -876,9 +881,6 @@ map_single_ended(const bool VERBOSE,
   if (VERBOSE)
     progress.report(cerr, 0);
 
-  // align instance
-  const score_t indel_pen =  -1;
-
   double total_mapping_time = 0;
   double total_aligning_time = 0;
   while (rl.good()) {
@@ -928,7 +930,7 @@ map_single_ended(const bool VERBOSE,
     {
       Read pread;
       string tmp_cigar;
-      AbismalAlign<mismatch_score, indel_pen> aln(genome_st, genome_size);
+      AbismalAlign<mismatch_score, align_scores::indel> aln(genome_st, genome_size);
 
 #pragma omp for
       for (size_t i = 0; i < reads.size(); ++i)
@@ -982,11 +984,9 @@ map_single_ended_rand(const bool VERBOSE,
   if (VERBOSE)
     progress.report(cerr, 0);
 
-  // align instance
-  const score_t indel_pen = -1;
   const uint16_t max_query_length = 1000; // GS TODO: how does it affect speed?
   const uint16_t max_off_diag = 2;
-  AbismalAlign<mismatch_score, indel_pen> aln(genome_st, genome_size);
+  AbismalAlign<mismatch_score, align_scores::indel> aln(genome_st, genome_size);
 
   double total_mapping_time = 0;
   while (rl.good()) {
@@ -1130,8 +1130,6 @@ map_paired_ended(const bool VERBOSE,
   const uint32_t genome_size = abismal_index.genome.size();
   const Genome::const_iterator genome_st(begin(abismal_index.genome));
 
-  // GS TODO: add indel_pen to option parser
-  const score_t indel_pen = -1;
 
   ProgressBar progress(get_filesize(reads_file1), "mapping reads");
   if (VERBOSE)
@@ -1182,7 +1180,7 @@ map_paired_ended(const bool VERBOSE,
 #pragma omp parallel
     {
       Read pread;
-      AbismalAlign<mismatch_score, indel_pen> aln(genome_st, genome_size);
+      AbismalAlign<mismatch_score, align_scores::indel> aln(genome_st, genome_size);
 #pragma omp for
       for (size_t i = 0 ; i < n_reads; ++i)
         adjust_read(bests[i].first.r1, cigar1[i], reads1[i], pread, aln, cmp);
@@ -1236,9 +1234,8 @@ map_paired_ended_rand(const bool VERBOSE,
   // alignment stuff
   const uint32_t genome_size = abismal_index.genome.size();
   const Genome::const_iterator genome_st(begin(abismal_index.genome));
-  const score_t indel_pen = -1;
 
-  AbismalAlign<mismatch_score, indel_pen> aln(genome_st, genome_size);
+  AbismalAlign<mismatch_score, align_scores::indel> aln(genome_st, genome_size);
 
   ProgressBar progress(get_filesize(reads_file1), "mapping reads");
   if (VERBOSE)
