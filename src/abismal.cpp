@@ -72,7 +72,7 @@ is_rc(const uint8_t strand_code) {return (strand_code & rc_strand_mask) != 0;}
 
 typedef int16_t score_t;
 namespace align_scores {
-  const score_t match = 1,
+  static const score_t match = 1,
                 mismatch = -1,
                 indel = -1;
 };
@@ -342,7 +342,7 @@ chrom_and_posn(const ChromLookup &cl, const string &cig, const uint32_t p,
   return true;
 }
 
-void
+bool
 get_pe_overlap(GenomicRegion &gr,
                const bool rc,
                uint32_t r_s1, uint32_t r_e1, uint32_t chr1,
@@ -412,15 +412,14 @@ get_pe_overlap(GenomicRegion &gr,
         truncate_cigar_r(cig1, overlap);
         read1.resize(overlap);
       } else {
-        cerr << '\n' << gr << ' ' << rc << '\n';
-        cerr << r_s1 << ' ' << r_e1 << ' ' << chr1 << '\n';
-        cerr << r_s2 << ' ' << r_e2 << ' ' << chr2 << '\n';
-        cerr << read1 << ' ' << read2 << '\n';
-        cerr << cig1 << ' ' << cig2 << '\n';
-        throw runtime_error("error: format_pe fall through");
+        // GS TODO: this needs to be the criteria after the alignment
+        // is incorporated into select_output
+        // throw runtime_error("error: format_pe fall through");
+        return false;
       }
     }
   }
+  return true;
 }
 
 void
@@ -452,8 +451,11 @@ format_pe(const pe_result &res, const ChromLookup &cl,
                     res.first.strand());
 
     const string orig_cig1(cig1), orig_cig2(cig2);
-    get_pe_overlap(gr, res.first.rc(), r_s1, r_e1, chr1, r_s2, r_e2, chr2,
-                   read1, read2, cig1, cig2);
+
+    // GS TODO: this implies that the number of mr lines is not equal to the
+    // number of reads
+    if (!get_pe_overlap(gr, res.first.rc(), r_s1, r_e1, chr1, r_s2, r_e2, chr2,
+                        read1, read2, cig1, cig2)) return; //cowardly
 
     if (res.first.a_rich()) { // final revcomp if the first end was a-rich
       gr.set_strand(gr.get_strand() == '+' ? '-' : '+');
@@ -839,19 +841,17 @@ adjust_read(se_element &res, string &cigar, string read,
     uint32_t len; // the region of the read the alignment spans
     string cand_cigar;
     const score_t the_score = aln.align(pread, res.pos, len, cand_cigar);
-    const score_t cand_diffs = static_cast<score_t>(len) - the_score;
+
+    // /2 because on -1 mismatch, the score goes down twice
+    const score_t cand_diffs = (static_cast<score_t>(len) - the_score) / 2;
 
     if (accept_alignment(len, cand_diffs, res.diffs)) {
       res.diffs = cand_diffs;
       cigar = cand_cigar;
-    } else {
-
-      // GS: this error only makes sense if mismatch = 0, for other scoring
-      // values, optimal alignment can be < number of matches.
-      if (len >= se_element::min_aligned_length)
-        throw runtime_error("read alignment fall through");
     }
-  } else {
+  }
+
+  else {
     // cigar when only matches/mismatches were performed
     cigar = std::to_string(pread.size()) + "M";
   }
