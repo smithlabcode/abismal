@@ -142,8 +142,17 @@ struct se_element {
    return diffs == rhs.diffs && pos == rhs.pos;
   }
 
+  // this is used to keep PE candidates sorted in
+  // the max heap
   bool operator < (const se_element &rhs) const {
    return diffs < rhs.diffs;
+  }
+
+  // this is used for deciding on ambiguity, and can
+  // be overriden. For now it is the same implementation
+  // as above but will be changed eventually.
+  bool is_better_than (const se_element &rhs) const {
+    return diffs < rhs.diffs;
   }
 
   bool rc() const {return is_rc(strand_code);}
@@ -156,10 +165,6 @@ struct se_element {
   char strand() const {return rc() ? '-' : '+';}
   void flip_strand() {strand_code = flip_strand_code(strand_code);}
   void reset() { diffs = invalid_hit_diffs + 1; }
-
-  bool is_better_than (const se_element &rhs) const {
-    return diffs < rhs.diffs;
-  }
 
   bool is_equal_to (const se_element &rhs) const {
     return (diffs == rhs.diffs) && (pos != rhs.pos);
@@ -191,26 +196,19 @@ struct se_result {
     return first < rhs.first;
   }
 
-  score_t diffs() const { return first.diffs; return first.diffs;  }
   void update(const uint32_t p, const score_t d, const uint8_t s) {
     const se_element cand(p, d, s);
-    if (cand.is_better_than(second)) {
-      second = cand;
-    }
-    
-    if (second.is_better_than(first)) {
-      const se_element tmp = second;
-      second = first;
-      first = tmp;
-    }
+    if (cand.is_better_than(second)) second = cand;
+    if (second.is_better_than(first)) std::swap(first, second);
   }
+
   bool ambig() const { return first.valid() && first.is_equal_to(second); }
   bool sure_ambig(uint32_t seed_number = 0) const {
     return ambig() && (first.diffs == 0 || (first.diffs == 1 && seed_number > 0));
   }
 
   void reset() { first.reset(); second.reset(); }
-  uint32_t get_cutoff() const {return first.diffs;}
+  uint32_t get_cutoff() const {return second.diffs;}
 };
 
 void
@@ -342,6 +340,7 @@ chrom_and_posn(const ChromLookup &cl, const string &cig, const uint32_t p,
   return true;
 }
 
+int fall_through = 0;
 bool
 get_pe_overlap(GenomicRegion &gr,
                const bool rc,
@@ -414,7 +413,7 @@ get_pe_overlap(GenomicRegion &gr,
       } else {
         // GS TODO: this needs to be the criteria after the alignment
         // is incorporated into select_output
-        // throw runtime_error("error: format_pe fall through");
+        //throw runtime_error("error: format_pe fall through");
         return false;
       }
     }
@@ -523,35 +522,6 @@ struct pe_candidates {
   static uint32_t max_size;
 };
 uint32_t pe_candidates::max_size = 20;
-
-static void
-best_single(const pe_candidates &pres, se_result &res) {
-  auto lim(begin(pres.v) + pres.sz);
-  for (auto i(begin(pres.v)); i != lim; ++i) 
-    res.update(i->pos, i->diffs, i->strand_code);
-}
-
-template <const bool swap_ends>
-static void
-best_pair(const pe_candidates &res1, const pe_candidates &res2,
-          const string &read1, const string &read2, pe_result &best) {
-
-  auto j1 = begin(res1.v);
-  const auto j1_end = j1 + res1.sz;
-  const auto j2_end = begin(res2.v) + res2.sz;
-
-  for (auto j2(begin(res2.v)); j2 != j2_end; ++j2) {
-
-    const uint32_t lim = j2->pos + read2.length();
-    while (j1 != j1_end && j1->pos + pe_element::max_dist < lim) ++j1;
-
-    while (j1 != j1_end && j1->pos + pe_element::min_dist <= lim) {
-      const pe_element p(swap_ends ? *j2 : *j1, swap_ends ? *j1 : *j2);
-      best.update(p);
-      ++j1;
-    }
-  }
-}
 
 inline double pct(const double a, const double b) {return 100.0*a/b;}
 struct se_map_stats {
@@ -813,48 +783,42 @@ accept_alignment (const uint32_t len,
          (cand_diffs <= cur_diffs));
 }
 
-template <const bool cmp>
-void
-prep_for_alignment(const bool rc, string &read, Read &pread) {
-  if (rc) {
-    revcomp_inplace(read);
-    prep_read<!cmp> (read, pread);
-  }
-  else
-    prep_read<cmp> (read, pread);
-}
-
 template <score_t (*scr_fun)(const char, const uint8_t),
           score_t indel_pen>
 void
-adjust_read(se_element &res, string &cigar, string read,
+adjust_read(se_element &res, string &cigar, const string &read,
             Read &pread, AbismalAlign<scr_fun, indel_pen> &aln,
-            const bool cmp) {
-
-  // GS TODO: idk how to template this
-  if (cmp)
-    prep_for_alignment<true>(res.rc(), read, pread);
-  else
-    prep_for_alignment<false>(res.rc(), read, pread);
+            const bool rc, const bool a_rich) {
+  if (rc) {
+    const string read_rc(revcomp(read));
+    // rc reverses richness of read
+    if (a_rich) prep_read<false>(read_rc, pread);
+    else prep_read<true>(read_rc, pread);
+  }
+  else {
+    if (a_rich) prep_read<true>(read, pread);
+    else prep_read<false>(read, pread);
+  }
 
   if (res.do_align()) {
     uint32_t len; // the region of the read the alignment spans
     string cand_cigar;
     const score_t the_score = aln.align(pread, res.pos, len, cand_cigar);
 
-    // /2 because on -1 mismatch, the score goes down twice
+    // GS the /2 here is specific to the 1, -1, -1 scoring scheme
     const score_t cand_diffs = (static_cast<score_t>(len) - the_score) / 2;
 
     if (accept_alignment(len, cand_diffs, res.diffs)) {
       res.diffs = cand_diffs;
       cigar = cand_cigar;
     }
+
+    else if (len >= se_element::min_aligned_length)
+      throw runtime_error("alignment fall through");
   }
 
-  else {
-    // cigar when only matches/mismatches were performed
-    cigar = std::to_string(pread.size()) + "M";
-  }
+  else
+    cigar = std::to_string(pread.size()) + "M"; // match/mismatch cigar
 }
 
 template <const bool cmp, conversion_type conv>
@@ -882,7 +846,6 @@ map_single_ended(const bool VERBOSE,
     progress.report(cerr, 0);
 
   double total_mapping_time = 0;
-  double total_aligning_time = 0;
   while (rl.good()) {
 
     if (VERBOSE && progress.time_to_report(rl.get_current_byte()))
@@ -908,6 +871,7 @@ map_single_ended(const bool VERBOSE,
                                                     abismal_index, genome_st,
                                                     pread, hits, res[i]);
         }
+
 #pragma omp for
       for (size_t i = 0; i < reads.size(); ++i)
         if (!reads[i].empty()) {
@@ -934,17 +898,18 @@ map_single_ended(const bool VERBOSE,
 
 #pragma omp for
       for (size_t i = 0; i < reads.size(); ++i)
-        adjust_read(res[i].first, cigar[i], reads[i], pread, aln, cmp);
+        adjust_read(res[i].first, cigar[i], reads[i], pread, aln,
+                    res[i].first.rc(), cmp);
 
       // GS TODO: not sure if this will continue here, but if a read is
       // ambiguous and we adjust the best, we have to also adjust the
       // second best
 #pragma omp for
       for (size_t i = 0; i < reads.size(); ++i)
-        adjust_read(res[i].second, tmp_cigar, reads[i], pread, aln, cmp);
+        adjust_read(res[i].second, tmp_cigar, reads[i], pread, aln,
+                    res[i].first.rc(), cmp);
     }
 
-    total_aligning_time += (omp_get_wtime() - start_aln_time);
 
     /****** END ALIGN BEST CANDIDATES *****/
     for (size_t i = 0 ; i < n_reads; ++i) {
@@ -956,7 +921,6 @@ map_single_ended(const bool VERBOSE,
   if (VERBOSE) {
     progress.report(cerr, get_filesize(reads_file));
     cerr << "[total mapping time: " << total_mapping_time << endl;
-    cerr << "[total aligning time: " << total_aligning_time << endl;
   }
 }
 
@@ -1033,6 +997,25 @@ map_single_ended_rand(const bool VERBOSE,
     }
     total_mapping_time += (omp_get_wtime() - start_time);
 
+#pragma omp parallel
+    {
+      Read pread;
+      string tmp_cigar;
+      AbismalAlign<mismatch_score, align_scores::indel> aln(genome_st, genome_size);
+
+#pragma omp for
+      for (size_t i = 0; i < reads.size(); ++i)
+        adjust_read(res[i].first, cigar[i], reads[i], pread, aln,
+                    res[i].first.rc(), res[i].first.a_rich());
+
+ #pragma omp for
+      for (size_t i = 0; i < reads.size(); ++i)
+        adjust_read(res[i].second, tmp_cigar, reads[i], pread, aln,
+                    res[i].second.rc(), res[i].second.a_rich());
+
+    }
+
+
     for (size_t i = 0 ; i < n_reads; ++i) {
       se_stats.update(reads[i], res[i]);
       format_se(res[i], abismal_index.cl, reads[i], names[i], cigar[i], out);
@@ -1088,17 +1071,75 @@ map_pe_batch(const vector<string> &reads1, const vector<string> &reads2,
   }
 }
 
+static void
+best_single(const pe_candidates &pres, se_result &res,
+            const string &read, const string &cigar,
+            const Genome::const_iterator genome_st,
+            const uint32_t genome_size) {
+  auto lim(begin(pres.v) + pres.sz);
+  AbismalAlign<mismatch_score, align_scores::indel> aln(genome_st, genome_size);
+  Read pread;
+  for (auto i(begin(pres.v)); i != lim; ++i) {
+    // adjust_read(res, cigar, read, pread, aln, 
+    res.update(i->pos, i->diffs, i->strand_code);
+  }
+}
+
+template <const bool swap_ends>
+static void
+best_pair(const pe_candidates &res1, const pe_candidates &res2,
+          const string &read1, const string &read2,
+          string &cig1, string &cig2,
+          const Genome::const_iterator genome_st,
+          const uint32_t genome_size,
+          pe_result &best) {
+
+  auto j1 = begin(res1.v);
+  const auto j1_end = j1 + res1.sz;
+  const auto j2_end = begin(res2.v) + res2.sz;
+
+  AbismalAlign<mismatch_score, align_scores::indel> aln(genome_st, genome_size);
+  Read pread;
+  for (auto j2(begin(res2.v)); j2 != j2_end; ++j2) {
+
+    const uint32_t lim = j2->pos + read2.length();
+    while (j1 != j1_end && j1->pos + pe_element::max_dist < lim) ++j1;
+
+    while (j1 != j1_end && j1->pos + pe_element::min_dist <= lim) {
+      pe_element p(swap_ends ? *j2 : *j1, swap_ends ? *j1 : *j2);
+
+      // if swap_ends = true, then r1 is the opposite (a_rich, t_rich)
+      // of what the pe_result says
+      const bool a_rich = swap_ends ^ p.a_rich();
+      adjust_read(swap_ends ? p.r2 : p.r1, cig1, read1, pread, aln, false,
+                  a_rich);
+      adjust_read(swap_ends ? p.r1 : p.r2, cig2, read2, pread, aln, true, 
+                  !a_rich);
+      best.update(p);
+      ++j1;
+    }
+  }
+}
 
 template <const bool swap_ends>
 void
 select_maps(const string &read1, const string &read2,
+            string &cig1, string &cig2,
             pe_candidates &res1, pe_candidates &res2,
-            se_result &res_se1, se_result &res_se2, pe_result &best) {
+            se_result &res_se1, se_result &res_se2,
+            const Genome::const_iterator &genome_st,
+            const uint32_t genome_size,
+            pe_result &best) {
   res1.prepare_for_mating();
   res2.prepare_for_mating();
-  best_pair<swap_ends>(res1, res2, read1, read2, best);
-  best_single(res1, res_se1);
-  best_single(res2, res_se2);
+  best_pair<swap_ends>(res1, res2, read1, read2, cig1, cig2,
+                       genome_st, genome_size, best);
+
+  // GS: This condition is necessary to not override the cigar
+  if (!best.first.valid()) {
+    best_single(res1, res_se1, read1, cig1, genome_st, genome_size);
+    best_single(res2, res_se2, read2, cig2, genome_st, genome_size);
+  }
 }
 
 
@@ -1113,8 +1154,7 @@ map_paired_ended(const bool VERBOSE,
                  pe_map_stats &pe_stats,
                  ofstream &out) {
 
-  double total_mapping_time = 0,
-         total_aligning_time = 0;
+  double total_mapping_time = 0;
 
   ReadLoader rl1(reads_file1, batch_size);
   ReadLoader rl2(reads_file2, batch_size);
@@ -1159,37 +1199,26 @@ map_paired_ended(const bool VERBOSE,
                                                         max_candidates,
                                                         abismal_index,
                                                         res1, res2);
-
+#pragma omp parallel for
     for (size_t i = 0 ; i < n_reads; ++i)
-      select_maps<false>(reads1[i], reads2[i], res1[i], res2[i],
-                         res_se1[i], res_se2[i], bests[i]);
+      select_maps<false>(reads1[i], reads2[i],
+                         cigar1[i], cigar2[i],
+                         res1[i], res2[i],
+                         res_se1[i], res_se2[i],
+                         genome_st, genome_size, bests[i]);
 
     map_pe_batch<!cmp,
                  get_strand_code('+', flip_conv(conv)),
                  get_strand_code('-', conv)>(reads2, reads1, max_candidates,
                                              abismal_index, res2, res1);
-    total_mapping_time += (omp_get_wtime() - start_time);
 
-
-#pragma omp for
+#pragma omp parallel for
     for (size_t i = 0 ; i < n_reads; ++i)
-      select_maps<true>(reads2[i], reads1[i], res2[i], res1[i],
-                        res_se2[i], res_se1[i], bests[i]);
-
-    start_time = omp_get_wtime();
-#pragma omp parallel
-    {
-      Read pread;
-      AbismalAlign<mismatch_score, align_scores::indel> aln(genome_st, genome_size);
-#pragma omp for
-      for (size_t i = 0 ; i < n_reads; ++i)
-        adjust_read(bests[i].first.r1, cigar1[i], reads1[i], pread, aln, cmp);
-
-#pragma omp for
-      for (size_t i = 0 ; i < n_reads; ++i)
-        adjust_read(bests[i].first.r2, cigar2[i], reads2[i], pread, aln, !cmp);
-    }
-    total_aligning_time += (omp_get_wtime() - start_time);
+      select_maps<true>(reads2[i], reads1[i],
+                        cigar2[i], cigar1[i],
+                        res2[i], res1[i],
+                        res_se2[i], res_se1[i],
+                        genome_st, genome_size, bests[i]);
 
     for (size_t i = 0 ; i < n_reads; ++i)
       update_pe_stats(bests[i], res_se1[i], res_se2[i], reads1[i],
@@ -1204,10 +1233,8 @@ map_paired_ended(const bool VERBOSE,
   if (VERBOSE) {
     progress.report(cerr, get_filesize(reads_file1));
     cerr << "[total mapping time: " << total_mapping_time << endl;
-    cerr << "[total aligning time: " << total_aligning_time << endl;
   }
 }
-
 
 void
 map_paired_ended_rand(const bool VERBOSE,
@@ -1266,8 +1293,11 @@ map_paired_ended_rand(const bool VERBOSE,
                                                abismal_index, res1, res2);
 #pragma omp parallel for
     for (size_t i = 0 ; i < n_reads; ++i)
-      select_maps<false>(reads1[i], reads2[i], res1[i], res2[i],
-                         res_se1[i], res_se2[i], bests[i]);
+      select_maps<false>(reads1[i], reads2[i],
+                         cigar1[i], cigar2[i],
+                         res1[i], res2[i],
+                         res_se1[i], res_se2[i],
+                         genome_st, genome_size, bests[i]);
 
     // t-rich end1, neg-strand end1
     map_pe_batch<comp_ga,
@@ -1276,8 +1306,11 @@ map_paired_ended_rand(const bool VERBOSE,
                                                abismal_index, res2, res1);
 #pragma omp parallel for
     for (size_t i = 0 ; i < n_reads; ++i)
-      select_maps<true>(reads2[i], reads1[i], res2[i], res1[i],
-                        res_se2[i], res_se1[i], bests[i]);
+      select_maps<true>(reads2[i], reads1[i],
+                        cigar2[i], cigar1[i],
+                        res2[i], res1[i],
+                        res_se2[i], res_se1[i],
+                        genome_st, genome_size, bests[i]);
 
     // a-rich end1, pos-strand end1
     map_pe_batch<comp_ga,
@@ -1286,8 +1319,11 @@ map_paired_ended_rand(const bool VERBOSE,
                                                abismal_index, res1, res2);
 #pragma omp parallel for
     for (size_t i = 0 ; i < n_reads; ++i)
-      select_maps<false>(reads1[i], reads2[i], res1[i], res2[i],
-                         res_se1[i], res_se2[i], bests[i]);
+      select_maps<false>(reads1[i], reads2[i],
+                         cigar1[i], cigar2[i],
+                         res1[i], res2[i],
+                         res_se1[i], res_se2[i],
+                         genome_st, genome_size, bests[i]);
 
     // a-rich end1, neg-strand end1
     map_pe_batch<comp_ct,
@@ -1298,32 +1334,11 @@ map_paired_ended_rand(const bool VERBOSE,
 
 #pragma omp parallel for
     for (size_t i = 0 ; i < n_reads; ++i)
-      select_maps<true>(reads2[i], reads1[i], res2[i], res1[i],
-                        res_se2[i], res_se1[i], bests[i]);
-
-    /*
-    // Align the selected maps
-    Read pread;
-    string read;
-    for (size_t i = 0 ; i < n_reads; ++i) {
-
-      assert(bests[i].first.r1.rc() == bests[i].first.r2.rc());
-      const bool rc = bests[i].first.r1.rc();
-
-      assert(bests[i].first.r1.a_rich() == bests[i].first.r2.a_rich());
-      const bool a_rich = bests[i].first.r1.a_rich();
-
-      read = reads1[i];
-      if (a_rich) prep_for_alignment<comp_ga>(rc, read, pread);
-      else prep_for_alignment<comp_ct>(rc, read, pread);
-      adjust_read(bests[i].first.r1, cigar1[i], pread, aln);
-
-      read = reads2[i];
-      if (a_rich) prep_for_alignment<comp_ga>(rc, read, pread);
-      else prep_for_alignment<comp_ct>(rc, read, pread);
-      adjust_read(bests[i].first.r2, cigar2[i], pread, aln);
-
-    }*/
+      select_maps<true>(reads2[i], reads1[i],
+                        cigar2[i], cigar1[i],
+                        res2[i], res1[i],
+                        res_se2[i], res_se1[i],
+                        genome_st, genome_size, bests[i]);
 
     for (size_t i = 0 ; i < n_reads; ++i)
       update_pe_stats(bests[i], res_se1[i], res_se2[i], reads1[i],
