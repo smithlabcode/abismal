@@ -77,16 +77,15 @@ valid_sam(const flags_t flags) {
 
 enum conversion_type { t_rich, a_rich };
 constexpr conversion_type
-flip_conv(const conversion_type &ct) {return ct == t_rich ? a_rich : t_rich;}
+flip_conv(const conversion_type &ct) {return ct == t_rich ? a_rich : t_rich; }
 
-
-constexpr uint8_t
+constexpr flags_t
 get_strand_code(const char strand, const conversion_type conv) {
   return ((strand == '-')  ? SamFlags::read_rc : 0) |
          ((conv == a_rich) ? BSFlags::a_rich : 0);
 }
 
-constexpr uint8_t
+constexpr flags_t
 flip_strand_code(const flags_t sc) {
   return (sc ^ SamFlags::read_rc) ^ BSFlags::a_rich;
 }
@@ -97,7 +96,7 @@ is_a_rich(const flags_t flags) {
 }
 
 constexpr bool
-is_rc(const uint8_t flags) {
+is_rc(const flags_t flags) {
   return (flags & SamFlags::read_rc) != 0;
 }
 
@@ -216,7 +215,7 @@ struct se_result {
   se_element first, second;
   se_result() : first(se_element()), second(se_element()) {}
 
-  se_result(const uint32_t p, const score_t d, const uint8_t s) :
+  se_result(const uint32_t p, const score_t d, const flags_t s) :
     first(se_element(p, d, s)), second(se_element()) {}
 
   bool operator==(const se_result &rhs) const {
@@ -227,7 +226,7 @@ struct se_result {
     return first < rhs.first;
   }
 
-  void update(const uint32_t p, const score_t d, const uint8_t s) {
+  void update(const uint32_t p, const score_t d, const flags_t s) {
     const se_element cand(p, d, s);
     if (cand.is_better_than(second)) second = cand;
     if (second.is_better_than(first)) std::swap(first, second);
@@ -492,7 +491,7 @@ struct pe_candidates {
   bool full() const {return sz == max_size;}
   void reset() {v.front().reset(); sz = 1;}
   score_t get_cutoff() const {return v.front().diffs;}
-  void update(const uint32_t p, const score_t d, const char s) {
+  void update(const uint32_t p, const score_t d, const flags_t s) {
     if (full()) {
       if (d < v.front().diffs) {
         std::pop_heap(begin(v), end(v));
@@ -766,7 +765,6 @@ prep_read(const string &r, Read &pread) {
                                    (r[i] == 'T' ? 'Y' : r[i]));
 }
 
-// the score is the opposite of the_comp: Match is 1, mismatch is 0
 score_t
 mismatch_score (const char q_base, const uint8_t t_base) {
   return the_comp(q_base, t_base) ?
@@ -1073,24 +1071,24 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
   auto j1 = begin(res1.v);
   const auto j1_end = j1 + res1.sz;
   const auto j2_end = begin(res2.v) + res2.sz;
+  se_element s1, s2;
 
   AbismalAlign<mismatch_score, align_scores::indel> aln(genome_st, genome_size);
   Read pread;
   for (auto j2(begin(res2.v)); j2 != j2_end; ++j2) {
-    se_element s2 = *j2;
+    s2 = *j2;
     bool aligned_s2 = false;
     const uint32_t lim = j2->pos + read2.length();
     while (j1 != j1_end && j1->pos + pe_element::max_dist < lim) ++j1;
 
     while (j1 != j1_end && j1->pos + pe_element::min_dist <= lim) {
-      se_element s1 = *j1;
+      s1 = *j1;
       // if swap_ends = true, then r1 is the opposite (a_rich, t_rich)
       // of what the pe_result says
-      const bool a_rich = swap_ends ^ s1.a_rich();
-      adjust_read(s1, cig1, read1, pread, aln, false, a_rich);
+      adjust_read(s1, cig1, read1, pread, aln, s1.rc(), s1.a_rich());
 
       if (!aligned_s2) {
-        adjust_read(s2, cig2, read2, pread, aln, true, !a_rich);
+        adjust_read(s2, cig2, read2, pread, aln, !s1.rc(), !s1.a_rich());
         aligned_s2 = true;
       }
 
@@ -1208,13 +1206,18 @@ map_paired_ended(const bool VERBOSE,
     total_aln_time += (omp_get_wtime() - start_time);
 
     for (size_t i = 0 ; i < n_reads; ++i)
+      if (!select_output(abismal_index.cl, bests[i], res_se1[i], res_se2[i],
+                    reads1[i], names1[i], reads2[i], names2[i],
+                    cigar1[i], cigar2[i], out)) {
+        bests[i].reset();
+        res_se1[i].reset();
+        res_se2[i].reset();
+      }
+
+    for (size_t i = 0 ; i < n_reads; ++i)
       update_pe_stats(bests[i], res_se1[i], res_se2[i], reads1[i],
                       reads2[i], pe_stats);
 
-    for (size_t i = 0 ; i < n_reads; ++i)
-      select_output(abismal_index.cl, bests[i], res_se1[i], res_se2[i],
-                    reads1[i], names1[i], reads2[i], names2[i],
-                    cigar1[i], cigar2[i], out);
   }
 
   if (VERBOSE) {
