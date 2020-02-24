@@ -1072,7 +1072,6 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
   const auto j1_end = j1 + res1.sz;
   const auto j2_end = begin(res2.v) + res2.sz;
   se_element s1, s2;
-
   AbismalAlign<mismatch_score, align_scores::indel> aln(genome_st, genome_size);
   Read pread;
   for (auto j2(begin(res2.v)); j2 != j2_end; ++j2) {
@@ -1085,10 +1084,16 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
       s1 = *j1;
       // if swap_ends = true, then r1 is the opposite (a_rich, t_rich)
       // of what the pe_result says
-      adjust_read(s1, cig1, read1, pread, aln, s1.rc(), s1.a_rich());
-
+      /*
+      cerr << "aligning r1\n";
+      cerr << "s1 flags: " << s1.flags << "\n";
+      cerr << "s1 rc: " << s1.rc() << "\n";
+      cerr << "s1 a rich: " << s1.a_rich() << "\n";
+      */
+      adjust_read(s1, cig1, read1, pread, aln, false, s1.a_rich());
       if (!aligned_s2) {
-        adjust_read(s2, cig2, read2, pread, aln, !s1.rc(), !s1.a_rich());
+        //cerr << "aligning r2\n";
+        adjust_read(s2, cig2, read2, pread, aln, true, !s1.a_rich());
         aligned_s2 = true;
       }
 
