@@ -308,15 +308,10 @@ struct pe_result { // assert(sizeof(pe_result) == 16);
   bool valid() const{return first.valid();}
   flags_t flags() const { return first.flags(); }
   bool update(const pe_element &p) {
-    if (p.is_better_than(second)) {
-      second = p;
-    }
-    
+    if (p.is_better_than(second)) second = p;
     if (second.is_better_than(first)) {
-      const pe_element tmp = second;
-      second = first;
-      first = tmp;
-      return true;
+      std::swap(first, second);
+      return true; //first has been updated
     }
     return false;
   }
@@ -457,7 +452,7 @@ format_pe(const pe_result &res, const ChromLookup &cl,
       gr.set_strand(gr.get_strand() == '+' ? '-' : '+');
       revcomp_inplace(read1);
     }
-    out << gr << '\t' << read1 << '\t' << cig1
+    out << gr << '\t' << read1 << '\t' << cig1 << '\t'
         << ((res.flags())  |
            (res.ambig() ? BSFlags::ambig : 0))
        << '\n';
@@ -682,6 +677,9 @@ find_candidates(const Read::const_iterator read_start,
   }
 }
 
+// GS TODO: put this on option parser
+const uint32_t absolute_max_candidates = 100000;
+
 template <const uint16_t strand_code, class Read, class T>
 void
 process_seeds(const uint32_t genome_size,
@@ -690,35 +688,44 @@ process_seeds(const uint32_t genome_size,
               const Genome::const_iterator genome_st,
               const Read &read,
               vector<uint32_t> &hits, T &res) {
-
   const uint32_t readlen = read.size();
-
   const auto read_start(begin(read));
   const auto read_end(end(read));
   const auto index_st(begin(abismal_index.index));
   const auto counter_st(begin(abismal_index.counter));
-
   const size_t shift_lim =
     readlen > seed::n_solid_positions ? readlen - seed::n_solid_positions : 0;
   const size_t shift = std::max(1ul, shift_lim/(seed::n_shifts - 1));
-
-  for (uint32_t i = 0; i <= shift_lim && !res.sure_ambig(i); i += shift) {
-    hits.clear(); // hits.capacity() == max_candidates;
-    uint32_t k = 0;
-    get_1bit_hash_4bit(read_start + i, k);
-
-    auto s_idx(index_st + *(counter_st + k));
-    auto e_idx(index_st + *(counter_st + k + 1));
-
-    if (s_idx < e_idx) {
-      find_candidates(read_start + i, genome_st, readlen - i, s_idx, e_idx);
-      if (e_idx - s_idx <= max_candidates) {
-        for (; s_idx != e_idx && hits.size() < max_candidates; ++s_idx)
-          hits.push_back(*s_idx - i);
+  uint32_t cur_max_candidates = max_candidates;
+  const uint32_t stop_max_candidates =
+           max(max_candidates, absolute_max_candidates);
+  uint32_t max_num = 0;
+  bool found_good_seed = false;
+  while (!found_good_seed) {
+    for (uint32_t i = 0; i <= shift_lim && !res.sure_ambig(i); i += shift) {
+      hits.clear(); // hits.capacity() == max_candidates;
+      hits.reserve(cur_max_candidates);
+      uint32_t k = 0;
+      get_1bit_hash_4bit(read_start + i, k);
+      auto s_idx(index_st + *(counter_st + k));
+      auto e_idx(index_st + *(counter_st + k + 1));
+      if (s_idx < e_idx) {
+        find_candidates(read_start + i, genome_st, readlen - i, s_idx, e_idx);
+        max_num = max(max_num, static_cast<uint32_t>(e_idx - s_idx));
+        if (e_idx - s_idx <= cur_max_candidates) {
+          found_good_seed = true;
+          for (; s_idx != e_idx && hits.size() < max_candidates; ++s_idx)
+            hits.push_back(*s_idx - i);
+        }
       }
+      check_hits<strand_code>(begin(hits), end(hits),
+                              read_start, read_end, genome_st, res);
     }
-    check_hits<strand_code>(begin(hits), end(hits),
-                            read_start, read_end, genome_st, res);
+    if (!found_good_seed &&
+        cur_max_candidates <= stop_max_candidates) {
+      cur_max_candidates *= 2;
+    }
+    else found_good_seed = true;
   }
 }
 
@@ -776,7 +783,7 @@ align_read(se_element &res, string &cigar, const string &read,
       if (len >= se_element::min_aligned_length)
         throw runtime_error("alignment fall through");
 
-      cigar = std::to_string(pread.size()) + "M"; // match/mismatch cigar
+      cigar = std::to_string(read.size()) + "M"; // match/mismatch cigar
     }
 
     else {
@@ -785,8 +792,8 @@ align_read(se_element &res, string &cigar, const string &read,
     }
   }
 
-  else
-    cigar = std::to_string(pread.size()) + "M"; // match/mismatch cigar
+  // Default cigar if alignment was not performed
+  else cigar = std::to_string(read.size()) + "M"; // match/mismatch cigar
 }
 
 template <const bool cmp, conversion_type conv>
@@ -961,12 +968,12 @@ map_single_ended_rand(const bool VERBOSE,
 #pragma omp for
       for (size_t i = 0; i < reads.size(); ++i) {
         align_read(res[i].first, cigar[i], reads[i], pread, aln,
-                    res[i].first.rc(),
-                    res[i].first.a_rich() ? comp_ga : comp_ct);
+                   res[i].first.rc(),
+                   res[i].first.a_rich() ? comp_ga : comp_ct);
 
         align_read(res[i].second, tmp_cigar, reads[i], pread, aln,
-                    res[i].second.rc(),
-                    res[i].second.a_rich() ? comp_ga : comp_ct);
+                   res[i].second.rc(),
+                   res[i].second.a_rich() ? comp_ga : comp_ct);
       }
     }
 
@@ -1131,6 +1138,7 @@ map_paired_ended(const bool VERBOSE,
 
     const size_t n_reads = reads1.size();
     const double start_time = omp_get_wtime();
+
 #pragma omp parallel for
     for (size_t i = 0 ; i < n_reads; ++i) {
       res_se1[i].reset();
@@ -1165,6 +1173,7 @@ map_paired_ended(const bool VERBOSE,
                         res2[i], res1[i],
                         res_se2[i], res_se1[i],
                         genome_st, genome_size, bests[i]);
+
 #pragma omp parallel
     {
       Read pread;
@@ -1189,7 +1198,6 @@ map_paired_ended(const bool VERBOSE,
         }
       }
     }
-
 
     for (size_t i = 0 ; i < n_reads; ++i)
       if (!select_output(abismal_index.cl, bests[i], res_se1[i], res_se2[i],
@@ -1527,3 +1535,5 @@ int main(int argc, const char **argv) {
   }
   return EXIT_SUCCESS;
 }
+
+
