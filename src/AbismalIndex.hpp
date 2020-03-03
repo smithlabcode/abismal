@@ -23,7 +23,7 @@
 #include <iostream>
 #include <fstream>
 #include <unordered_set>
-
+#include <algorithm>
 #include "AbismalSeed.hpp"
 
 typedef std::vector<uint8_t> Genome;
@@ -93,8 +93,10 @@ load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
 
   std::string line;
   while (getline(in, line))
-    if (line[0] != '>')
+    if (line[0] != '>') {
+      std::replace(begin(line), end(line), 'N', 'Z');
       copy(std::begin(line), std::end(line), std::back_inserter(genome));
+    }
     else {
       cl.names.push_back(line.substr(1, line.find_first_of(" \t")));
       cl.starts.push_back(genome.size());
