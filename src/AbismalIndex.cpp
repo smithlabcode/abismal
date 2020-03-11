@@ -1,4 +1,4 @@
-/* Copyright (C) 2018 Andrew D. Smith
+/* Cmpyright (C) 2018 Andrew D. Smith
  *
  * Authors: Andrew D. Smith
  *
@@ -48,7 +48,7 @@ using genome_iterator = genome_four_bit_itr;
 
 template <typename nuc_type>
 bool
-invalid_base(const nuc_type &x) {return x == 15;/*N*/}
+invalid_base(const nuc_type &x) {return x == 0;/*Z*/}
 
 inline void
 shift_hash_key_4bit(const uint8_t c, size_t &hash_key) {
@@ -153,8 +153,9 @@ AbismalIndex::hash_genome(const unordered_set<uint32_t> &big_buckets) {
     invalid_count += invalid_base(*end_invalid_counter++);
     shift_hash_key_4bit(*gi++, hash_key);
     if (invalid_count <= max_invalid_per_seed &&
-        big_buckets.find(hash_key) == end(big_buckets))
+        big_buckets.find(hash_key) == end(big_buckets)) 
       index[--counter[hash_key]] = i;
+
     invalid_count -= invalid_base(*start_invalid_counter++);
   }
   if (VERBOSE)
@@ -515,13 +516,12 @@ ChromLookup::get_chrom_idx_and_offset(const uint32_t pos,
   vector<uint32_t>::const_iterator idx =
     upper_bound(begin(starts), end(starts), pos);
 
-  assert(idx != begin(starts));
+  if (idx == begin(starts))
+    throw std::runtime_error("bad chrom position: " + std::to_string(pos));
 
   --idx;
 
   chrom_idx = idx - begin(starts);
-
   offset = pos - starts[chrom_idx];
-
   return (pos + readlen <= starts[chrom_idx + 1]);
 }
