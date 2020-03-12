@@ -56,8 +56,9 @@ BuildIndex(const bool VERBOSE, const uint32_t max_candidates,
   ai.hash_genome(big_buckets);
 
   ai.sort_buckets(four_letter);
-  if (max_candidates != std::numeric_limits<uint32_t>::max())
-    ai.remove_big_buckets(max_candidates);
+  ai.remove_big_buckets(20); // remove deadzones
+  //if (max_candidates != std::numeric_limits<uint32_t>::max())
+  //  ai.remove_big_buckets(max_candidates);
   ai.sort_buckets(two_letter);
 }
 

@@ -168,9 +168,8 @@ struct BucketLessFour {
     auto lim1(g_start + a + seed::n_solid_positions);
     auto idx2(g_start + b);
     while (idx1 != lim1) {
-      const char c1 = get_lexico_4bit(*(idx1++));
-      const char c2 = get_lexico_4bit(*(idx2++));
-      if (c1 != c2) return c1 < c2;
+      if (*idx1 != *idx2) return *idx1 < *idx2;
+      ++idx1, ++idx2;
     }
     return false;
   }
@@ -218,15 +217,17 @@ AbismalIndex::sort_buckets(const sort_type st) {
   }
 }
 
-
+// GS TODO: add this to option parser and pass as parameter, or make it
+// part of the AbismalIndex class
+const size_t kmer_length = 100;
 struct BucketEqual {
   BucketEqual(const Genome &g) : g_start(begin(g)) {}
   bool operator()(const uint32_t a, const uint32_t b) const {
-    auto idx1(g_start + a + seed::n_solid_positions);
+    auto idx1(g_start + a + kmer_length);
     const auto lim1(g_start + a);
-    auto idx2(g_start + b + seed::n_solid_positions);
+    auto idx2(g_start + b + kmer_length);
     while (idx1 != lim1)
-      if (get_lexico_4bit(*(--idx1)) != get_lexico_4bit(*(--idx2)))
+      if (*(--idx1) != *(--idx2))
         return false;
     return true;
   }
@@ -241,6 +242,7 @@ AbismalIndex::remove_big_buckets(const size_t max_candidates) {
   const BucketEqual bucket_equal(genome);
   const auto b(begin(index));
   vector<bool> keep(index_size, true);
+
 #pragma omp parallel for
   for (size_t i = 0; i < counter_size; ++i) {
     uint32_t j = counter[i];
@@ -248,16 +250,8 @@ AbismalIndex::remove_big_buckets(const size_t max_candidates) {
       uint32_t k = j + 1;
       const uint32_t first_idx = *(b + j);
       while (k < counter[i+1] && bucket_equal(first_idx, *(b + k))) ++k;
-      if (k - j > max_candidates) {
-        cerr << "removing bucket of size " << k - j << ": ";
-        genome_iterator g_start(begin(genome));
-        auto idx1(g_start + first_idx);
-        const auto idx2(g_start + first_idx + seed::n_solid_positions);
-        for (; idx1 != idx2; ++idx1)
-          cerr << static_cast<unsigned>(*idx1) <<" ";
-        cerr << "\n";
+      if (k - j > max_candidates)
         fill(begin(keep) + j, begin(keep) + k, false);
-      }
       j = k;
     }
   }
@@ -273,7 +267,7 @@ AbismalIndex::remove_big_buckets(const size_t max_candidates) {
     num_removed += !keep[i];
   }
   if (VERBOSE)
-    cerr << "[removed " << num_removed << " buckets]" << endl;
+    cerr << "[removed " << num_removed << " positions from the index]" << endl;
   index.resize(j);
   index_size = j;
 
