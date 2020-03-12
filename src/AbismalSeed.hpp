@@ -122,6 +122,19 @@ shift_hash_key(const char c, size_t &hash_key) {
 inline uint32_t
 get_bit_4bit(const uint8_t nt) {return (nt & 5) == 0;}
 
+// lexicographic ordering consistent with 0-1 bit indexing above
+// GS TODO: make this faster with dna_four_bit_encoding
+inline uint32_t
+get_lexico_4bit(const uint8_t nt) {
+  //std::cerr << "nt: " << (unsigned) nt << "\n";
+  if (nt == 1) return 0; // A
+  if (nt == 4) return 1; // G
+  if (nt == 2) return 2; // C
+  if (nt == 8) return 3; // T
+  if (nt == 0) return 4; // Z
+  return 5;
+}
+
 template <class T>
 inline void
 get_1bit_hash_4bit(T r, uint32_t &k) {

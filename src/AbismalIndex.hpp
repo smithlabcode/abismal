@@ -27,6 +27,7 @@
 #include "AbismalSeed.hpp"
 
 typedef std::vector<uint8_t> Genome;
+enum sort_type {four_letter, two_letter};
 
 struct ChromLookup {
   std::vector<std::string> names;
@@ -88,7 +89,7 @@ load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
   // pad the start of the concatenated sequence
   cl.names.push_back("pad_start");
   for (size_t i = 0; i < padding_size; ++i)
-    genome.push_back('N');
+    genome.push_back('Z');
   cl.starts.push_back(genome.size());
 
   std::string line;
@@ -106,7 +107,7 @@ load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
   cl.names.push_back("pad_end");
   cl.starts.push_back(genome.size());
   for (size_t i = 0; i < padding_size; ++i)
-    genome.push_back('N');
+    genome.push_back('Z');
 
   cl.starts.push_back(genome.size());
 }
@@ -136,9 +137,10 @@ struct AbismalIndex {
   void
   hash_genome(const std::unordered_set<uint32_t>& big_buckets);
 
-  /* Sort each bucket, if the seed length is more than 12, then use
+  /* Sort each bucket, if the seed length is more than 26, then use
    * binary search for the rest part of the seed */
-  void sort_buckets();
+  void sort_buckets(const sort_type st);
+
   void remove_big_buckets(const size_t max_candidates);
 
   // convert the genome to 4-bit encoding
@@ -149,5 +151,7 @@ struct AbismalIndex {
 
   static std::string internal_identifier;
 };
+
+
 
 #endif

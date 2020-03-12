@@ -121,7 +121,6 @@ AbismalIndex::get_bucket_sizes(unordered_set<uint32_t> &big_buckets) {
   index_size = counter[counter_size];
 }
 
-
 void
 AbismalIndex::hash_genome(const unordered_set<uint32_t> &big_buckets) {
   if (VERBOSE)
@@ -153,7 +152,7 @@ AbismalIndex::hash_genome(const unordered_set<uint32_t> &big_buckets) {
     invalid_count += invalid_base(*end_invalid_counter++);
     shift_hash_key_4bit(*gi++, hash_key);
     if (invalid_count <= max_invalid_per_seed &&
-        big_buckets.find(hash_key) == end(big_buckets)) 
+        big_buckets.find(hash_key) == end(big_buckets))
       index[--counter[hash_key]] = i;
 
     invalid_count -= invalid_base(*start_invalid_counter++);
@@ -162,8 +161,25 @@ AbismalIndex::hash_genome(const unordered_set<uint32_t> &big_buckets) {
     progress.report(cerr, lim);
 }
 
-struct BucketLess {
-  BucketLess(const Genome &g) : g_start(begin(g)) {}
+struct BucketLessFour {
+  BucketLessFour(const Genome &g) : g_start(begin(g)) {}
+  bool operator()(const uint32_t a, const uint32_t b) const {
+    auto idx1(g_start + a);
+    auto lim1(g_start + a + seed::n_solid_positions);
+    auto idx2(g_start + b);
+    while (idx1 != lim1) {
+      const char c1 = get_lexico_4bit(*(idx1++));
+      const char c2 = get_lexico_4bit(*(idx2++));
+      if (c1 != c2) return c1 < c2;
+    }
+    return false;
+  }
+  const genome_iterator g_start;
+};
+
+
+struct BucketLessTwo {
+  BucketLessTwo(const Genome &g) : g_start(begin(g)) {}
   bool operator()(const uint32_t a, const uint32_t b) const {
     auto idx1(g_start + a + seed::key_weight);
     auto lim1(g_start + a + seed::n_solid_positions);
@@ -179,25 +195,39 @@ struct BucketLess {
 };
 
 void
-AbismalIndex::sort_buckets() {
-  const BucketLess bucket_less(genome);
+AbismalIndex::sort_buckets(const sort_type st) {
   const vector<uint32_t>::iterator b(begin(index));
   if (VERBOSE)
-    cerr << "[sorting buckets]" << endl;
+    cerr << "[sorting buckets by " << ((st == four_letter) ? "4":"2")
+         << " letters]" << endl;
+
+  if (st == four_letter) {
+    const BucketLessFour bucket_less(genome);
 #pragma omp parallel for
-  for (size_t i = 0; i < counter_size; ++i)
-    if (counter[i + 1] > counter[i] + 1)
-      sort(b + counter[i], b + counter[i + 1], bucket_less);
+    for (size_t i = 0; i < counter_size; ++i)
+      if (counter[i + 1] > counter[i] + 1)
+        sort(b + counter[i], b + counter[i + 1], bucket_less);
+  }
+
+  else {
+    const BucketLessTwo bucket_less(genome);
+#pragma omp parallel for
+    for (size_t i = 0; i < counter_size; ++i)
+      if (counter[i + 1] > counter[i] + 1)
+        sort(b + counter[i], b + counter[i + 1], bucket_less);
+  }
 }
+
 
 struct BucketEqual {
   BucketEqual(const Genome &g) : g_start(begin(g)) {}
   bool operator()(const uint32_t a, const uint32_t b) const {
     auto idx1(g_start + a + seed::n_solid_positions);
-    auto lim1(g_start + a + seed::key_weight);
+    const auto lim1(g_start + a);
     auto idx2(g_start + b + seed::n_solid_positions);
     while (idx1 != lim1)
-      if (get_bit_4bit(*(--idx1)) != get_bit_4bit(*(--idx2))) return false;
+      if (get_lexico_4bit(*(--idx1)) != get_lexico_4bit(*(--idx2)))
+        return false;
     return true;
   }
   const genome_iterator g_start;
@@ -218,19 +248,32 @@ AbismalIndex::remove_big_buckets(const size_t max_candidates) {
       uint32_t k = j + 1;
       const uint32_t first_idx = *(b + j);
       while (k < counter[i+1] && bucket_equal(first_idx, *(b + k))) ++k;
-      if (k - j > max_candidates)
+      if (k - j > max_candidates) {
+        cerr << "removing bucket of size " << k - j << ": ";
+        genome_iterator g_start(begin(genome));
+        auto idx1(g_start + first_idx);
+        const auto idx2(g_start + first_idx + seed::n_solid_positions);
+        for (; idx1 != idx2; ++idx1)
+          cerr << static_cast<unsigned>(*idx1) <<" ";
+        cerr << "\n";
         fill(begin(keep) + j, begin(keep) + k, false);
+      }
       j = k;
     }
   }
 
   // remove the indices that correspond to large buckets
+  size_t num_removed = 0;
   if (VERBOSE)
     cerr << "[removing big buckets]" << endl;
   size_t j = 0;
-  for (size_t i = 0; i < index_size; ++i)
+  for (size_t i = 0; i < index_size; ++i) {
     if (keep[i])
       index[j++] = index[i];
+    num_removed += !keep[i];
+  }
+  if (VERBOSE)
+    cerr << "[removed " << num_removed << " buckets]" << endl;
   index.resize(j);
   index_size = j;
 
@@ -525,3 +568,4 @@ ChromLookup::get_chrom_idx_and_offset(const uint32_t pos,
   offset = pos - starts[chrom_idx];
   return (pos + readlen <= starts[chrom_idx + 1]);
 }
+
