@@ -553,7 +553,7 @@ struct pe_map_stats {
 
   void update_pair(const pe_result &res) {
     ++tot_pairs;
-    if (res.first.valid()) {
+    if (res.valid()) {
       const bool ambig = res.ambig();
       ambig_pairs += ambig;
       uniq_pairs += !ambig;
@@ -698,7 +698,7 @@ process_seeds(const uint32_t genome_size,
   uint32_t k;
   bool found_good_seed = false;
   for (uint32_t i = 0; i <= shift_lim && !res.sure_ambig(i); i += shift) {
-    vector<uint32_t>().swap(hits);
+    hits.clear(); //hits.capacity() == max_candidates
     k = 0;
     get_1bit_hash_4bit(read_start + i, k);
 
@@ -716,11 +716,12 @@ process_seeds(const uint32_t genome_size,
     check_hits<strand_code>(begin(hits), end(hits),
                             read_start, read_end, genome_st, res);
   }
+
   // All seeds ambiguous, process any of them, find guaranteed ambiguity
   // and bail
   if (!found_good_seed) {
     for (uint32_t i = 0; i <= shift_lim && !res.sure_ambig(i); i += shift) {
-      vector<uint32_t>().swap(hits);
+      hits.clear();
       k = 0;
       get_1bit_hash_4bit(read_start + i, k);
 
