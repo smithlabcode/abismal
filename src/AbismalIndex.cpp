@@ -40,6 +40,7 @@ using std::min;
 
 bool AbismalIndex::VERBOSE = false;
 uint32_t AbismalIndex::max_invalid_per_seed = 0;
+uint32_t AbismalIndex::deadzone_kmer_length = 100;
 uint32_t AbismalIndex::valid_bucket_limit = 500000;
 
 string AbismalIndex::internal_identifier = "AbismalIndex";
@@ -146,6 +147,7 @@ AbismalIndex::hash_genome(const unordered_set<uint32_t> &big_buckets) {
   while (gi != gi_lim)
     shift_hash_key_4bit(*gi++, hash_key);
 
+  // begin(counter) + hash_key
   for (size_t i = 0; i < lim; ++i) {
     if (VERBOSE && progress.time_to_report(i))
       progress.report(cerr, i);
@@ -162,10 +164,11 @@ AbismalIndex::hash_genome(const unordered_set<uint32_t> &big_buckets) {
 }
 
 struct BucketLessFour {
-  BucketLessFour(const Genome &g) : g_start(begin(g)) {}
+  BucketLessFour(const Genome &g, const uint32_t off) : 
+    g_start(begin(g)), offset(off) {}
   bool operator()(const uint32_t a, const uint32_t b) const {
     auto idx1(g_start + a);
-    auto lim1(g_start + a + seed::n_solid_positions);
+    auto lim1(g_start + a + offset);
     auto idx2(g_start + b);
     while (idx1 != lim1) {
       if (*idx1 != *idx2) return *idx1 < *idx2;
@@ -174,6 +177,7 @@ struct BucketLessFour {
     return false;
   }
   const genome_iterator g_start;
+  const uint32_t offset;
 };
 
 
@@ -201,7 +205,7 @@ AbismalIndex::sort_buckets(const sort_type st) {
          << " letters]" << endl;
 
   if (st == four_letter) {
-    const BucketLessFour bucket_less(genome);
+    const BucketLessFour bucket_less(genome, deadzone_kmer_length);
 #pragma omp parallel for
     for (size_t i = 0; i < counter_size; ++i)
       if (counter[i + 1] > counter[i] + 1)
@@ -219,19 +223,20 @@ AbismalIndex::sort_buckets(const sort_type st) {
 
 // GS TODO: add this to option parser and pass as parameter, or make it
 // part of the AbismalIndex class
-const size_t kmer_length = 100;
 struct BucketEqual {
-  BucketEqual(const Genome &g) : g_start(begin(g)) {}
+  BucketEqual(const Genome &g, const uint32_t off) :
+    g_start(begin(g)), offset(off) {}
   bool operator()(const uint32_t a, const uint32_t b) const {
-    auto idx1(g_start + a + kmer_length);
+    auto idx1(g_start + a + offset);
     const auto lim1(g_start + a);
-    auto idx2(g_start + b + kmer_length);
+    auto idx2(g_start + b + offset);
     while (idx1 != lim1)
       if (*(--idx1) != *(--idx2))
         return false;
     return true;
   }
   const genome_iterator g_start;
+  const uint32_t offset;
 };
 
 void
@@ -239,7 +244,7 @@ AbismalIndex::remove_big_buckets(const size_t max_candidates) {
   // first mark the positions to keep
   if (VERBOSE)
     cerr << "[finding big buckets]" << endl;
-  const BucketEqual bucket_equal(genome);
+  const BucketEqual bucket_equal(genome, deadzone_kmer_length);
   const auto b(begin(index));
   vector<bool> keep(index_size, true);
 

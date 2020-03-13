@@ -39,8 +39,11 @@ using std::endl;
 using std::unordered_set;
 
 static void
-BuildIndex(const bool VERBOSE, const uint32_t max_candidates,
-           const string &genome_file, AbismalIndex &ai) {
+BuildIndex(const bool VERBOSE,
+           const uint32_t max_candidates,
+           const uint32_t deadzone_freq,
+           const string &genome_file,
+           AbismalIndex &ai) {
 
   std::ifstream in(genome_file);
   if (!in)
@@ -56,9 +59,9 @@ BuildIndex(const bool VERBOSE, const uint32_t max_candidates,
   ai.hash_genome(big_buckets);
 
   ai.sort_buckets(four_letter);
-  ai.remove_big_buckets(20); // remove deadzones
-  //if (max_candidates != std::numeric_limits<uint32_t>::max())
-  //  ai.remove_big_buckets(max_candidates);
+  ai.remove_big_buckets(deadzone_freq); // remove deadzones
+  if (max_candidates != std::numeric_limits<uint32_t>::max())
+    ai.remove_big_buckets(max_candidates);
   ai.sort_buckets(two_letter);
 }
 
@@ -69,6 +72,7 @@ int main(int argc, const char **argv) {
 
     size_t n_threads = 1;
     uint32_t max_candidates = std::numeric_limits<uint32_t>::max();
+    uint32_t deadzone_freq = 20;
 
     /****************** COMMAND LINE OPTIONS ********************/
     OptionParser opt_parse(strip_path(argv[0]), "build abismal index",
@@ -79,6 +83,9 @@ int main(int argc, const char **argv) {
     opt_parse.add_opt("threads", 't', "number of threads", false, n_threads);
     opt_parse.add_opt("max-candidates", 'c', "maximum candidates per seed",
                       false, max_candidates);
+    opt_parse.add_opt("deadzone", 'd', "number of times a 100-mer should "
+                      "appear to be excluded from the genome",
+                      false, deadzone_freq);
     opt_parse.add_opt("verbose", 'v', "print more run info", false, VERBOSE);
     vector<string> leftover_args;
     opt_parse.parse(argc, argv, leftover_args);
@@ -107,7 +114,8 @@ int main(int argc, const char **argv) {
     AbismalIndex::VERBOSE = VERBOSE;
 
     AbismalIndex abismal_index;
-    BuildIndex(VERBOSE, max_candidates, genome_file, abismal_index);
+    BuildIndex(VERBOSE, max_candidates, deadzone_freq,
+               genome_file, abismal_index);
 
     if (VERBOSE)
       cerr << "[writing abismal index to: " << outfile << "]" << endl;
