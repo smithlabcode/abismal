@@ -85,55 +85,8 @@ namespace seed {
 };
 
 // A/T nucleotide to 1-bit number
-template <class T>
-inline uint32_t
-get_bit(const T nt) {
-  if (nt == 'A' || nt == 'G') return 0;
-  else return 1;
-}
-
-// hash in 1-bit space
-inline uint32_t
-get_1bit_hash(const std::vector<char>::const_iterator r) {
-  uint32_t val = 0;
-  for (uint32_t i = 0; i < seed::key_weight; ++i) {
-    val <<= 1;
-    val += get_bit(*(r + i));
-  }
-  return val;
-}
-
-inline void
-get_1bit_hash(std::string::const_iterator r, uint32_t &k) {
-  const auto lim = r + seed::key_weight;
-  while (r != lim) {
-    k <<= 1;
-    k += get_bit(*r);
-    ++r;
-  }
-}
-
-inline void
-shift_hash_key(const char c, size_t &hash_key) {
-  hash_key = ((hash_key << 1) | get_bit(c)) & seed::hash_mask;
-}
-
-// A/T nucleotide to 1-bit number
 inline uint32_t
 get_bit_4bit(const uint8_t nt) {return (nt & 5) == 0;}
-
-// lexicographic ordering consistent with 0-1 bit indexing above
-// GS TODO: make this faster with dna_four_bit_encoding
-inline uint32_t
-get_lexico_4bit(const uint8_t nt) {
-  //std::cerr << "nt: " << (unsigned) nt << "\n";
-  if (nt == 1) return 0; // A
-  if (nt == 4) return 1; // G
-  if (nt == 2) return 2; // C
-  if (nt == 8) return 3; // T
-  if (nt == 0) return 4; // Z
-  return 5;
-}
 
 template <class T>
 inline void
