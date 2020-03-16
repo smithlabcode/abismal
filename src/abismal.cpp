@@ -660,10 +660,11 @@ void
 find_candidates(const Read::const_iterator read_start,
                 const Genome::const_iterator genome_start,
                 const uint32_t read_lim, // not necessarily read len
+                const uint32_t n_solid_positions,
                 vector<uint32_t>::const_iterator &low,
                 vector<uint32_t>::const_iterator &high) {
   size_t p = seed::key_weight;
-  const size_t lim = std::min(read_lim, seed::n_solid_positions);
+  const size_t lim = std::min(read_lim, n_solid_positions);
   while (p < lim) {
     auto first_1 = lower_bound(low, high, 1, compare_bases(genome_start + p));
     if (get_bit_4bit(*(read_start + p)) == 0) {
@@ -693,7 +694,7 @@ process_seeds(const uint32_t genome_size,
   const auto index_st(begin(abismal_index.index));
   const auto counter_st(begin(abismal_index.counter));
   const size_t shift_lim =
-    readlen > seed::n_solid_positions ? readlen - seed::n_solid_positions : 0;
+    readlen > seed::n_seed_positions ? readlen - seed::n_seed_positions : 0;
   const size_t shift = std::max(1ul, shift_lim/(seed::n_shifts - 1));
   uint32_t k;
   bool found_good_seed = false;
@@ -706,7 +707,8 @@ process_seeds(const uint32_t genome_size,
     auto e_idx(index_st + *(counter_st + k + 1));
 
     if (s_idx < e_idx) {
-      find_candidates(read_start + i, genome_st, readlen - i, s_idx, e_idx);
+      find_candidates(read_start + i, genome_st, readlen - i,
+                      seed::n_seed_positions, s_idx, e_idx);
       if (e_idx - s_idx < max_candidates) {
         found_good_seed = true;
         for (; s_idx != e_idx; ++s_idx)
@@ -717,27 +719,25 @@ process_seeds(const uint32_t genome_size,
                             read_start, read_end, genome_st, res);
   }
 
-  // All seeds ambiguous, process any of them, find guaranteed ambiguity
-  // and bail
+  // All seeds ambiguous, try to use the whole read as seed
   if (!found_good_seed) {
-    for (uint32_t i = 0; i <= shift_lim && !res.sure_ambig(i); i += shift) {
-      hits.clear();
-      k = 0;
-      get_1bit_hash_4bit(read_start + i, k);
+    k = 0;
+    get_1bit_hash_4bit(read_start, k);
 
-      auto s_idx(index_st + *(counter_st + k));
-      auto e_idx(index_st + *(counter_st + k + 1));
+    auto s_idx(index_st + *(counter_st + k));
+    auto e_idx(index_st + *(counter_st + k + 1));
 
-      if (s_idx < e_idx) {
-        find_candidates(read_start + i, genome_st, readlen - i, s_idx, e_idx);
-        if (e_idx - s_idx >= max_candidates)
-          e_idx = s_idx + max_candidates;
-        for (; s_idx != e_idx; ++s_idx)
-          hits.push_back(*s_idx - i);
-      }
-      check_hits<strand_code>(begin(hits), end(hits),
-                              read_start, read_end, genome_st, res);
+    hits.clear();
+    if (s_idx < e_idx) {
+      find_candidates(read_start, genome_st,
+                      readlen, seed::n_solid_positions, s_idx, e_idx);
+      if (e_idx - s_idx >= max_candidates)
+        e_idx = s_idx + max_candidates;
+      for (; s_idx != e_idx; ++s_idx)
+        hits.push_back(*s_idx);
     }
+    check_hits<strand_code>(begin(hits), end(hits),
+                            read_start, read_end, genome_st, res);
   }
 }
 
