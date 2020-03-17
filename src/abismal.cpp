@@ -171,7 +171,7 @@ struct se_element {
 
   // this is used to keep PE candidates sorted in
   // the max heap
-  bool operator < (const se_element &rhs) const {
+  bool operator<(const se_element &rhs) const {
     return diffs < rhs.diffs;
   }
 
@@ -630,14 +630,15 @@ full_compare(const score_t cutoff,
   return d;
 }
 
-template <const uint16_t strand_code, class T>
+template <const uint16_t strand_code,
+          class result_type>
 void
 check_hits(vector<uint32_t>::const_iterator start_idx,
            const vector<uint32_t>::const_iterator end_idx,
            const Read::const_iterator read_start,
            const Read::const_iterator read_end,
            const Genome::const_iterator genome_st,
-           T &res) {
+           result_type &res) {
 
   for (; start_idx != end_idx && !res.sure_ambig(0); ++start_idx) {
     const score_t diffs = full_compare(res.get_cutoff(), read_start,
@@ -1002,12 +1003,13 @@ map_single_ended_rand(const bool VERBOSE,
 
 
 template <const bool cmp,
-          const uint16_t strand_code1, const uint16_t strand_code2, class T>
+          const uint16_t strand_code1, const uint16_t strand_code2,
+          class result_type>
 void
 map_pe_batch(const vector<string> &reads1, const vector<string> &reads2,
              const uint32_t max_candidates,
              const AbismalIndex &abismal_index,
-             vector<T> &res1, vector<T> &res2) {
+             vector<result_type> &res1, vector<result_type> &res2) {
   const uint32_t genome_size = abismal_index.genome.size();
   const Genome::const_iterator genome_st(begin(abismal_index.genome));
 
