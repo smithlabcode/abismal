@@ -302,7 +302,7 @@ struct pe_result { // assert(sizeof(pe_result) == 16);
     first.reset();
     second.reset();
   }
-  
+
   bool ambig() const {
     return first.is_equal_to(second);
   }
@@ -416,7 +416,7 @@ get_pe_overlap(GenomicRegion &gr,
         truncate_cigar_r(cig1, overlap);
         read1.resize(overlap);
       }
-      
+
       else return false;
     }
   }
@@ -679,7 +679,8 @@ find_candidates(const Read::const_iterator read_start,
   }
 }
 
-template <const uint16_t strand_code, class Read, class T>
+template <const uint16_t strand_code, class Read,
+          class result_type>
 void
 process_seeds(const uint32_t genome_size,
               const uint32_t max_candidates,
@@ -687,7 +688,7 @@ process_seeds(const uint32_t genome_size,
               const Genome::const_iterator genome_st,
               const Read &read,
               vector<uint32_t> &hits,
-              T &res) {
+              result_type &res) {
   const uint32_t readlen = read.size();
   const auto read_start(begin(read));
   const auto read_end(end(read));
@@ -752,7 +753,7 @@ prep_read(const string &r, Read &pread) {
 }
 
 static inline score_t
-mismatch_score (const char q_base, const uint8_t t_base) {
+mismatch_score(const char q_base, const uint8_t t_base) {
   return the_comp(q_base, t_base) ?
     align_scores::mismatch : align_scores::match;
 }
@@ -796,7 +797,6 @@ align_read(se_element &res, string &cigar, const string &read,
 
       cigar = std::to_string(read.size()) + "M"; // match/mismatch cigar
     }
-
     else {
       res.diffs = cand_diffs;
       cigar = cand_cigar;
@@ -1546,5 +1546,3 @@ int main(int argc, const char **argv) {
   }
   return EXIT_SUCCESS;
 }
-
-
