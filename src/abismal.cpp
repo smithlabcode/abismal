@@ -53,9 +53,12 @@ typedef int16_t score_t; // alignment score
 typedef bool cmp_t; // match/mismatch type
 typedef vector<char> Read; //4-bit encoding of reads
 
-enum conversion_type { t_rich, a_rich };
-enum { comp_ct = false,
-       comp_ga = true };
+enum conversion_type { t_rich = false, a_rich = true };
+
+constexpr conversion_type
+flip_conv(const conversion_type &conv) {
+  return conv == t_rich ? a_rich : t_rich;
+}
 
 namespace SamFlags {
   static const flags_t read_paired = 0x1;
@@ -76,9 +79,6 @@ namespace BSFlags {
   static const flags_t a_rich = 0x1000;
   static const flags_t ambig = 0x2000;
 };
-
-constexpr conversion_type
-flip_conv(const conversion_type &ct) {return ct == t_rich ? a_rich : t_rich; }
 
 constexpr flags_t
 get_strand_code(const char strand, const conversion_type conv) {
@@ -795,7 +795,6 @@ align_read(se_element &res, string &cigar, const string &read,
     if (!accept_alignment(len, cand_diffs, res.diffs)) {
       //if (len >= se_element::min_aligned_length)
       //  throw runtime_error("alignment fall through");
-
       cigar = std::to_string(read.size()) + "M"; // match/mismatch cigar
     }
     else {
@@ -881,10 +880,10 @@ map_single_ended(const bool VERBOSE,
 #pragma omp for
       for (size_t i = 0; i < n_reads; ++i) {
         align_read(res[i].first, cigar[i], reads[i], pread, aln,
-                   res[i].first.rc(), cmp);
+                   res[i].first.rc(), conv);
 
         align_read(res[i].second, tmp_cigar, reads[i], pread, aln,
-                   res[i].second.rc(), cmp);
+                   res[i].second.rc(), conv);
       }
     }
 
@@ -947,23 +946,23 @@ map_single_ended_rand(const bool VERBOSE,
 #pragma omp for
       for (size_t i = 0; i < reads.size(); ++i)
         if (!reads[i].empty()) {
-          prep_read<comp_ct>(reads[i], pread);
+          prep_read<t_rich>(reads[i], pread);
           process_seeds<get_strand_code('+', t_rich)>(genome_size, max_candidates,
                                                       abismal_index, genome_st,
                                                       pread, hits, res[i]);
 
-          prep_read<comp_ga>(reads[i], pread);
+          prep_read<a_rich>(reads[i], pread);
           process_seeds<get_strand_code('+', a_rich)>(genome_size, max_candidates,
                                                       abismal_index, genome_st,
                                                       pread, hits, res[i]);
 
           const string read_rc(revcomp(reads[i]));
-          prep_read<comp_ct>(read_rc, pread);
+          prep_read<t_rich>(read_rc, pread);
           process_seeds<get_strand_code('-', a_rich)>(genome_size, max_candidates,
                                                       abismal_index, genome_st,
                                                       pread, hits, res[i]);
 
-          prep_read<comp_ga>(read_rc, pread);
+          prep_read<a_rich>(read_rc, pread);
           process_seeds<get_strand_code('-', t_rich)>(genome_size, max_candidates,
                                                       abismal_index, genome_st,
                                                       pread, hits, res[i]);
@@ -981,11 +980,11 @@ map_single_ended_rand(const bool VERBOSE,
       for (size_t i = 0; i < reads.size(); ++i) {
         align_read(res[i].first, cigar[i], reads[i], pread, aln,
                    res[i].first.rc(),
-                   res[i].first.a_rich() ? comp_ga : comp_ct);
+                   res[i].first.a_rich() ? a_rich : t_rich);
 
         align_read(res[i].second, tmp_cigar, reads[i], pread, aln,
                    res[i].second.rc(),
-                   res[i].second.a_rich() ? comp_ga : comp_ct);
+                   res[i].second.a_rich() ? a_rich : t_rich);
       }
     }
 
@@ -1115,7 +1114,7 @@ select_maps(const string &read1, const string &read2,
 }
 
 
-template <const bool cmp, conversion_type conv>
+template <const conversion_type conv>
 void
 map_paired_ended(const bool VERBOSE,
                  const string &reads_file1,
@@ -1161,7 +1160,7 @@ map_paired_ended(const bool VERBOSE,
       bests[i].reset();
     }
 
-    map_pe_batch<cmp,
+    map_pe_batch<conv,
                  get_strand_code('+', conv),
                  get_strand_code('-', flip_conv(conv))>(reads1, reads2,
                                                         max_candidates,
@@ -1176,7 +1175,7 @@ map_paired_ended(const bool VERBOSE,
                                 res_se1[i], res_se2[i],
                                 genome_st, genome_size, bests[i]);
 
-    map_pe_batch<!cmp,
+    map_pe_batch<!conv,
                  get_strand_code('+', flip_conv(conv)),
                  get_strand_code('-', conv)>(reads2, reads1, max_candidates,
                                              abismal_index, res2, res1);
@@ -1200,16 +1199,16 @@ map_paired_ended(const bool VERBOSE,
       for (size_t i = 0; i < n_reads; ++i) {
         if (!bests[i].valid()) {
           align_read(res_se1[i].first, cigar1[i], reads1[i], pread, aln,
-                     res_se1[i].first.rc(), cmp);
+                     res_se1[i].first.rc(), conv);
 
           align_read(res_se1[i].second, tmp_cigar, reads1[i], pread, aln,
-                     res_se1[i].second.rc(), cmp);
+                     res_se1[i].second.rc(), conv);
 
           align_read(res_se2[i].first, cigar2[i], reads2[i], pread, aln,
-                     res_se2[i].first.rc(), !cmp);
+                     res_se2[i].first.rc(), !conv);
 
           align_read(res_se2[i].second, tmp_cigar, reads2[i], pread, aln,
-                     res_se2[i].second.rc(), !cmp);
+                     res_se2[i].second.rc(), !conv);
         }
       }
     }
@@ -1286,7 +1285,7 @@ map_paired_ended_rand(const bool VERBOSE,
     }
 
     // t-rich end1, pos-strand end1
-    map_pe_batch<comp_ct,
+    map_pe_batch<t_rich,
                  get_strand_code('+', t_rich),
                  get_strand_code('-', a_rich)>(reads1, reads2, max_candidates,
                                                abismal_index, res1, res2);
@@ -1299,7 +1298,7 @@ map_paired_ended_rand(const bool VERBOSE,
                                 genome_st, genome_size, bests[i]);
 
     // t-rich end1, neg-strand end1
-    map_pe_batch<comp_ga,
+    map_pe_batch<a_rich,
                  get_strand_code('+', a_rich),
                  get_strand_code('-', t_rich)>(reads2, reads1, max_candidates,
                                                abismal_index, res2, res1);
@@ -1312,7 +1311,7 @@ map_paired_ended_rand(const bool VERBOSE,
                               genome_st, genome_size, bests[i]);
 
     // a-rich end1, pos-strand end1
-    map_pe_batch<comp_ga,
+    map_pe_batch<a_rich,
                  get_strand_code('+', a_rich),
                  get_strand_code('-', t_rich)>(reads1, reads2, max_candidates,
                                                abismal_index, res1, res2);
@@ -1326,7 +1325,7 @@ map_paired_ended_rand(const bool VERBOSE,
                                genome_st, genome_size, bests[i]);
 
     // a-rich end1, neg-strand end1
-    map_pe_batch<comp_ct,
+    map_pe_batch<t_rich,
                  get_strand_code('+', t_rich),
                  get_strand_code('-', a_rich)>(reads2, reads1, max_candidates,
                                                abismal_index, res2, res1);
@@ -1352,19 +1351,19 @@ map_paired_ended_rand(const bool VERBOSE,
         if (!bests[i].valid()) {
           align_read(res_se1[i].first, cigar1[i], reads1[i], pread, aln,
                      res_se1[i].first.rc(),
-                     res_se1[i].first.a_rich() ? comp_ga : comp_ct);
+                     res_se1[i].first.a_rich() ? a_rich : t_rich);
 
           align_read(res_se1[i].second, tmp_cigar, reads1[i], pread, aln,
                      res_se1[i].second.rc(),
-                     res_se1[i].second.a_rich() ? comp_ga : comp_ct);
+                     res_se1[i].second.a_rich() ? a_rich : t_rich);
 
           align_read(res_se2[i].first, cigar2[i], reads2[i], pread, aln,
                      res_se2[i].first.rc(),
-                     res_se2[i].first.a_rich() ? comp_ga : comp_ct);
+                     res_se2[i].first.a_rich() ? a_rich : t_rich);
 
           align_read(res_se2[i].second, tmp_cigar, reads2[i], pread, aln,
                      res_se2[i].second.rc(),
-                     res_se2[i].second.a_rich() ? comp_ga : comp_ct);
+                     res_se2[i].second.a_rich() ? a_rich : t_rich);
         }
       }
     }
@@ -1507,20 +1506,20 @@ int main(int argc, const char **argv) {
 
     if (reads_file2.empty()) {
       if (GA_conversion || pbat_mode)
-        map_single_ended<comp_ga, a_rich>(VERBOSE, reads_file, batch_size,
+        map_single_ended<a_rich, a_rich>(VERBOSE, reads_file, batch_size,
                                           max_candidates, abismal_index,
                                           se_stats, out);
       else if (random_pbat)
         map_single_ended_rand(VERBOSE, reads_file, batch_size, max_candidates,
                               abismal_index, se_stats, out);
       else
-        map_single_ended<comp_ct, t_rich>(VERBOSE, reads_file, batch_size,
+        map_single_ended<t_rich, t_rich>(VERBOSE, reads_file, batch_size,
                                           max_candidates, abismal_index,
                                           se_stats, out);
     }
     else {
       if (pbat_mode)
-        map_paired_ended<comp_ga, a_rich>(VERBOSE, reads_file, reads_file2,
+        map_paired_ended<a_rich>(VERBOSE, reads_file, reads_file2,
                                           batch_size, max_candidates,
                                           abismal_index, pe_stats, out);
       else if (random_pbat)
@@ -1528,7 +1527,7 @@ int main(int argc, const char **argv) {
                               batch_size, max_candidates,
                               abismal_index, pe_stats, out);
       else
-        map_paired_ended<comp_ct, t_rich>(VERBOSE, reads_file, reads_file2,
+        map_paired_ended<t_rich>(VERBOSE, reads_file, reads_file2,
                                           batch_size, max_candidates,
                                           abismal_index, pe_stats, out);
     }
