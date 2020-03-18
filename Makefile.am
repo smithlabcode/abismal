@@ -18,7 +18,7 @@ ACLOCAL_AMFLAGS = -I m4
 AM_CPPFLAGS = -I $(top_srcdir)/src
 
 AM_CXXFLAGS = $(OPENMP_CXXFLAGS)
-CXXFLAGS = -O3 # default has optimization on
+CXXFLAGS = -O3 -Wall # default has optimization on
 
 bin_PROGRAMS = abismal abismalidx simreads seedtool
 
