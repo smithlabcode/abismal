@@ -374,11 +374,14 @@ AbismalIndex::read(const string &index_file) {
   if (fread((char*)&enc_genome[0], 1, genome_to_read, in) != genome_to_read)
     throw runtime_error(error_msg);
 
-  /* expand the 4-bit encoded genome to ascii */
+  /* expand the 4-bit encoded genome to 8-bit */
   genome.resize(cl.get_genome_size() + (cl.get_genome_size() % 2));
-  decode_dna_four_bit(begin(enc_genome), end(enc_genome), begin(genome));
+  auto d_itr(begin(genome)); //decoded iterator
+  for (auto e_itr(begin(enc_genome)); e_itr != end(enc_genome); ++e_itr) {
+    *d_itr++ = *e_itr & 15u; // low
+    *d_itr++ = (*e_itr >> 4) & 15u; // high
+  }
   vector<uint8_t>().swap(enc_genome); // release space
-  if (genome.back() == 'Z') genome.pop_back();
 
   /* read the sizes of counter and index vectors */
   if (fread((char*)&counter_size, sizeof(uint32_t), 1, in) != 1 ||

@@ -1457,9 +1457,6 @@ int main(int argc, const char **argv) {
     AbismalIndex abismal_index;
     const double start_time = omp_get_wtime();
     abismal_index.read(index_file);
-    transform(begin(abismal_index.genome), end(abismal_index.genome),
-              begin(abismal_index.genome),
-              [](const uint8_t x) {return encode_dna_four_bit(x);});
 
     const double end_time = omp_get_wtime();
     if (VERBOSE)
