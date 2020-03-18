@@ -809,7 +809,7 @@ align_read(se_element &res, string &cigar, const string &read,
   else cigar = std::to_string(read.size()) + "M"; // match/mismatch cigar
 }
 
-template <const bool cmp, conversion_type conv>
+template <const  conversion_type conv>
 void
 map_single_ended(const bool VERBOSE,
                  const string &reads_file,
@@ -854,7 +854,7 @@ map_single_ended(const bool VERBOSE,
 #pragma omp for
       for (size_t i = 0; i < reads.size(); ++i) {
         if (!reads[i].empty()) {
-          prep_read<cmp>(reads[i], pread);
+          prep_read<conv>(reads[i], pread);
           process_seeds<get_strand_code('+', conv)>(genome_size, max_candidates,
                                                     abismal_index, genome_st,
                                                     pread, hits, res[i]);
@@ -862,7 +862,7 @@ map_single_ended(const bool VERBOSE,
 
         if (!reads[i].empty()) {
           const string read_rc(revcomp(reads[i]));
-          prep_read<!cmp>(read_rc, pread);
+          prep_read<!conv>(read_rc, pread);
           process_seeds<get_strand_code('-', conv)>(genome_size, max_candidates,
                                                     abismal_index, genome_st,
                                                     pread, hits, res[i]);
@@ -1046,7 +1046,7 @@ best_single(const pe_candidates &pres, se_result &res,
     res.update(i->pos, i->diffs, i->flags);
 }
 
-template <const bool swap_ends, const bool r1_a_rich>
+template <const bool swap_ends>
 static void
 best_pair(const pe_candidates &res1, const pe_candidates &res2,
           const string &read1, const string &read2,
@@ -1086,8 +1086,7 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
   }
 }
 
-template <const bool swap_ends,
-          const bool r1_a_rich>
+template <const bool swap_ends>
 void
 select_maps(const string &read1, const string &read2,
             string &cig1, string &cig2,
@@ -1098,7 +1097,7 @@ select_maps(const string &read1, const string &read2,
             pe_result &best) {
   res1.prepare_for_mating();
   res2.prepare_for_mating();
-  best_pair<swap_ends, r1_a_rich>(res1, res2, read1, read2, cig1, cig2,
+  best_pair<swap_ends>(res1, res2, read1, read2, cig1, cig2,
                                   genome_st, genome_size, best);
 
   // GS: This condition is necessary to not override the cigar
@@ -1164,11 +1163,11 @@ map_paired_ended(const bool VERBOSE,
 
 #pragma omp parallel for
     for (size_t i = 0 ; i < n_reads; ++i)
-      select_maps<false, false>(reads1[i], reads2[i],
-                                cigar1[i], cigar2[i],
-                                res1[i], res2[i],
-                                res_se1[i], res_se2[i],
-                                genome_st, genome_size, bests[i]);
+      select_maps<false>(reads1[i], reads2[i],
+                         cigar1[i], cigar2[i],
+                         res1[i], res2[i],
+                         res_se1[i], res_se2[i],
+                         genome_st, genome_size, bests[i]);
 
     map_pe_batch<!conv,
                  get_strand_code('+', flip_conv(conv)),
@@ -1177,11 +1176,11 @@ map_paired_ended(const bool VERBOSE,
 
 #pragma omp parallel for
     for (size_t i = 0 ; i < n_reads; ++i)
-      select_maps<true, true>(reads2[i], reads1[i],
-                              cigar2[i], cigar1[i],
-                              res2[i], res1[i],
-                              res_se2[i], res_se1[i],
-                              genome_st, genome_size, bests[i]);
+      select_maps<true>(reads2[i], reads1[i],
+                        cigar2[i], cigar1[i],
+                        res2[i], res1[i],
+                        res_se2[i], res_se1[i],
+                        genome_st, genome_size, bests[i]);
 
 #pragma omp parallel
     {
@@ -1279,11 +1278,11 @@ map_paired_ended_rand(const bool VERBOSE,
                                                abismal_index, res1, res2);
 #pragma omp parallel for
     for (size_t i = 0 ; i < n_reads; ++i)
-      select_maps<false, false>(reads1[i], reads2[i],
-                                cigar1[i], cigar2[i],
-                                res1[i], res2[i],
-                                res_se1[i], res_se2[i],
-                                genome_st, genome_size, bests[i]);
+      select_maps<false>(reads1[i], reads2[i],
+                         cigar1[i], cigar2[i],
+                         res1[i], res2[i],
+                         res_se1[i], res_se2[i],
+                         genome_st, genome_size, bests[i]);
 
     // t-rich end1, neg-strand end1
     map_pe_batch<a_rich,
@@ -1292,11 +1291,11 @@ map_paired_ended_rand(const bool VERBOSE,
                                                abismal_index, res2, res1);
 #pragma omp parallel for
     for (size_t i = 0 ; i < n_reads; ++i)
-      select_maps<true, true>(reads2[i], reads1[i],
-                              cigar2[i], cigar1[i],
-                              res2[i], res1[i],
-                              res_se2[i], res_se1[i],
-                              genome_st, genome_size, bests[i]);
+      select_maps<true>(reads2[i], reads1[i],
+                        cigar2[i], cigar1[i],
+                        res2[i], res1[i],
+                        res_se2[i], res_se1[i],
+                        genome_st, genome_size, bests[i]);
 
     // a-rich end1, pos-strand end1
     map_pe_batch<a_rich,
@@ -1306,11 +1305,11 @@ map_paired_ended_rand(const bool VERBOSE,
 
 #pragma omp parallel for
     for (size_t i = 0 ; i < n_reads; ++i)
-      select_maps<false, true>(reads1[i], reads2[i],
-                               cigar1[i], cigar2[i],
-                               res1[i], res2[i],
-                               res_se1[i], res_se2[i],
-                               genome_st, genome_size, bests[i]);
+      select_maps<false>(reads1[i], reads2[i],
+                         cigar1[i], cigar2[i],
+                         res1[i], res2[i],
+                         res_se1[i], res_se2[i],
+                         genome_st, genome_size, bests[i]);
 
     // a-rich end1, neg-strand end1
     map_pe_batch<t_rich,
@@ -1321,11 +1320,11 @@ map_paired_ended_rand(const bool VERBOSE,
 
 #pragma omp parallel for
     for (size_t i = 0 ; i < n_reads; ++i)
-      select_maps<true, false>(reads2[i], reads1[i],
-                               cigar2[i], cigar1[i],
-                               res2[i], res1[i],
-                               res_se2[i], res_se1[i],
-                               genome_st, genome_size, bests[i]);
+      select_maps<true>(reads2[i], reads1[i],
+                        cigar2[i], cigar1[i],
+                        res2[i], res1[i],
+                        res_se2[i], res_se1[i],
+                        genome_st, genome_size, bests[i]);
 
 #pragma omp parallel
     {
@@ -1480,16 +1479,16 @@ int main(int argc, const char **argv) {
 
     if (reads_file2.empty()) {
       if (GA_conversion || pbat_mode)
-        map_single_ended<a_rich, a_rich>(VERBOSE, reads_file, batch_size,
-                                          max_candidates, abismal_index,
-                                          se_stats, out);
+        map_single_ended<a_rich>(VERBOSE, reads_file, batch_size,
+                                 max_candidates, abismal_index,
+                                 se_stats, out);
       else if (random_pbat)
         map_single_ended_rand(VERBOSE, reads_file, batch_size, max_candidates,
                               abismal_index, se_stats, out);
       else
-        map_single_ended<t_rich, t_rich>(VERBOSE, reads_file, batch_size,
-                                          max_candidates, abismal_index,
-                                          se_stats, out);
+        map_single_ended<t_rich>(VERBOSE, reads_file, batch_size,
+                                 max_candidates, abismal_index,
+                                 se_stats, out);
     }
     else {
       if (pbat_mode)
