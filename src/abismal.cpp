@@ -136,6 +136,7 @@ struct ReadLoader {
         if (count_if(begin(line), end(line),
                      [](const char c) {return c != 'N';}) < min_length)
           line.clear();
+        std::replace(begin(line), end(line), 'N', 'Z');
         reads.push_back(line);
       }
       ++line_count;
@@ -640,8 +641,10 @@ check_hits(vector<uint32_t>::const_iterator start_idx,
            T &res) {
 
   for (; start_idx != end_idx && !res.sure_ambig(0); ++start_idx) {
-    const score_t diffs = full_compare(res.get_cutoff(), read_start,
-                                       read_end, genome_st + *start_idx);
+    const score_t diffs = full_compare(res.get_cutoff(),
+                                       read_start,
+                                       read_end,
+                                       genome_st + *start_idx);
     res.update(*start_idx, diffs, strand_code);
   }
 }
@@ -716,7 +719,7 @@ process_seeds(const uint32_t genome_size,
       }
     }
     check_hits<strand_code>(begin(hits), end(hits),
-                            read_start, read_end, genome_st, res);
+                            read_start, read_end, genome_st,  res);
   }
 
   // All seeds ambiguous, try to use the whole read as seed
@@ -767,12 +770,17 @@ accept_alignment(const uint32_t len,
 
 template <score_t (*scr_fun)(const char, const uint8_t),
           score_t indel_pen>
+          /*
 void
 align_read(se_element &res, string &cigar, const string &read,
             Read &pread,
             AbismalAlign<scr_fun, indel_pen> &aln,
-            const bool rc, const bool a_rich) {
-
+            const bool rc, const bool a_rich) {*/
+void
+align_read(se_element &res, string &cigar, const string &read,
+            Read &pread, AbismalAlign<scr_fun, indel_pen> &aln) {
+  const bool rc = res.rc();
+  const bool a_rich = res.a_rich();
   if (res.do_align()) {
     if (rc) {
       const string read_rc(revcomp(read));
@@ -879,11 +887,9 @@ map_single_ended(const bool VERBOSE,
 
 #pragma omp for
       for (size_t i = 0; i < n_reads; ++i) {
-        align_read(res[i].first, cigar[i], reads[i], pread, aln,
-                    res[i].first.rc(), cmp);
+        align_read(res[i].first, cigar[i], reads[i], pread, aln);
 
-        align_read(res[i].second, tmp_cigar, reads[i], pread, aln,
-                    res[i].second.rc(), cmp);
+        align_read(res[i].second, tmp_cigar, reads[i], pread, aln);
       }
     }
 
@@ -978,13 +984,8 @@ map_single_ended_rand(const bool VERBOSE,
 
 #pragma omp for
       for (size_t i = 0; i < reads.size(); ++i) {
-        align_read(res[i].first, cigar[i], reads[i], pread, aln,
-                   res[i].first.rc(),
-                   res[i].first.a_rich() ? comp_ga : comp_ct);
-
-        align_read(res[i].second, tmp_cigar, reads[i], pread, aln,
-                   res[i].second.rc(),
-                   res[i].second.a_rich() ? comp_ga : comp_ct);
+        align_read(res[i].first, cigar[i], reads[i], pread, aln);
+        align_read(res[i].second, tmp_cigar, reads[i], pread, aln);
       }
     }
 
@@ -1074,9 +1075,9 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
     while (j1 != j1_end && j1->pos + pe_element::min_dist <= lim) {
       s1 = *j1;
 
-      align_read(s1, cand_cig1, read1, pread, aln, false, r1_a_rich);
+      align_read(s1, cand_cig1, read1, pread, aln);
       if (!aligned_s2) {
-        align_read(s2, cand_cig2, read2, pread, aln, true, !r1_a_rich);
+        align_read(s2, cand_cig2, read2, pread, aln);
         aligned_s2 = true;
       }
 
@@ -1197,17 +1198,10 @@ map_paired_ended(const bool VERBOSE,
 #pragma omp for
       for (size_t i = 0; i < n_reads; ++i) {
         if (!bests[i].valid()) {
-          align_read(res_se1[i].first, cigar1[i], reads1[i], pread, aln,
-                     res_se1[i].first.rc(), cmp);
-
-          align_read(res_se1[i].second, tmp_cigar, reads1[i], pread, aln,
-                     res_se1[i].second.rc(), cmp);
-
-          align_read(res_se2[i].first, cigar2[i], reads2[i], pread, aln,
-                     res_se2[i].first.rc(), !cmp);
-
-          align_read(res_se2[i].second, tmp_cigar, reads2[i], pread, aln,
-                     res_se2[i].second.rc(), !cmp);
+          align_read(res_se1[i].first, cigar1[i], reads1[i], pread, aln);
+          align_read(res_se1[i].second, tmp_cigar, reads1[i], pread, aln);
+          align_read(res_se2[i].first, cigar2[i], reads2[i], pread, aln);
+          align_read(res_se2[i].second, tmp_cigar, reads2[i], pread, aln);
         }
       }
     }
@@ -1348,21 +1342,10 @@ map_paired_ended_rand(const bool VERBOSE,
 #pragma omp for
       for (size_t i = 0; i < n_reads; ++i) {
         if (!bests[i].valid()) {
-          align_read(res_se1[i].first, cigar1[i], reads1[i], pread, aln,
-                     res_se1[i].first.rc(),
-                     res_se1[i].first.a_rich() ? comp_ga : comp_ct);
-
-          align_read(res_se1[i].second, tmp_cigar, reads1[i], pread, aln,
-                     res_se1[i].second.rc(),
-                     res_se1[i].second.a_rich() ? comp_ga : comp_ct);
-
-          align_read(res_se2[i].first, cigar2[i], reads2[i], pread, aln,
-                     res_se2[i].first.rc(),
-                     res_se2[i].first.a_rich() ? comp_ga : comp_ct);
-
-          align_read(res_se2[i].second, tmp_cigar, reads2[i], pread, aln,
-                     res_se2[i].second.rc(),
-                     res_se2[i].second.a_rich() ? comp_ga : comp_ct);
+          align_read(res_se1[i].first, cigar1[i], reads1[i], pread, aln);
+          align_read(res_se1[i].second, tmp_cigar, reads1[i], pread, aln);
+          align_read(res_se2[i].first, cigar2[i], reads2[i], pread, aln);
+          align_read(res_se2[i].second, tmp_cigar, reads2[i], pread, aln);
         }
       }
     }
