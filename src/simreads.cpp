@@ -48,7 +48,7 @@ using std::istringstream;
 using std::to_string;
 
 char random_base() {return "ACGT"[rand() % 4];}
-
+double rand_double() { return ((double) rand() / (RAND_MAX)); }
 
 static string
 format_fastq_record(const string &name, const string &read) {
@@ -103,8 +103,9 @@ struct FragInfo {
     merge_equal_neighbor_cigar_ops(cigar);
   }
   void
-  bisulfite_conversion() {
-    if (pbat) replace(begin(seq), end(seq), 'G', 'A');
+  bisulfite_conversion(const bool random_pbat) {
+    if (pbat || (random_pbat && rand_double() < 0.5))
+      replace(begin(seq), end(seq), 'G', 'A');
     else replace(begin(seq), end(seq), 'C', 'T');
   }
 
@@ -174,7 +175,7 @@ struct FragSampler {
               const size_t milen, const size_t malen) :
     genome(g), cl(c), strand_code(sc), min_length(milen), max_length(malen) {}
   void
-  sample_fragment(FragInfo &the_info) const {
+  sample_fragment(FragInfo &the_info, const bool random_pbat) const {
     const size_t frag_len = sim_frag_length(min_length, max_length);
     sim_frag_position(genome, frag_len, the_info.seq, the_info.start_pos);
 
@@ -190,7 +191,7 @@ struct FragSampler {
       revcomp_inplace(the_info.seq);
     the_info.cigar = to_string(frag_len) + "M"; // default, no muts
 
-    the_info.bisulfite_conversion();
+    the_info.bisulfite_conversion(random_pbat);
   }
   char sim_strand() const {
     if (strand_code == 'f') return '+';
@@ -318,6 +319,7 @@ int main(int argc, const char **argv) {
     bool write_locations = false;
     bool single_end = false;
     bool show_cigar_matches = false;
+    bool random_pbat = false;
 
     size_t n_reads = 100;
     size_t read_length = 100;
@@ -357,6 +359,7 @@ int main(int argc, const char **argv) {
                       false, change_type_vals);
     opt_parse.add_opt("max-mut", 'M', "max mutations", false, max_mutations);
     opt_parse.add_opt("pbat", 'a', "pbat", false, FragInfo::pbat);
+    opt_parse.add_opt("random-pbat", 'R', "random pbat", false, random_pbat);
     opt_parse.add_opt("strand", 's', "strand {f, r, b}", false, strand_arg);
     opt_parse.add_opt("seed", '\0', "rng seed (default: from system)",
                       false, rng_seed);
@@ -414,7 +417,7 @@ int main(int argc, const char **argv) {
       cerr << "[simulating clean frags]" << endl;
     vector<FragInfo> the_info(n_reads);
     for (size_t i = 0; i < n_reads; ++i)
-      frag_samp.sample_fragment(the_info[i]);
+      frag_samp.sample_fragment(the_info[i], random_pbat);
 
 
     if (VERBOSE)
@@ -444,7 +447,6 @@ int main(int argc, const char **argv) {
         loc_out << the_info[i] << endl;
       }
     }
-
 
     const string read1_outfile = output_prefix + "_1.fq";
     if (VERBOSE)
