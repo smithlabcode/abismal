@@ -205,36 +205,36 @@ score_t se_element::max_diffs = 6;
 uint16_t se_element::min_aligned_length = ReadLoader::min_length;
 
 struct se_result {
-  se_element first, second;
-  se_result() : first(se_element()), second(se_element()) {}
+  se_element best, second_best;
+  se_result() : best(se_element()), second_best(se_element()) {}
 
   se_result(const uint32_t p, const score_t d, const flags_t s) :
-    first(se_element(p, d, s)), second(se_element()) {}
+    best(se_element(p, d, s)), second_best(se_element()) {}
 
   bool operator==(const se_result &rhs) const {
-    return first == rhs.first;
+    return best == rhs.best;
   }
 
   bool operator<(const se_result &rhs) const {
-    return first < rhs.first;
+    return best < rhs.best;
   }
-  bool valid() const {return first.valid();}
+  bool valid() const {return best.valid();}
   void update(const uint32_t p, const score_t d, const flags_t s) {
-    if (p == first.pos || p == second.pos) return; //cowardly
+    if (p == best.pos || p == second_best.pos) return;
     const se_element cand(p, d, s);
-    if (cand.is_better_than(second)) second = cand;
-    if (second.is_better_than(first)) std::swap(first, second);
+    if (cand.is_better_than(second_best)) second_best = cand;
+    if (second_best.is_better_than(best)) std::swap(best, second_best);
   }
 
-  bool ambig() const {return valid() && first.is_equal_to(second);}
+  bool ambig() const {return valid() && best.is_equal_to(second_best);}
   bool sure_ambig(uint32_t seed_number = 0) const {
     return ambig() &&
-      (first.diffs == 0 || (first.diffs == 1 && seed_number > 0));
+      (best.diffs == 0 || (best.diffs == 1 && seed_number > 0));
   }
 
-  void reset() {first.reset(); second.reset();}
-  uint32_t get_cutoff() const {return second.diffs;}
-  flags_t flags() const {return first.flags;}
+  void reset() {best.reset(); second_best.reset();}
+  uint32_t get_cutoff() const {return second_best.diffs;}
+  flags_t flags() const {return best.flags;}
 };
 
 bool
@@ -242,7 +242,7 @@ format_se(se_result res, const ChromLookup &cl,
           string &read, const string &read_name,
           const string &cigar, ofstream &out) {
   uint32_t offset = 0, chrom_idx = 0;
-  se_element s = res.first;
+  se_element s = res.best;
   if (s.valid() &&
       cl.get_chrom_idx_and_offset(s.pos, read.size(), chrom_idx, offset)) {
     if (s.a_rich()) { // since SE, this is only for GA conversion
@@ -295,25 +295,26 @@ uint32_t pe_element::min_dist = 32;
 uint32_t pe_element::max_dist = 3000;
 
 struct pe_result { // assert(sizeof(pe_result) == 16);
-  pe_element first, second;
+  pe_element best, second_best;
   pe_result() {}
-  pe_result(const pe_element &a, const pe_element &b) : first(a), second(b) {}
+  pe_result(const pe_element &a, const pe_element &b)
+    : best(a), second_best(b) {}
 
   void reset() {
-    first.reset();
-    second.reset();
+    best.reset();
+    second_best.reset();
   }
 
   bool ambig() const {
-    return first.is_equal_to(second);
+    return best.is_equal_to(second_best);
   }
-  bool valid() const{return first.valid();}
-  flags_t flags() const { return first.flags(); }
+  bool valid() const{return best.valid();}
+  flags_t flags() const { return best.flags(); }
   bool update(const pe_element &p) {
-    if (p.is_better_than(second)) second = p;
-    if (second.is_better_than(first)) {
-      std::swap(first, second);
-      return true; //first has been updated
+    if (p.is_better_than(second_best)) second_best = p;
+    if (second_best.is_better_than(best)) {
+      std::swap(best, second_best);
+      return true; //best has been updated
     }
     return false;
   }
@@ -432,7 +433,7 @@ format_pe(const pe_result &res, const ChromLookup &cl,
           ofstream &out) {
   uint32_t r_s1 = 0, r_e1 = 0, chr1 = 0;
   uint32_t r_s2 = 0, r_e2 = 0, chr2 = 0;
-  const pe_element p = res.first;
+  const pe_element p = res.best;
   if (res.valid() &&
       !res.ambig()) {
 
@@ -456,7 +457,7 @@ format_pe(const pe_result &res, const ChromLookup &cl,
     if (!get_pe_overlap(gr, p.rc(), r_s1, r_e1, chr1, r_s2, r_e2, chr2,
                         read1, read2, cig1, cig2)) return false;
 
-    if (res.first.a_rich()) { // final revcomp if the first end was a-rich
+    if (p.a_rich()) { // final revcomp if the first end was a-rich
       gr.set_strand(gr.get_strand() == '+' ? '-' : '+');
       revcomp_inplace(read1);
     }
@@ -512,7 +513,7 @@ struct se_map_stats {
 
   void update(const string &read, const se_result &res) {
     ++tot_rds;
-    if (res.first.valid()) {
+    if (res.best.valid()) {
       if (!res.ambig()) ++uniq_rds;
       else ++ambig_rds;
     }
@@ -585,7 +586,7 @@ update_pe_stats(const pe_result &best,
                 const string &read1, const string &read2,
                 pe_map_stats &pe_stats) {
   pe_stats.update_pair(best);
-  if (!best.first.valid()) {
+  if (!best.best.valid()) {
     pe_stats.end1_stats.update(read1, se1);
     pe_stats.end2_stats.update(read2, se2);
   }
@@ -881,8 +882,8 @@ map_single_ended(const bool VERBOSE,
 
 #pragma omp for
       for (size_t i = 0; i < n_reads; ++i) {
-        align_read(res[i].first, cigar[i], reads[i], pread, aln);
-        align_read(res[i].second, tmp_cigar, reads[i], pread, aln);
+        align_read(res[i].best, cigar[i], reads[i], pread, aln);
+        align_read(res[i].second_best, tmp_cigar, reads[i], pread, aln);
 
       }
     }
@@ -978,8 +979,8 @@ map_single_ended_rand(const bool VERBOSE,
 
 #pragma omp for
       for (size_t i = 0; i < reads.size(); ++i) {
-        align_read(res[i].first, cigar[i], reads[i], pread, aln);
-        align_read(res[i].second, tmp_cigar, reads[i], pread, aln);
+        align_read(res[i].best, cigar[i], reads[i], pread, aln);
+        align_read(res[i].second_best, tmp_cigar, reads[i], pread, aln);
       }
     }
 
@@ -1192,10 +1193,10 @@ map_paired_ended(const bool VERBOSE,
 #pragma omp for
       for (size_t i = 0; i < n_reads; ++i) {
         if (!bests[i].valid()) {
-          align_read(res_se1[i].first, cigar1[i], reads1[i], pread, aln);
-          align_read(res_se1[i].second, tmp_cigar, reads1[i], pread, aln);
-          align_read(res_se2[i].first, cigar2[i], reads2[i], pread, aln);
-          align_read(res_se2[i].second, tmp_cigar, reads2[i], pread, aln);
+          align_read(res_se1[i].best, cigar1[i], reads1[i], pread, aln);
+          align_read(res_se1[i].second_best, tmp_cigar, reads1[i], pread, aln);
+          align_read(res_se2[i].best, cigar2[i], reads2[i], pread, aln);
+          align_read(res_se2[i].second_best, tmp_cigar, reads2[i], pread, aln);
         }
       }
     }
@@ -1336,10 +1337,10 @@ map_paired_ended_rand(const bool VERBOSE,
 #pragma omp for
       for (size_t i = 0; i < n_reads; ++i) {
         if (!bests[i].valid()) {
-          align_read(res_se1[i].first, cigar1[i], reads1[i], pread, aln);
-          align_read(res_se1[i].second, tmp_cigar, reads1[i], pread, aln);
-          align_read(res_se2[i].first, cigar2[i], reads2[i], pread, aln);
-          align_read(res_se2[i].second, tmp_cigar, reads2[i], pread, aln);
+          align_read(res_se1[i].best, cigar1[i], reads1[i], pread, aln);
+          align_read(res_se1[i].second_best, tmp_cigar, reads1[i], pread, aln);
+          align_read(res_se2[i].best, cigar2[i], reads2[i], pread, aln);
+          align_read(res_se2[i].second_best, tmp_cigar, reads2[i], pread, aln);
         }
       }
     }
