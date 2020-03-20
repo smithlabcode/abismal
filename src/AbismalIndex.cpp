@@ -378,8 +378,8 @@ AbismalIndex::read(const string &index_file) {
   genome.resize(cl.get_genome_size() + (cl.get_genome_size() % 2));
   auto d_itr(begin(genome)); //decoded iterator
   for (auto e_itr(begin(enc_genome)); e_itr != end(enc_genome); ++e_itr) {
-    *d_itr++ = *e_itr & 15u; // low
-    *d_itr++ = (*e_itr >> 4) & 15u; // high
+    *d_itr++ = get_low_nibble(*e_itr);
+    *d_itr++ = get_high_nibble(*e_itr);
   }
   vector<uint8_t>().swap(enc_genome); // release space
 
