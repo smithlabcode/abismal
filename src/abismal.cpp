@@ -356,11 +356,6 @@ get_pe_overlap(GenomicRegion &gr,
                string &read1, string &read2,
                string &cig1, string &cig2) {
 
-  if (rc) {
-    reverse_cigar(cig1);
-    reverse_cigar(cig2);
-  }
-
   const int spacer = get_spacer_rlen(rc, r_s1, r_e1, r_s2, r_e2);
   if (spacer >= 0) {
     /* fragments longer than or equal to 2x read length: this size of
@@ -443,6 +438,7 @@ format_pe(const pe_result &res, const ChromLookup &cl,
         chr1 != chr2) return false;
 
     revcomp_inplace(read2);
+    reverse_cigar(cig2);
 
     // Select the end points based on orientation, which indicates which
     // end is to the left (first) in the genome. Set the strand and read
@@ -457,13 +453,14 @@ format_pe(const pe_result &res, const ChromLookup &cl,
     if (!get_pe_overlap(gr, p.rc(), r_s1, r_e1, chr1, r_s2, r_e2, chr2,
                         read1, read2, cig1, cig2)) return false;
 
-    if (p.a_rich()) { // final revcomp if the first end was a-rich
-      gr.set_strand(gr.get_strand() == '+' ? '-' : '+');
+    if (p.rc()) { // final revcomp if the first end was a-rich
+      //gr.set_strand(gr.get_strand() == '+' ? '-' : '+');
       revcomp_inplace(read1);
+      reverse_cigar(cig1);
     }
     if (cig1.empty()) throw runtime_error ("empty cigar\n");
-    out << gr << '\t' << read1 << '\t' << cig1 << '\t'
-        << res.flags() << '\n';
+    out << gr << '\t' << read1 << '\t' << cig1 << '\n';
+//      << res.flags() << '\n';
   }
   return true;
 }
