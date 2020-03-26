@@ -1377,7 +1377,7 @@ int main(int argc, const char **argv) {
     uint32_t max_candidates = 3000;
     size_t max_diffs = 6;
     size_t invalid_hit_diffs = 40;
-    size_t batch_size = 1000000;
+    size_t batch_size = 100000;
     size_t n_threads = 1;
 
     /****************** COMMAND LINE OPTIONS ********************/
@@ -1390,7 +1390,8 @@ int main(int argc, const char **argv) {
     opt_parse.add_opt("threads", 't', "number of threads", false, n_threads);
     opt_parse.add_opt("mismatches", 'm', "max allowed mismatches",
                       false, max_diffs);
-    opt_parse.add_opt("hits", 'h', "max allowed mismatches for alignment",
+    opt_parse.add_opt("hits", 'h', "max number of mismatches for a hit to be "
+                                   "considered for subsequent alignment",
                       false, invalid_hit_diffs);
     opt_parse.add_opt("shifts", 's', "number of seed shifts",
                       false, seed::n_shifts);
