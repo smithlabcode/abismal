@@ -56,7 +56,7 @@ typedef vector<char> Read; //4-bit encoding of reads
 enum conversion_type { t_rich = false, a_rich = true };
 
 constexpr conversion_type
-flip_conv(const conversion_type &conv) {
+flip_conv(const conversion_type conv) {
   return conv == t_rich ? a_rich : t_rich;
 }
 
@@ -435,8 +435,7 @@ format_pe(const pe_result &res, const ChromLookup &cl,
   uint32_t r_s1 = 0, r_e1 = 0, chr1 = 0;
   uint32_t r_s2 = 0, r_e2 = 0, chr2 = 0;
   const pe_element p = res.best;
-  if (res.valid() &&
-      !res.ambig()) {
+  if (res.valid() && !res.ambig()) {
 
     // PE chromosomes differ or couldn't be found, treat read as unmapped
     if (!chrom_and_posn(cl, cig1, p.r1.pos, r_s1, r_e1, chr1) ||
@@ -452,10 +451,8 @@ format_pe(const pe_result &res, const ChromLookup &cl,
     // end is to the left (first) in the genome. Set the strand and read
     // name based on the first end.
     auto gr = p.rc() ?
-      GenomicRegion(cl.names[chr2], r_s2, r_e1, name2, p.diffs(),
-                    p.strand()) :
-      GenomicRegion(cl.names[chr1], r_s1, r_e2, name1, p.diffs(),
-                    p.strand());
+      GenomicRegion(cl.names[chr2], r_s2, r_e1, name2, p.diffs(), p.strand()) :
+      GenomicRegion(cl.names[chr1], r_s1, r_e2, name1, p.diffs(), p.strand());
 
     // CIGAR makes dovetail reads no longer overlap, treat as unmapped
     if (!get_pe_overlap(gr, p.rc(), r_s1, r_e1, chr1, r_s2, r_e2, chr2,
