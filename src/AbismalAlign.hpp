@@ -41,7 +41,7 @@ template <score_t (*scr_fun)(const char, const uint8_t),
 struct AbismalAlign {
 
   AbismalAlign(const std::vector<uint8_t>::const_iterator &target_start,
-               const uint32_t target_size);
+               const uint32_t target_size, const size_t max_read_length);
   score_t align(const std::vector<char> &query, uint32_t &t_pos, uint32_t &len,
               std::string &cigar);
 
@@ -54,16 +54,16 @@ struct AbismalAlign {
   const size_t bw;
 
   static const uint16_t max_off_diag = 2;
-  static const uint16_t max_query_length = 1000;
 };
 
 template <score_t (*scr_fun)(const char, const uint8_t),
           score_t indel_pen>
 AbismalAlign<scr_fun, indel_pen>::AbismalAlign(
     const std::vector<uint8_t>::const_iterator &target_start,
-    const uint32_t target_size) : 
+    const uint32_t target_size,
+    const size_t max_read_length) : 
             target(target_start), t_sz(target_size),
-            q_sz_max(max_query_length), bw(2*max_off_diag + 1) {
+            q_sz_max(max_read_length), bw(2*max_off_diag + 1) {
   // size of alignment matrix and traceback matrix is maximum query
   // length times the width of the band around the diagonal
   const size_t n_cells = (q_sz_max + bw)*bw;
@@ -228,13 +228,10 @@ AbismalAlign<scr_fun, indel_pen>::align(const std::vector<char> &qseq,
   // put the uncompressed cigar back in the forward orientation
   std::reverse(std::begin(cigar_scratch), c_itr);
 
-  // compress the uncompressed cigar
-  cigar.resize(q_sz_max); // ADS: not sure this is always enough
-
+  // GS: max cigar size = 1 operation per base, giving 2 characters each
+  cigar.reserve(2*q_sz_max);
   compress_cigar(begin(cigar_scratch), c_itr, cigar);
-
   t_pos = t_beg + the_row;
-
   return r;
 }
 
