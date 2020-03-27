@@ -183,14 +183,14 @@ struct se_element {
   }
 
   // this is used for deciding on ambiguity, and can
-  // be overriden. For now it is the same implementation
+  // be overwritten. For now it is the same implementation
   // as above but will be changed eventually.
   bool is_better_than (const se_element &rhs) const {
     return diffs < rhs.diffs;
   }
 
   bool rc() const {return is_rc(flags);}
-  bool a_rich() const {return is_a_rich(flags);}
+  bool elem_is_a_rich() const {return is_a_rich(flags);}
   bool valid() const {return diffs <= max_diffs;}
   bool valid_hit() const {return diffs <= invalid_hit_diffs;}
   bool do_align() const {return !valid() && valid_hit();}
@@ -251,7 +251,7 @@ format_se(se_result res, const ChromLookup &cl,
   se_element s = res.best;
   if (s.valid() &&
       cl.get_chrom_idx_and_offset(s.pos, read.size(), chrom_idx, offset)) {
-    if (s.a_rich()) { // since SE, this is only for GA conversion
+    if (s.elem_is_a_rich()) { // since SE, this is only for GA conversion
       revcomp_inplace(read);
       s.flip_strand();
     }
@@ -277,7 +277,7 @@ struct pe_element {
   pe_element(const se_element &s1, const se_element &s2) : r1(s1), r2(s2) {}
 
   bool rc() const { return r1.rc(); }
-  bool a_rich() const {return r1.a_rich();}
+  bool elem_is_a_rich() const {return r1.elem_is_a_rich();}
   char strand() const {return r1.strand();}
   score_t diffs() const { return r1.diffs + r2.diffs; }
   flags_t flags() const { return r1.flags; }
@@ -458,7 +458,7 @@ format_pe(const pe_result &res, const ChromLookup &cl,
     if (!get_pe_overlap(gr, p.rc(), r_s1, r_e1, chr1, r_s2, r_e2, chr2,
                         read1, read2, cig1, cig2)) return false;
 
-    if (p.a_rich()) { // final revcomp if the first end was a-rich
+    if (p.elem_is_a_rich()) { // final revcomp if the first end was a-rich
       gr.set_strand(gr.get_strand() == '+' ? '-' : '+');
       revcomp_inplace(read1);
     }
@@ -528,11 +528,11 @@ struct se_map_stats {
 
     oss << t     << "total_reads: " << tot_rds << endl
         << t     << "mapped: " << endl
-        << t+tab << "percent_mapped: " << pct(uniq_rds+ambig_rds,
-                                              tot_rds == 0 ? 1 : tot_rds) << endl
+        << t+tab << "percent_mapped: "
+        << pct(uniq_rds+ambig_rds, tot_rds == 0 ? 1 : tot_rds) << endl
         << t+tab << "unique: " << uniq_rds << endl
-        << t+tab << "percent_unique: " << pct(uniq_rds,
-                                              tot_rds == 0 ? 1 : tot_rds) << endl
+        << t+tab << "percent_unique: "
+        << pct(uniq_rds, tot_rds == 0 ? 1 : tot_rds) << endl
         << t+tab << "ambiguous: " << ambig_rds << endl
         << t     << "unmapped: " << unmapped_rds << endl
         << t     << "skipped: " << skipped_rds << endl;
@@ -568,7 +568,8 @@ struct pe_map_stats {
     oss << "pairs:" << endl
         << t   << "total_read_pairs: " << tot_pairs << endl
         << t   << "mapped:" << endl
-        << t+t << "percent_mapped: "<< pct(uniq_pairs + ambig_pairs, tot_pairs) << endl
+        << t+t << "percent_mapped: "
+        << pct(uniq_pairs + ambig_pairs, tot_pairs) << endl
         << t+t << "unique: " << uniq_pairs << endl
         << t+t << "percent_unique: " << pct(uniq_pairs, tot_pairs) << endl
         << t+t << "ambiguous: " << ambig_pairs << endl
@@ -605,7 +606,7 @@ select_output(const ChromLookup &cl,
 
   // try both ends if no concordant pairs or concordant pair is defective
   const bool good_se1 = format_se(se1, cl, read1, name1, cig1, out),
-             good_se2 = format_se(se2, cl, read2, name2, cig2, out);
+    good_se2 = format_se(se2, cl, read2, name2, cig2, out);
 
   return good_se1 || good_se2;
 }
@@ -774,11 +775,10 @@ template <score_t (*scr_fun)(const char, const uint8_t),
           score_t indel_pen>
 void
 align_read(se_element &res, string &cigar, const string &read,
-            Read &pread, AbismalAlign<scr_fun, indel_pen> &aln) {
-  const bool rc = res.rc();
-  const bool a_rich = res.a_rich();
+           Read &pread, AbismalAlign<scr_fun, indel_pen> &aln) {
   if (res.do_align()) {
-    if (rc) {
+    const bool a_rich = res.elem_is_a_rich();
+    if (res.rc()) {
       const string read_rc(revcomp(read));
       // rc reverses richness of read
       if (a_rich) prep_read<false>(read_rc, pread);
@@ -793,7 +793,7 @@ align_read(se_element &res, string &cigar, const string &read,
     const score_t the_score = aln.align(pread, res.pos, len, cand_cigar);
 
     // GS the /2 here is specific to the 1, -1, -1 scoring scheme
-    const score_t cand_diffs = (static_cast<score_t>(len) - the_score) / 2;
+    const score_t cand_diffs = (static_cast<score_t>(len) - the_score)/2;
     if (!accept_alignment(len, cand_diffs, res.diffs)) {
       if (len >= se_element::min_aligned_length)
         throw runtime_error("alignment fall through");
@@ -804,9 +804,8 @@ align_read(se_element &res, string &cigar, const string &read,
       cigar = cand_cigar;
     }
   }
-
-  // Default cigar if alignment was not performed
-  else cigar = std::to_string(read.size()) + "M"; // match/mismatch cigar
+  else // default cigar if alignment was not performed
+    cigar = std::to_string(read.size()) + "M"; // match/mismatch cigar
 }
 
 template <const  conversion_type conv>
@@ -1115,7 +1114,7 @@ select_maps(const string &read1, const string &read2,
   best_pair<swap_ends>(res1, res2, read1, read2, cig1, cig2,
                        genome_st, genome_size, max_batch_read_length, best);
 
-  // GS: This condition is necessary to not override the cigar
+  // GS: This condition is necessary to not overwrite the cigar
   if (!best.valid()) {
     best_single(res1, res_se1, read1, cig1, genome_st, genome_size);
     best_single(res2, res_se2, read2, cig2, genome_st, genome_size);
@@ -1342,7 +1341,6 @@ map_paired_ended_rand(const bool VERBOSE,
                  get_strand_code('-', a_rich)>(reads2, reads1, max_candidates,
                                                abismal_index, res2, res1);
 
-
 #pragma omp parallel for
     for (size_t i = 0 ; i < n_reads; ++i)
       select_maps<true>(reads2[i], reads1[i],
@@ -1419,7 +1417,7 @@ int main(int argc, const char **argv) {
     opt_parse.add_opt("mismatches", 'm', "max allowed mismatches",
                       false, max_diffs);
     opt_parse.add_opt("hits", 'h', "max number of mismatches for a hit to be "
-                                   "considered for subsequent alignment",
+                      "considered for subsequent alignment",
                       false, invalid_hit_diffs);
     opt_parse.add_opt("shifts", 's', "number of seed shifts",
                       false, seed::n_shifts);
@@ -1520,16 +1518,16 @@ int main(int argc, const char **argv) {
     else {
       if (pbat_mode)
         map_paired_ended<a_rich>(VERBOSE, reads_file, reads_file2,
-                                          batch_size, max_candidates,
-                                          abismal_index, pe_stats, out);
+                                 batch_size, max_candidates,
+                                 abismal_index, pe_stats, out);
       else if (random_pbat)
         map_paired_ended_rand(VERBOSE, reads_file, reads_file2,
                               batch_size, max_candidates,
                               abismal_index, pe_stats, out);
       else
         map_paired_ended<t_rich>(VERBOSE, reads_file, reads_file2,
-                                          batch_size, max_candidates,
-                                          abismal_index, pe_stats, out);
+                                 batch_size, max_candidates,
+                                 abismal_index, pe_stats, out);
     }
 
     std::ofstream stat_out(outfile + ".mapstats");
