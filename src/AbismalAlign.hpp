@@ -25,12 +25,14 @@
 #include <iostream>
 
 #include "cigar_utils.hpp"
+#include "dna_four_bit.hpp"
 
 // AbismalAlign class has a templated function for the comparison
 // operation between letters in a sequence. This function currently
 // returns a boolean value, so only computes longest common
 // subsequence.
 typedef int16_t score_t;
+typedef genome_four_bit_itr genome_iterator;
 
 using std::cerr;
 using std::endl;
@@ -40,15 +42,15 @@ template <score_t (*scr_fun)(const char, const uint8_t),
           score_t indel_pen = -1>
 struct AbismalAlign {
 
-  AbismalAlign(const std::vector<uint8_t>::const_iterator &target_start,
+  AbismalAlign(const genome_iterator &target_start,
                const uint32_t target_size, const size_t max_read_length);
-  score_t align(const std::vector<char> &query, uint32_t &t_pos, uint32_t &len,
+  score_t align(const std::vector<uint8_t> &query, uint32_t &t_pos, uint32_t &len,
               std::string &cigar);
 
   std::vector<score_t> table;
   std::vector<uint8_t> traceback;
   std::vector<uint8_t> cigar_scratch;
-  const std::vector<uint8_t>::const_iterator target;
+  const genome_iterator target;
   const size_t t_sz;
   const size_t q_sz_max;
   const size_t bw;
@@ -59,9 +61,9 @@ struct AbismalAlign {
 template <score_t (*scr_fun)(const char, const uint8_t),
           score_t indel_pen>
 AbismalAlign<scr_fun, indel_pen>::AbismalAlign(
-    const std::vector<uint8_t>::const_iterator &target_start,
+    const genome_iterator &target_start,
     const uint32_t target_size,
-    const size_t max_read_length) : 
+    const size_t max_read_length) :
             target(target_start), t_sz(target_size),
             q_sz_max(max_read_length), bw(2*max_off_diag + 1) {
   // size of alignment matrix and traceback matrix is maximum query
@@ -171,7 +173,7 @@ from_left(T left_itr, T target, const T target_end, U traceback) {
 
 template <score_t (*scr_fun)(const char, const uint8_t), score_t indel_pen>
 score_t
-AbismalAlign<scr_fun, indel_pen>::align(const std::vector<char> &qseq,
+AbismalAlign<scr_fun, indel_pen>::align(const std::vector<uint8_t> &qseq,
                                         uint32_t &t_pos, uint32_t &len,
                                         std::string &cigar) {
 
@@ -184,7 +186,7 @@ AbismalAlign<scr_fun, indel_pen>::align(const std::vector<char> &qseq,
   const size_t t_lim = std::min(t_shift, t_sz - t_beg); // iterations in target
 
   // points to relevant reference sequence positions
-  auto t_itr(target + t_beg);
+  genome_iterator t_itr(target + t_beg);
   const auto q_itr(std::begin(qseq));
   auto tb_cur(std::begin(traceback));
 
@@ -229,7 +231,7 @@ AbismalAlign<scr_fun, indel_pen>::align(const std::vector<char> &qseq,
   std::reverse(std::begin(cigar_scratch), c_itr);
 
   // GS: max cigar size = 1 operation per base, giving 2 characters each
-  cigar.reserve(2*q_sz_max);
+  cigar.resize(2*q_sz_max);
   compress_cigar(begin(cigar_scratch), c_itr, cigar);
   t_pos = t_beg + the_row;
   return r;
