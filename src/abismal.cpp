@@ -1120,20 +1120,15 @@ template <const bool swap_ends>
 static void
 best_pair(const pe_candidates &res1, const pe_candidates &res2,
           const string &read1, const string &read2,
-          const genome_iterator &gi,
-          const uint32_t genome_size,
-          const size_t max_batch_read_length,
           string &cig1, string &cig2,
+          AbismalAlign<mismatch_score, align_scores::indel> &aln,
           pe_result &best) {
 
   auto j1 = begin(res1.v);
   const auto j1_end = j1 + res1.sz;
   const auto j2_end = begin(res2.v) + res2.sz;
-  se_element s1, s2;
-  AbismalAlign<mismatch_score, align_scores::indel>
-    aln(gi, genome_size, max_batch_read_length);
-
   Read pread;
+  se_element s1, s2;
   string cand_cig1, cand_cig2;
   for (auto j2(begin(res2.v)); j2 != j2_end; ++j2) {
     s2 = *j2;
@@ -1164,14 +1159,11 @@ select_maps(const string &read1, const string &read2,
             string &cig1, string &cig2,
             pe_candidates &res1, pe_candidates &res2,
             se_result &res_se1, se_result &res_se2,
-            const genome_iterator &gi,
-            const uint32_t genome_size,
-            const size_t max_batch_read_length,
+            AbismalAlign<mismatch_score, align_scores::indel> &aln,
             pe_result &best) {
   res1.prepare_for_mating();
   res2.prepare_for_mating();
-  best_pair<swap_ends>(res1, res2, read1, read2, gi, genome_size,
-                       max_batch_read_length, cig1, cig2, best);
+  best_pair<swap_ends>(res1, res2, read1, read2, cig1, cig2, aln, best);
 
   // GS: This condition is necessary to not overwrite the cigar
   if (!best.valid()) {
@@ -1230,7 +1222,6 @@ map_paired_ended(const bool VERBOSE,
       res_se2[i].reset();
       bests[i].reset();
     }
-
     map_pe_batch<conv,
                  get_strand_code('+', conv),
                  get_strand_code('-', flip_conv(conv))>(reads1, reads2,
@@ -1238,30 +1229,37 @@ map_paired_ended(const bool VERBOSE,
                                                         abismal_index,
                                                         genome_st, gi,
                                                         res1, res2);
-#pragma omp parallel for
-    for (size_t i = 0 ; i < n_reads; ++i)
-      select_maps<false>(reads1[i], reads2[i],
-                         cigar1[i], cigar2[i],
-                         res1[i], res2[i],
-                         res_se1[i], res_se2[i],
-                         gi, genome_size,
-                         max_batch_read_length, bests[i]);
+#pragma omp parallel
+    {
+      AbismalAlign<mismatch_score, align_scores::indel>
+        aln(gi, genome_size, max_batch_read_length);
 
+#pragma omp for
+      for (size_t i = 0 ; i < n_reads; ++i)
+        select_maps<false>(reads1[i], reads2[i],
+                           cigar1[i], cigar2[i],
+                           res1[i], res2[i],
+                           res_se1[i], res_se2[i],
+                           aln, bests[i]);
+    }
     map_pe_batch<!conv,
                  get_strand_code('+', flip_conv(conv)),
                  get_strand_code('-', conv)>(reads2, reads1, max_candidates,
                                              abismal_index, genome_st, gi,
                                              res2, res1);
+#pragma omp parallel
+    {
+      AbismalAlign<mismatch_score, align_scores::indel>
+        aln(gi, genome_size, max_batch_read_length);
 
-#pragma omp parallel for
-    for (size_t i = 0 ; i < n_reads; ++i)
-      select_maps<true>(reads2[i], reads1[i],
-                        cigar2[i], cigar1[i],
-                        res2[i], res1[i],
-                        res_se2[i], res_se1[i],
-                        gi, genome_size,
-                        max_batch_read_length, bests[i]);
-
+#pragma omp for
+      for (size_t i = 0 ; i < n_reads; ++i)
+        select_maps<true>(reads2[i], reads1[i],
+                          cigar2[i], cigar1[i],
+                          res2[i], res1[i],
+                          res_se2[i], res_se1[i],
+                          aln, bests[i]);
+    }
 #pragma omp parallel
     {
       Read pread;
@@ -1358,62 +1356,76 @@ map_paired_ended_rand(const bool VERBOSE,
                  get_strand_code('-', a_rich)>(reads1, reads2, max_candidates,
                                                abismal_index, genome_st, gi,
                                                res1, res2);
-#pragma omp parallel for
-    for (size_t i = 0 ; i < n_reads; ++i)
-      select_maps<false>(reads1[i], reads2[i],
-                         cigar1[i], cigar2[i],
-                         res1[i], res2[i],
-                         res_se1[i], res_se2[i],
-                         gi, genome_size,
-                         max_batch_read_length, bests[i]);
+#pragma omp parallel
+    {
+      AbismalAlign<mismatch_score, align_scores::indel>
+        aln(gi, genome_size, max_batch_read_length);
 
+#pragma omp for
+      for (size_t i = 0 ; i < n_reads; ++i)
+        select_maps<false>(reads1[i], reads2[i],
+                           cigar1[i], cigar2[i],
+                           res1[i], res2[i],
+                           res_se1[i], res_se2[i],
+                           aln, bests[i]);
+    }
     // t-rich end1, neg-strand end1
     map_pe_batch<a_rich,
                  get_strand_code('+', a_rich),
                  get_strand_code('-', t_rich)>(reads2, reads1, max_candidates,
                                                abismal_index, genome_st, gi,
                                                res2, res1);
-#pragma omp parallel for
-    for (size_t i = 0 ; i < n_reads; ++i)
-      select_maps<true>(reads2[i], reads1[i],
-                        cigar2[i], cigar1[i],
-                        res2[i], res1[i],
-                        res_se2[i], res_se1[i],
-                        gi, genome_size,
-                        max_batch_read_length, bests[i]);
+#pragma omp parallel
+    {
+      AbismalAlign<mismatch_score, align_scores::indel>
+      aln(gi, genome_size, max_batch_read_length);
 
+#pragma omp for
+      for (size_t i = 0 ; i < n_reads; ++i)
+        select_maps<true>(reads2[i], reads1[i],
+                          cigar2[i], cigar1[i],
+                          res2[i], res1[i],
+                          res_se2[i], res_se1[i],
+                          aln, bests[i]);
+    }
     // a-rich end1, pos-strand end1
     map_pe_batch<a_rich,
                  get_strand_code('+', a_rich),
                  get_strand_code('-', t_rich)>(reads1, reads2, max_candidates,
                                                abismal_index, genome_st, gi,
                                                res1, res2);
+#pragma omp parallel
+    {
+      AbismalAlign<mismatch_score, align_scores::indel>
+      aln(gi, genome_size, max_batch_read_length);
 
-#pragma omp parallel for
-    for (size_t i = 0 ; i < n_reads; ++i)
-      select_maps<false>(reads1[i], reads2[i],
-                         cigar1[i], cigar2[i],
-                         res1[i], res2[i],
-                         res_se1[i], res_se2[i],
-                         gi, genome_size,
-                         max_batch_read_length, bests[i]);
-
+#pragma omp for
+      for (size_t i = 0 ; i < n_reads; ++i)
+        select_maps<false>(reads1[i], reads2[i],
+                           cigar1[i], cigar2[i],
+                           res1[i], res2[i],
+                           res_se1[i], res_se2[i],
+                           aln, bests[i]);
+    }
     // a-rich end1, neg-strand end1
     map_pe_batch<t_rich,
                  get_strand_code('+', t_rich),
                  get_strand_code('-', a_rich)>(reads2, reads1, max_candidates,
                                                abismal_index, genome_st, gi,
                                                res2, res1);
+#pragma omp parallel
+    {
+      AbismalAlign<mismatch_score, align_scores::indel>
+      aln(gi, genome_size, max_batch_read_length);
 
-#pragma omp parallel for
-    for (size_t i = 0 ; i < n_reads; ++i)
-      select_maps<true>(reads2[i], reads1[i],
-                        cigar2[i], cigar1[i],
-                        res2[i], res1[i],
-                        res_se2[i], res_se1[i],
-                        gi, genome_size,
-                        max_batch_read_length, bests[i]);
-
+#pragma omp for
+      for (size_t i = 0 ; i < n_reads; ++i)
+        select_maps<true>(reads2[i], reads1[i],
+                          cigar2[i], cigar1[i],
+                          res2[i], res1[i],
+                          res_se2[i], res_se1[i],
+                          aln, bests[i]);
+    }
 #pragma omp parallel
     {
       Read pread;
