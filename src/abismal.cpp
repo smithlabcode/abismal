@@ -875,7 +875,7 @@ map_single_ended(const bool VERBOSE,
                  se_map_stats &se_stats,
                  ofstream &out) {
 
-  const uint32_t genome_size = abismal_index.genome.size();
+  const uint32_t genome_size = abismal_index.cl.get_genome_size();
   const Genome::const_iterator genome_st(begin(abismal_index.genome));
   const genome_iterator gi(genome_st);
 
@@ -969,7 +969,7 @@ map_single_ended_rand(const bool VERBOSE,
                       const AbismalIndex &abismal_index,
                       se_map_stats &se_stats,
                       ofstream &out) {
-  const uint32_t genome_size = abismal_index.genome.size();
+  const uint32_t genome_size = abismal_index.cl.get_genome_size();
   const Genome::const_iterator genome_st(begin(abismal_index.genome));
   const genome_iterator gi(genome_st);
 
@@ -1193,7 +1193,7 @@ map_paired_ended(const bool VERBOSE,
   vector<pe_result> bests(batch_size);
   vector<se_result> res_se1(batch_size), res_se2(batch_size);
 
-  const uint32_t genome_size = abismal_index.genome.size();
+  const uint32_t genome_size = abismal_index.cl.get_genome_size();
   const Genome::const_iterator genome_st(begin(abismal_index.genome));
   const genome_iterator gi(genome_st);
 
@@ -1222,6 +1222,7 @@ map_paired_ended(const bool VERBOSE,
       res_se2[i].reset();
       bests[i].reset();
     }
+
     map_pe_batch<conv,
                  get_strand_code('+', conv),
                  get_strand_code('-', flip_conv(conv))>(reads1, reads2,
@@ -1229,6 +1230,7 @@ map_paired_ended(const bool VERBOSE,
                                                         abismal_index,
                                                         genome_st, gi,
                                                         res1, res2);
+
 #pragma omp parallel
     {
       AbismalAlign<mismatch_score, align_scores::indel>
@@ -1242,11 +1244,13 @@ map_paired_ended(const bool VERBOSE,
                            res_se1[i], res_se2[i],
                            aln, bests[i]);
     }
+
     map_pe_batch<!conv,
                  get_strand_code('+', flip_conv(conv)),
                  get_strand_code('-', conv)>(reads2, reads1, max_candidates,
                                              abismal_index, genome_st, gi,
                                              res2, res1);
+
 #pragma omp parallel
     {
       AbismalAlign<mismatch_score, align_scores::indel>
@@ -1260,6 +1264,7 @@ map_paired_ended(const bool VERBOSE,
                           res_se2[i], res_se1[i],
                           aln, bests[i]);
     }
+
 #pragma omp parallel
     {
       Read pread;
@@ -1322,7 +1327,7 @@ map_paired_ended_rand(const bool VERBOSE,
   vector<se_result> res_se1(batch_size), res_se2(batch_size);
 
   // alignment stuff
-  const uint32_t genome_size = abismal_index.genome.size();
+  const uint32_t genome_size = abismal_index.cl.get_genome_size();
   const Genome::const_iterator genome_st(begin(abismal_index.genome));
   const genome_iterator gi(genome_st);
   ProgressBar progress(get_filesize(reads_file1), "mapping reads");

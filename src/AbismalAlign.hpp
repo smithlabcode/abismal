@@ -186,7 +186,7 @@ AbismalAlign<scr_fun, indel_pen>::align(const std::vector<uint8_t> &qseq,
   const size_t t_lim = std::min(t_shift, t_sz - t_beg); // iterations in target
 
   // points to relevant reference sequence positions
-  genome_iterator t_itr(target + t_beg);
+  genome_iterator t_itr = target + t_beg;
   const auto q_itr(std::begin(qseq));
   auto tb_cur(std::begin(traceback));
 
@@ -199,7 +199,6 @@ AbismalAlign<scr_fun, indel_pen>::align(const std::vector<uint8_t> &qseq,
 
     tb_cur += bw; // next row in traceback
     cur += bw; // next row in aln matrix
-
     from_diag<scr_fun>(cur + left, cur + right, prev + left,
                        q_itr + (i > bw ? i - bw : 0), *t_itr++, tb_cur + left);
 
