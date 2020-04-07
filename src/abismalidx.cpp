@@ -72,17 +72,17 @@ int main(int argc, const char **argv) {
 
     size_t n_threads = 1;
     uint32_t max_candidates = std::numeric_limits<uint32_t>::max();
-    uint32_t deadzone_freq = 20;
+    uint32_t deadzone_freq = 200;
 
     /****************** COMMAND LINE OPTIONS ********************/
     OptionParser opt_parse(strip_path(argv[0]), "build abismal index",
                            "<genome-fasta> <abismal-index-file>", 2);
     opt_parse.set_show_defaults();
-    opt_parse.add_opt("too-big", 'B', "ignore buckets bigger than this",
-                      false, AbismalIndex::valid_bucket_limit);
+    //opt_parse.add_opt("too-big", 'B', "ignore buckets bigger than this",
+    //                  false, AbismalIndex::valid_bucket_limit);
     opt_parse.add_opt("threads", 't', "number of threads", false, n_threads);
-    opt_parse.add_opt("max-candidates", 'c', "maximum candidates per seed",
-                      false, max_candidates);
+    //opt_parse.add_opt("max-candidates", 'c', "maximum candidates per seed",
+    //                  false, max_candidates);
     opt_parse.add_opt("deadzone", 'd', "number of times a 100-mer should "
                       "appear to be excluded from the genome",
                       false, deadzone_freq);

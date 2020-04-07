@@ -40,7 +40,6 @@ using std::min;
 
 bool AbismalIndex::VERBOSE = false;
 uint32_t AbismalIndex::max_invalid_per_seed = 0;
-uint32_t AbismalIndex::deadzone_kmer_length = 100;
 uint32_t AbismalIndex::valid_bucket_limit = 500000;
 
 string AbismalIndex::internal_identifier = "AbismalIndex";
@@ -74,7 +73,7 @@ AbismalIndex::get_bucket_sizes(unordered_set<uint32_t> &big_buckets) {
   // the "counter" has an additional entry for convenience
   counter.resize(counter_size + 1, 0);
 
-  const size_t lim = cl.get_genome_size() - seed::n_seed_positions;
+  const size_t lim = cl.get_genome_size() - seed::n_solid_positions;
   ProgressBar progress(lim, "counting bucket sizes");
   if (VERBOSE)
     progress.report(cerr, 0);
@@ -84,7 +83,7 @@ AbismalIndex::get_bucket_sizes(unordered_set<uint32_t> &big_buckets) {
   auto end_invalid_counter(start_invalid_counter);
   uint32_t invalid_count = 0;
   while (end_invalid_counter !=
-         start_invalid_counter + (seed::n_seed_positions - 1))
+         start_invalid_counter + (seed::n_solid_positions - 1))
     invalid_count += invalid_base(*end_invalid_counter++);
 
   // start building up the hash key
@@ -105,7 +104,7 @@ AbismalIndex::get_bucket_sizes(unordered_set<uint32_t> &big_buckets) {
   }
   if (VERBOSE)
     progress.report(cerr, lim);
-
+  /*
   if (VERBOSE)
     cerr << "[erasing big buckets]" << endl;
   for (uint32_t i = 0; i < counter_size; ++i)
@@ -115,7 +114,7 @@ AbismalIndex::get_bucket_sizes(unordered_set<uint32_t> &big_buckets) {
     }
   if (VERBOSE)
     cerr << "[erased " << big_buckets.size() << " buckets]" << endl;
-
+    */
   if (VERBOSE)
     cerr << "[computing bucket locations]" << endl;
   std::partial_sum(begin(counter), end(counter), begin(counter));
@@ -129,7 +128,7 @@ AbismalIndex::hash_genome(const unordered_set<uint32_t> &big_buckets) {
   index.resize(index_size, 0);
 
   // ADS: make sure this works even if genome super small
-  const size_t lim = cl.get_genome_size() - seed::n_seed_positions;
+  const size_t lim = cl.get_genome_size() - seed::n_solid_positions;
   ProgressBar progress(lim, "hashing genome");
 
   // start counting Ns in the seed windows
@@ -137,7 +136,7 @@ AbismalIndex::hash_genome(const unordered_set<uint32_t> &big_buckets) {
   auto end_invalid_counter(start_invalid_counter);
   uint32_t invalid_count = 0;
   while (end_invalid_counter !=
-         start_invalid_counter + (seed::n_seed_positions - 1))
+         start_invalid_counter + (seed::n_solid_positions - 1))
     invalid_count += invalid_base(*end_invalid_counter++);
 
   // start building up the hash key
@@ -205,7 +204,7 @@ AbismalIndex::sort_buckets(const sort_type st) {
          << " letters]" << endl;
 
   if (st == four_letter) {
-    const BucketLessFour bucket_less(genome, deadzone_kmer_length);
+    const BucketLessFour bucket_less(genome, seed::max_read_length);
 #pragma omp parallel for
     for (size_t i = 0; i < counter_size; ++i)
       if (counter[i + 1] > counter[i] + 1)
@@ -244,7 +243,7 @@ AbismalIndex::remove_big_buckets(const size_t max_candidates) {
   // first mark the positions to keep
   if (VERBOSE)
     cerr << "[finding big buckets]" << endl;
-  const BucketEqual bucket_equal(genome, deadzone_kmer_length);
+  const BucketEqual bucket_equal(genome, seed::max_read_length);
   const auto b(begin(index));
   vector<bool> keep(index_size, true);
 
@@ -309,10 +308,8 @@ AbismalIndex::write(const string &index_file) const {
 
   write_internal_identifier(out);
 
-  const AbismalSeed the_seed(seed::n_seed_positions,
-                             seed::key_weight,
-                             seed::n_solid_positions,
-                             seed::solid_positions);
+  const AbismalSeed the_seed(seed::n_solid_positions,
+                             seed::key_weight);
 
   the_seed.write(out);
 
@@ -356,10 +353,8 @@ AbismalIndex::read(const string &index_file) {
   AbismalSeed the_seed;
   the_seed.read(in);
 
-  const AbismalSeed expected_seed(seed::n_seed_positions,
-                                  seed::key_weight,
-                                  seed::n_solid_positions,
-                                  seed::solid_positions);
+  const AbismalSeed expected_seed(seed::n_solid_positions,
+                                  seed::key_weight);
 
   if (!(the_seed == expected_seed))
     throw runtime_error("inconsistent seeds (expected, indexed):\n" +

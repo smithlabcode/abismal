@@ -775,8 +775,8 @@ process_seeds(const uint32_t max_candidates,
 
     hits.clear();
     if (s_idx < e_idx) {
-      find_candidates(read_start, gi,
-                      readlen, seed::n_solid_positions, s_idx, e_idx);
+      find_candidates(read_start, gi, readlen,
+                      min(readlen, seed::n_solid_positions), s_idx, e_idx);
       if (e_idx - s_idx >= max_candidates)
         e_idx = s_idx + max_candidates;
       for (; s_idx != e_idx; ++s_idx)
@@ -1502,6 +1502,8 @@ int main(int argc, const char **argv) {
                       false, invalid_hit_diffs);
     opt_parse.add_opt("shifts", 's', "number of seed shifts",
                       false, seed::n_shifts);
+    opt_parse.add_opt("seed-pos", 'S', "seed length",
+                      false, seed::n_seed_positions);
     opt_parse.add_opt("batch", 'b', "reads to load at once",
                       false, batch_size);
     opt_parse.add_opt("candidates", 'c', "max candidates for full comparison",

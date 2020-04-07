@@ -33,8 +33,10 @@ using std::endl;
 using std::runtime_error;
 
 uint32_t seed::n_shifts = 3;
+uint32_t seed::n_seed_positions = 32;
 
-AbismalSeed::AbismalSeed(const string &pattern_arg,
+/*
+AbismalSeed::AbismalSeed( //const string &pattern_arg,
                    const uint32_t key_weight_,
                    const uint32_t n_solid_positions_) :
   key_weight(key_weight_),
@@ -42,7 +44,6 @@ AbismalSeed::AbismalSeed(const string &pattern_arg,
 
   if (n_solid_positions < key_weight)
     throw runtime_error("key weight less than total solid bits");
-
   bool found_solid = false;
   vector<bool> period;
   for (size_t i = 0; i < pattern_arg.length(); ++i) {
@@ -70,24 +71,15 @@ AbismalSeed::AbismalSeed(const string &pattern_arg,
     if (seed_pattern[i])
       solid_positions.push_back(i);
 
-  n_seed_positions = solid_positions.back() + 1;
-}
+  n_solid_positions = solid_positions.back() + 1;
+}*/
 
 
 string
 AbismalSeed::tostring() const {
   std::ostringstream oss;
-  oss << "const uint32_t n_seed_positions = " << n_seed_positions << ";\n"
-      << "const uint32_t key_weight = " << key_weight << ";\n"
-      << "const uint32_t n_solid_positions = " << n_solid_positions << ";\n"
-      << "const uint32_t solid_positions[] = {\n";
-  oss << std::setw(4) << solid_positions[0];
-  for (size_t i = 1; i < solid_positions.size(); ++i) {
-    oss << ',';
-    if (i % 10 == 0) oss << endl;
-    oss << std::setw(4) << solid_positions[i];
-  }
-  oss << endl << "};";
+  oss << "const uint32_t n_solid_positions = " << n_solid_positions << ";\n"
+      << "const uint32_t key_weight = " << key_weight << ";\n";
   return oss.str();
 }
 
@@ -107,21 +99,15 @@ AbismalSeed::write(const string &filename) const {
 
 void
 AbismalSeed::write(std::ostream &out) const {
-  if (!out.write((char*)&n_seed_positions, sizeof(uint32_t)) ||
-      !out.write((char*)&key_weight, sizeof(uint32_t)) ||
-      !out.write((char*)&n_solid_positions, sizeof(uint32_t)) ||
-      !out.write((char*)&solid_positions[0],
-                 sizeof(uint32_t)*n_solid_positions))
+  if (!out.write((char*)&n_solid_positions, sizeof(uint32_t)) ||
+      !out.write((char*)&key_weight, sizeof(uint32_t)))
     throw runtime_error("failed writing seed");
 }
 
 void
 AbismalSeed::write(FILE *out) const {
-  if (fwrite((char*)&n_seed_positions, sizeof(uint32_t), 1, out) != 1 ||
-      fwrite((char*)&key_weight, sizeof(uint32_t), 1, out) != 1 ||
-      fwrite((char*)&n_solid_positions, sizeof(uint32_t), 1, out) != 1 ||
-      fwrite((char*)&solid_positions[0], sizeof(uint32_t),
-             n_solid_positions, out) != n_solid_positions)
+  if (fwrite((char*)&n_solid_positions, sizeof(uint32_t), 1, out) != 1 ||
+      fwrite((char*)&key_weight, sizeof(uint32_t), 1, out) != 1)
     throw runtime_error("failed writing seed");
 }
 
@@ -137,13 +123,8 @@ void
 AbismalSeed::read(std::istream &in) {
   static const string error_msg("failed loading seed");
 
-  if (!in.read((char*)&n_seed_positions, sizeof(uint32_t)) ||
-      !in.read((char*)&key_weight, sizeof(uint32_t)) ||
-      !in.read((char*)&n_solid_positions, sizeof(uint32_t)))
-    throw runtime_error(error_msg);
-
-  solid_positions.resize(n_solid_positions);
-  if (!in.read((char*)&solid_positions[0], sizeof(uint32_t)*n_solid_positions))
+  if (!in.read((char*)&n_solid_positions, sizeof(uint32_t)) ||
+      !in.read((char*)&key_weight, sizeof(uint32_t)))
     throw runtime_error(error_msg);
 }
 
@@ -151,13 +132,7 @@ void
 AbismalSeed::read(FILE *in) {
   static const string error_msg("failed loading seed");
 
-  if (fread((char*)&n_seed_positions, sizeof(uint32_t), 1, in) != 1 ||
-      fread((char*)&key_weight, sizeof(uint32_t), 1, in) != 1 ||
-      fread((char*)&n_solid_positions, sizeof(uint32_t), 1, in) != 1)
-    throw runtime_error(error_msg);
-
-  solid_positions.resize(n_solid_positions);
-  if (fread((char*)&solid_positions[0], sizeof(uint32_t),
-            n_solid_positions, in) != n_solid_positions)
+  if (fread((char*)&n_solid_positions, sizeof(uint32_t), 1, in) != 1 ||
+      fread((char*)&key_weight, sizeof(uint32_t), 1, in) != 1)
     throw runtime_error(error_msg);
 }

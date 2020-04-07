@@ -70,7 +70,7 @@ int main(int argc, const char **argv) {
     }
     /****************** END COMMAND LINE OPTIONS *****************/
 
-    const AbismalSeed as(pattern_arg, key_weight, n_solid_positions);
+    const AbismalSeed as(n_solid_positions, key_weight);
 
     cerr << as << endl;
 

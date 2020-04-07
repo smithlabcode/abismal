@@ -26,28 +26,20 @@
 
 struct AbismalSeed {
 
-  AbismalSeed(const uint32_t _n_seed_positions,
-           const uint32_t _key_weight,
-           const uint32_t _n_solid_positions,
-           const uint32_t *const _solid_positions) :
-    n_seed_positions(_n_seed_positions),
-    key_weight(_key_weight),
-    n_solid_positions(_n_solid_positions) {
-    solid_positions.resize(n_solid_positions);
-    copy(_solid_positions, _solid_positions + n_solid_positions,
-         std::begin(solid_positions));
+  AbismalSeed(const uint32_t _n_solid_positions,
+           const uint32_t _key_weight) :
+    n_solid_positions(_n_solid_positions),
+    key_weight(_key_weight) {
   }
 
-  AbismalSeed(const std::string &period,
+  /*AbismalSeed(//const std::string &period,
            const uint32_t key_weight_,
-           const uint32_t n_solid_positions_);
+           const uint32_t n_solid_positions_);*/
 
   AbismalSeed() {}
 
-  uint32_t n_seed_positions;  // number of positions covered by the seed
+  uint32_t n_solid_positions;  // number of positions to sort the genome by
   uint32_t key_weight;  // number of hash positions
-  uint32_t n_solid_positions; // total solid positions
-  std::vector<uint32_t> solid_positions;
 
   std::string tostring() const;
   void write(const std::string &filename) const;
@@ -60,7 +52,7 @@ struct AbismalSeed {
 
   bool operator==(const AbismalSeed &rhs) const {
     return key_weight == rhs.key_weight &&
-      solid_positions == rhs.solid_positions;
+      n_solid_positions == rhs.n_solid_positions;
   }
 };
 
@@ -72,22 +64,14 @@ namespace seed {
   // choice we can make for any seed pattern.
   extern uint32_t n_shifts;
 
-  const uint32_t n_seed_positions = 32;
+  //number of positions covered by the seed
+  extern uint32_t n_seed_positions;
+
+  const uint32_t n_solid_positions = 200;
+
   const uint32_t key_weight = 26;
+  const uint32_t max_read_length = 200;
   const size_t hash_mask = (1 << seed::key_weight) - 1;
-  const uint32_t n_solid_positions = 100;
-  const uint32_t solid_positions[] = {
-     0,   1,   2,   3,   4,   5,   6,   7,   8,   9,
-    10,  11,  12,  13,  14,  15,  16,  17,  18,  19,
-    20,  21,  22,  23,  24,  25,  26,  27,  28,  29,
-    30,  31,  32,  33,  34,  35,  36,  37,  38,  39,
-    40,  41,  42,  43,  44,  45,  46,  47,  48,  49,
-    50,  51,  52,  53,  54,  55,  56,  57,  58,  59,
-    60,  61,  62,  63,  64,  65,  66,  67,  68,  69,
-    70,  71,  72,  73,  74,  75,  76,  77,  78,  79,
-    80,  81,  82,  83,  84,  85,  86,  87,  88,  89,
-    90,  91,  92,  93,  94,  95,  96,  97,  98,  99
-  };
 };
 
 // A/T nucleotide to 1-bit number
