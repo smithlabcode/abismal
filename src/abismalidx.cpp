@@ -83,7 +83,8 @@ int main(int argc, const char **argv) {
     opt_parse.add_opt("threads", 't', "number of threads", false, n_threads);
     //opt_parse.add_opt("max-candidates", 'c', "maximum candidates per seed",
     //                  false, max_candidates);
-    opt_parse.add_opt("deadzone", 'd', "number of times a 100-mer should "
+    opt_parse.add_opt("deadzone", 'd', "number of times a "
+                      + std::to_string(seed::n_solid_positions) + "-mer should "
                       "appear to be excluded from the genome",
                       false, deadzone_freq);
     opt_parse.add_opt("verbose", 'v', "print more run info", false, VERBOSE);

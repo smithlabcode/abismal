@@ -66,11 +66,8 @@ namespace seed {
 
   //number of positions covered by the seed
   extern uint32_t n_seed_positions;
-
   const uint32_t n_solid_positions = 200;
-
   const uint32_t key_weight = 26;
-  const uint32_t max_read_length = 200;
   const size_t hash_mask = (1 << seed::key_weight) - 1;
 };
 

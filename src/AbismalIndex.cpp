@@ -179,7 +179,6 @@ struct BucketLessFour {
   const uint32_t offset;
 };
 
-
 struct BucketLessTwo {
   BucketLessTwo(const Genome &g) : g_start(begin(g)) {}
   bool operator()(const uint32_t a, const uint32_t b) const {
@@ -204,7 +203,7 @@ AbismalIndex::sort_buckets(const sort_type st) {
          << " letters]" << endl;
 
   if (st == four_letter) {
-    const BucketLessFour bucket_less(genome, seed::max_read_length);
+    const BucketLessFour bucket_less(genome, seed::n_solid_positions);
 #pragma omp parallel for
     for (size_t i = 0; i < counter_size; ++i)
       if (counter[i + 1] > counter[i] + 1)
@@ -243,7 +242,7 @@ AbismalIndex::remove_big_buckets(const size_t max_candidates) {
   // first mark the positions to keep
   if (VERBOSE)
     cerr << "[finding big buckets]" << endl;
-  const BucketEqual bucket_equal(genome, seed::max_read_length);
+  const BucketEqual bucket_equal(genome, seed::n_solid_positions);
   const auto b(begin(index));
   vector<bool> keep(index_size, true);
 
