@@ -55,7 +55,7 @@ struct AbismalAlign {
   const size_t q_sz_max;
   const size_t bw;
 
-  static const uint16_t max_off_diag = 2;
+  static const uint16_t max_off_diag = 3;
 };
 
 template <score_t (*scr_fun)(const char, const uint8_t),
