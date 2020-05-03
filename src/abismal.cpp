@@ -90,8 +90,9 @@ is_rc(const flags_t flags) {
 }
 
 namespace align_scores {
-  static const score_t match = 1,
-    mismatch = -1,
+  static const score_t
+    match = 1,
+    mismatch = 0,
     indel = -1;
 };
 
@@ -269,24 +270,24 @@ format_se(se_result res, const ChromLookup &cl,
       revcomp_inplace(read);
       s.flip_strand();
     }
-    out << read_name << '\t'
+  /* GS sam foramt
+  out << read_name << '\t'
         << s.flags << '\t'
         << cl.names[chrom_idx] << '\t'
         << offset << '\t'
         << offset + read.length()  << '\t'
         << (unsigned) res.mapq() << '\t'
         << cigar << '\t'
-        << read << '\n';
-    /*
-    out << cl.names[chrom_idx] << '\t'
-        << offset << '\t'
-        << offset + read.length() << '\t'
-        << read_name << '\t'
-        << s.diffs << '\t'
-        << s.strand() << '\t'
-        << read << '\t'
-        << cigar << '\n';
-    //       << res.flags() << '\n';*/
+        << read << '\n'; */
+
+  out << cl.names[chrom_idx] << '\t'
+      << offset << '\t'
+      << offset + read.length() << '\t'
+      << read_name << '\t'
+      << (unsigned) res.mapq() << '\t'
+      << s.strand() << '\t'
+      << read << '\t'
+      << cigar << '\n';
   }
 }
 
@@ -471,6 +472,9 @@ format_pe(const pe_result &res, const ChromLookup &cl,
           const string &name1, const string &name2,
           string &cig1, string &cig2,
           ofstream &out) {
+  if (res.best.r1.aln_score == 0 ||
+      res.best.r2.aln_score == 0)
+    throw runtime_error("bad alignment score!");
   uint32_t r_s1 = 0, r_e1 = 0, chr1 = 0;
   uint32_t r_s2 = 0, r_e2 = 0, chr2 = 0;
   const pe_element p = res.best;
@@ -499,6 +503,7 @@ format_pe(const pe_result &res, const ChromLookup &cl,
     revcomp_inplace(read1);
   }
 
+  /* GS this is SAM format, kinda
   out << gr.get_name() << '\t'
       << p.flags() << '\t'
       << gr.get_chrom() << '\t'
@@ -506,7 +511,16 @@ format_pe(const pe_result &res, const ChromLookup &cl,
       << gr.get_end() << '\t'
       << (unsigned)res.mapq() << '\t'
       << cig1 << '\t'
-      << read1 << '\n';
+      << read1 << '\n';*/
+
+  out << gr.get_chrom() << '\t'
+      << gr.get_start() << '\t'
+      << gr.get_end() << '\t'
+      << gr.get_name() << '\t'
+      << (unsigned) res.mapq() << '\t'
+      << gr.get_strand() << '\t'
+      << read1 << '\t'
+      << cig1 << '\n';
   return true;
 }
 
@@ -701,16 +715,17 @@ check_hits(vector<uint32_t>::const_iterator start_idx,
            result_type &res) {
 
   // even positions in the genome
-  for (auto it(start_idx); it != end_idx; ++it) {
+  for (auto it(start_idx);
+            it != end_idx &&
+            !res.sure_ambig(offset != 0); ++it) {
     const uint32_t pos = (*it) - offset;
     const score_t diffs = ((pos & 1) ?
     full_compare<pos_odd>(res.get_cutoff(),
                           odd_read_st, odd_read_mid, odd_read_end,
                           genome_st + (pos >> 1)) :
-  
     full_compare<pos_even>(res.get_cutoff(),
-                            even_read_st, even_read_mid, even_read_end,
-                            genome_st + (pos >> 1)));
+                          even_read_st, even_read_mid, even_read_end,
+                          genome_st + (pos >> 1)));
     res.update_by_mismatch(pos, diffs, strand_code);
   }
 }
@@ -802,7 +817,7 @@ process_seeds(const uint32_t max_candidates,
     }
   }
 
-  // All seeds ambiguous, try to use the whole read as seed
+  // All seeds ambiguous, increase specificity by using the whole read as seed
   if (!found_good_seed) {
     k = 0;
     get_1bit_hash_4bit(read_start, k);
@@ -812,8 +827,10 @@ process_seeds(const uint32_t max_candidates,
     if (s_idx < e_idx) {
       find_candidates(read_start, gi, readlen,
                       min(readlen, seed::n_solid_positions), s_idx, e_idx);
-      if (e_idx - s_idx >= max_candidates)
-        e_idx = s_idx + max_candidates;
+
+      // GS I don't know if this is a good idea to cap the max candidates
+      //if (e_idx - s_idx >= max_candidates)
+      // e_idx = s_idx + max_candidates;
       check_hits<strand_code>(s_idx, e_idx,
                               even_read_start, even_read_mid, even_read_end,
                               odd_read_start, odd_read_mid, odd_read_end,
@@ -923,7 +940,6 @@ map_single_ended(const bool VERBOSE,
 
     const double start_time = omp_get_wtime();
 
-    cerr << "finding candidates\n";
 #pragma omp parallel
     {
       Read pread_seed, pread_even, pread_odd;
@@ -950,7 +966,6 @@ map_single_ended(const bool VERBOSE,
     }
     total_mapping_time += (omp_get_wtime() - start_time);
 
-    cerr << "aligning\n";
 #pragma omp parallel
     {
       Read pread;
@@ -969,11 +984,9 @@ map_single_ended(const bool VERBOSE,
       }
     }
 
-    cerr << "updating\n";
     for (size_t i = 0 ; i < n_reads; ++i)
       se_stats.update(reads[i], res[i]);
 
-    cerr << "format\n";
     for (size_t i = 0 ; i < n_reads; ++i)
       format_se(res[i], abismal_index.cl, reads[i], names[i], cigar[i], out);
   }
