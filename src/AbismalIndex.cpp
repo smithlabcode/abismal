@@ -546,8 +546,9 @@ ChromLookup::get_chrom_idx_and_offset(const uint32_t pos,
   vector<uint32_t>::const_iterator idx =
     upper_bound(begin(starts), end(starts), pos);
 
+  // read fell behind the beginning of the chromosome
   if (idx == begin(starts))
-    throw std::runtime_error("bad chrom position: " + std::to_string(pos));
+    return false;
 
   --idx;
 

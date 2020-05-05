@@ -258,18 +258,29 @@ uint8_t se_result::min_mapq_score = 1;
 uint8_t se_result::max_mapq_score = 250;
 uint8_t se_result::unknown_mapq_score = 255;
 
+inline bool
+chrom_and_posn(const ChromLookup &cl, const string &cig, const uint32_t p,
+               uint32_t &r_p, uint32_t &r_e, uint32_t &r_chr) {
+  const uint32_t ref_ops = cigar_rseq_ops(cig);
+  if (!cl.get_chrom_idx_and_offset(p, ref_ops, r_chr, r_p)) return false;
+  r_e = r_p + ref_ops;
+  return true;
+}
+
 static void
 format_se(se_result res, const ChromLookup &cl,
           string &read, const string &read_name,
           const string &cigar, ofstream &out) {
-  uint32_t offset = 0, chrom_idx = 0;
+  uint32_t r_s= 0, r_e = 0, chrom_idx = 0;
   se_element s = res.best;
-  if (s.valid_hit() && !res.ambig() &&
-      cl.get_chrom_idx_and_offset(s.pos, read.size(), chrom_idx, offset)) {
+  if (s.valid_hit() &&
+      !res.ambig() &&
+      chrom_and_posn(cl, cigar, s.pos, r_s, r_e, chrom_idx)) {
     if (s.elem_is_a_rich()) { // since SE, this is only for GA conversion
       revcomp_inplace(read);
       s.flip_strand();
     }
+
   /* GS sam foramt
   out << read_name << '\t'
         << s.flags << '\t'
@@ -281,8 +292,8 @@ format_se(se_result res, const ChromLookup &cl,
         << read << '\n'; */
 
   out << cl.names[chrom_idx] << '\t'
-      << offset << '\t'
-      << offset + read.length() << '\t'
+      << r_s << '\t'
+      << r_e << '\t'
       << read_name << '\t'
       << (unsigned) res.mapq() << '\t'
       << s.strand() << '\t'
@@ -383,14 +394,6 @@ get_overlap_rlen(const bool rc, const long int s1, const long int e1,
   return rc ? e1 - s2 : e2 - s1;
 }
 
-inline bool
-chrom_and_posn(const ChromLookup &cl, const string &cig, const uint32_t p,
-               uint32_t &r_p, uint32_t &r_e, uint32_t &r_chr) {
-  const uint32_t ref_ops = cigar_rseq_ops(cig);
-  if (!cl.get_chrom_idx_and_offset(p, ref_ops, r_chr, r_p)) return false;
-  r_e = r_p + ref_ops;
-  return true;
-}
 
 bool
 get_pe_overlap(GenomicRegion &gr,
@@ -713,8 +716,6 @@ check_hits(vector<uint32_t>::const_iterator start_idx,
            const Genome::const_iterator genome_st,
            const uint32_t offset,
            result_type &res) {
-
-  // even positions in the genome
   for (auto it(start_idx);
             it != end_idx &&
             !res.sure_ambig(offset != 0); ++it) {
@@ -1604,11 +1605,13 @@ int main(int argc, const char **argv) {
     if (VERBOSE)
       cerr << "[loading time: " << (end_time - start_time) << "]" << endl;
 
-    if (VERBOSE)
-      cerr << "[mapping "
-           << (paired_end ? "paired" : "single")
-           << " end: " << reads_file << "]" << endl;
-
+    if (VERBOSE) {
+      if (paired_end)
+        cerr << "[mapping paired end: " << reads_file << " "
+                                        << reads_file2 << "]\n";
+      else
+        cerr << "[mapping single end: " << reads_file << "]\n";
+    }
     if (VERBOSE)
       cerr << "[output file: " << outfile << "]" << endl;
 
