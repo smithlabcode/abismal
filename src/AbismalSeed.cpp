@@ -34,6 +34,7 @@ using std::runtime_error;
 
 uint32_t seed::n_shifts = 3;
 uint32_t seed::n_seed_positions = 32;
+uint32_t seed::n_solid_positions = 200;
 
 /*
 AbismalSeed::AbismalSeed( //const string &pattern_arg,

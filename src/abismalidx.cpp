@@ -83,6 +83,8 @@ int main(int argc, const char **argv) {
     opt_parse.add_opt("threads", 't', "number of threads", false, n_threads);
     //opt_parse.add_opt("max-candidates", 'c', "maximum candidates per seed",
     //                  false, max_candidates);
+    opt_parse.add_opt("solid", 's', "number of solid positions", false,
+                      seed::n_solid_positions);
     opt_parse.add_opt("deadzone", 'd', "number of times a "
                       + std::to_string(seed::n_solid_positions) + "-mer should "
                       "appear to be excluded from the genome",
