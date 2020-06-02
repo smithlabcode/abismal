@@ -93,7 +93,7 @@ namespace align_scores {
   static const score_t
     match = 1,
     mismatch = -1,
-    indel = -1;
+    indel = -5;
 };
 
 struct ReadLoader {
@@ -409,7 +409,6 @@ get_pe_overlap(GenomicRegion &gr,
                uint32_t r_s2, uint32_t r_e2, uint32_t chr2,
                string &read1, string &read2,
                string &cig1, string &cig2) {
-
   const int spacer = get_spacer_rlen(rc, r_s1, r_e1, r_s2, r_e2);
   if (spacer >= 0) {
     /* fragments longer than or equal to 2x read length: this size of
@@ -444,7 +443,7 @@ get_pe_overlap(GenomicRegion &gr,
        * [------------end1------[======]------end2------------]
        */
       gr.set_name("FRAG_M:" + gr.get_name()); // DEBUG
-      truncate_cigar_r(cig1, head);
+      truncate_cigar_q(cig1, head);
       read1.resize(cigar_qseq_ops(cig1));
       cig1 += cig2;
       merge_equal_neighbor_cigar_ops(cig1);
@@ -461,10 +460,14 @@ get_pe_overlap(GenomicRegion &gr,
        * r_s2             r_s1         r_e2             r_e1
        * [--end2----------[============]----------end1--]
        */
-      const int overlap = get_overlap_rlen(rc, r_s1, r_e1, r_s2, r_e2);
+      int overlap = get_overlap_rlen(rc, r_s1, r_e1, r_s2, r_e2);
       if (overlap > 0) {
         gr.set_name("FRAG_S:" + gr.get_name()); // DEBUG
-        truncate_cigar_r(cig1, overlap);
+
+        // if read has been soft clipped, keep the soft clipping part
+        // for consistency with SAM format
+        overlap += get_soft_clip_size_start(cig1);
+        truncate_cigar_q(cig1, overlap);
         read1.resize(overlap);
       }
 
@@ -473,6 +476,7 @@ get_pe_overlap(GenomicRegion &gr,
   }
   internal_S_to_M(cig1);
   merge_equal_neighbor_cigar_ops(cig1);
+  gr.set_end(gr.get_start() + cigar_rseq_ops(cig1));
   return true;
 }
 
@@ -801,7 +805,6 @@ process_seeds(const uint32_t max_candidates,
   for (uint32_t i = 0; i <= shift_lim && !res.sure_ambig(i); i += shift) {
     k = 0;
     get_1bit_hash_4bit(read_start + i, k);
-
     auto s_idx(index_st + *(counter_st + k));
     auto e_idx(index_st + *(counter_st + k + 1));
 
@@ -877,7 +880,8 @@ align_read(se_element &res, string &cigar, const string &read,
   // ends early if alignment is diagonal
   if (res.diffs <= 1) {
     cigar = std::to_string(read.length())+"M";
-    res.aln_score = read.length() - res.diffs;
+    res.aln_score = align_scores::match * (read.length() - res.diffs) +
+                    align_scores::mismatch * res.diffs;
   } else {
     uint32_t len; // the region of the read the alignment spans
     const bool a_rich = res.elem_is_a_rich();
