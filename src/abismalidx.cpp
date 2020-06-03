@@ -67,10 +67,8 @@ BuildIndex(const bool VERBOSE,
 
 int main(int argc, const char **argv) {
   try {
-
     bool VERBOSE = false;
-
-    size_t n_threads = 1;
+    size_t n_threads = omp_get_max_threads();
     uint32_t max_candidates = std::numeric_limits<uint32_t>::max();
     uint32_t deadzone_freq = 200;
 

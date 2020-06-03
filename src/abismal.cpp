@@ -1552,7 +1552,7 @@ int main(int argc, const char **argv) {
     bool random_pbat = false;
     uint32_t max_candidates = 3000;
     size_t batch_size = 100000;
-    size_t n_threads = 1;
+    size_t n_threads = omp_get_max_threads();
 
     /****************** COMMAND LINE OPTIONS ********************/
     OptionParser opt_parse(strip_path(argv[0]),
@@ -1624,6 +1624,9 @@ int main(int argc, const char **argv) {
     const double end_time = omp_get_wtime();
     if (VERBOSE)
       cerr << "[loading time: " << (end_time - start_time) << "]" << endl;
+
+    if (VERBOSE)
+      cerr << "[using " << n_threads << " threads for mapping]\n";
 
     if (VERBOSE) {
       if (paired_end)
