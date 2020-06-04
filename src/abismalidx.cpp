@@ -59,10 +59,11 @@ BuildIndex(const bool VERBOSE,
   ai.hash_genome(big_buckets);
 
   ai.sort_buckets(four_letter);
-  ai.remove_big_buckets(deadzone_freq); // remove deadzones
-  if (max_candidates != std::numeric_limits<uint32_t>::max())
-    ai.remove_big_buckets(max_candidates);
+  ai.remove_big_buckets(four_letter, deadzone_freq);
   ai.sort_buckets(two_letter);
+  if (max_candidates != std::numeric_limits<uint32_t>::max())
+    ai.remove_big_buckets(two_letter, max_candidates);
+
 }
 
 int main(int argc, const char **argv) {
@@ -79,8 +80,9 @@ int main(int argc, const char **argv) {
     //opt_parse.add_opt("too-big", 'B', "ignore buckets bigger than this",
     //                  false, AbismalIndex::valid_bucket_limit);
     opt_parse.add_opt("threads", 't', "number of threads", false, n_threads);
-    //opt_parse.add_opt("max-candidates", 'c', "maximum candidates per seed",
-    //                  false, max_candidates);
+    opt_parse.add_opt("max-candidates", 'c',
+                      "maximum candidates used in practice",
+                      false, max_candidates);
     opt_parse.add_opt("solid", 's', "number of solid positions", false,
                       seed::n_solid_positions);
     opt_parse.add_opt("deadzone", 'd', "number of times a "
@@ -115,8 +117,8 @@ int main(int argc, const char **argv) {
     AbismalIndex::VERBOSE = VERBOSE;
 
     AbismalIndex abismal_index;
-    BuildIndex(VERBOSE, max_candidates, deadzone_freq,
-               genome_file, abismal_index);
+    BuildIndex(VERBOSE, max_candidates, deadzone_freq, genome_file,
+               abismal_index);
 
     if (VERBOSE)
       cerr << "[writing abismal index to: " << outfile << "]" << endl;

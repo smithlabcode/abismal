@@ -142,7 +142,8 @@ struct AbismalIndex {
    * binary search for the rest part of the seed */
   void sort_buckets(const sort_type st);
 
-  void remove_big_buckets(const size_t max_candidates);
+  void remove_big_buckets(const sort_type st,
+                          const uint32_t max_candidates);
 
   // convert the genome to 4-bit encoding
   void encode_genome();

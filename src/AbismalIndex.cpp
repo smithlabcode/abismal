@@ -221,8 +221,8 @@ AbismalIndex::sort_buckets(const sort_type st) {
 
 // GS TODO: add this to option parser and pass as parameter, or make it
 // part of the AbismalIndex class
-struct BucketEqual {
-  BucketEqual(const Genome &g, const uint32_t off) :
+struct BucketEqualFour {
+  BucketEqualFour(const Genome &g, const uint32_t off) :
     g_start(begin(g)), offset(off) {}
   bool operator()(const uint32_t a, const uint32_t b) const {
     auto idx1(g_start + a + offset);
@@ -237,25 +237,59 @@ struct BucketEqual {
   const uint32_t offset;
 };
 
-void
-AbismalIndex::remove_big_buckets(const size_t max_candidates) {
-  // first mark the positions to keep
-  if (VERBOSE)
-    cerr << "[finding big buckets]" << endl;
-  const BucketEqual bucket_equal(genome, seed::n_solid_positions);
-  const auto b(begin(index));
-  vector<bool> keep(index_size, true);
+struct BucketEqualTwo {
+  BucketEqualTwo(const Genome &g, const uint32_t off) :
+    g_start(begin(g)), offset(off) {}
+  bool operator()(const uint32_t a, const uint32_t b) const {
+    auto idx1(g_start + a + offset);
+    const auto lim1(g_start + a);
+    auto idx2(g_start + b + offset);
+    while (idx1 != lim1)
+      if (get_bit_4bit(*(--idx1)) != get_bit_4bit(*(--idx2)))
+        return false;
+    return true;
+  }
+  const genome_iterator g_start;
+  const uint32_t offset;
+};
 
+void
+AbismalIndex::remove_big_buckets(const sort_type st,
+                                 const uint32_t max_candidates) {
+  if (VERBOSE)
+    cerr << "[finding big buckets on "
+         << (st == four_letter ? "four":"two") << " letters with max = "
+         << max_candidates << "]" << endl;
+  vector<bool> keep(index_size, true);
+  const auto b(begin(index));
+
+  if (st == four_letter) {
+    const BucketEqualFour bucket_equal(genome, seed::n_solid_positions);
 #pragma omp parallel for
-  for (size_t i = 0; i < counter_size; ++i) {
-    uint32_t j = counter[i];
-    while (j < counter[i+1]) {
-      uint32_t k = j + 1;
-      const uint32_t first_idx = *(b + j);
-      while (k < counter[i+1] && bucket_equal(first_idx, *(b + k))) ++k;
-      if (k - j > max_candidates)
-        fill(begin(keep) + j, begin(keep) + k, false);
-      j = k;
+    for (size_t i = 0; i < counter_size; ++i) {
+      uint32_t j = counter[i];
+      while (j < counter[i+1]) {
+        uint32_t k = j + 1;
+        const uint32_t first_idx = *(b + j);
+        while (k < counter[i+1] && bucket_equal(first_idx, *(b + k))) ++k;
+        if (k - j > max_candidates)
+          fill(begin(keep) + j, begin(keep) + k, false);
+        j = k;
+      }
+    }
+  } else {
+    const BucketEqualTwo bucket_equal(genome, seed::n_solid_positions);
+#pragma omp parallel for
+    for (size_t i = 0; i < counter_size; ++i) {
+      uint32_t j = counter[i];
+      while (j < counter[i+1]) {
+        uint32_t k = j + 1;
+        const uint32_t first_idx = *(b + j);
+        while (k < counter[i+1] && bucket_equal(first_idx, *(b + k))) ++k;
+        if (k - j > max_candidates)
+          fill(begin(keep) + j, begin(keep) + k, false);
+        j = k;
+      }
     }
   }
 
