@@ -148,8 +148,11 @@ struct AbismalIndex {
   // convert the genome to 4-bit encoding
   void encode_genome();
 
-  void write(const std::string &index_file) const;
-  void read(const std::string &index_file);
+  void write(const std::string &index_file,
+             const uint32_t n_solid,
+             const uint32_t max_candidates) const;
+  void read(const std::string &index_file, 
+            uint32_t &n_solid, uint32_t &max_candidates);
 
   static std::string internal_identifier;
 };

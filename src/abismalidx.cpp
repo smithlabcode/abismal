@@ -123,7 +123,7 @@ int main(int argc, const char **argv) {
     if (VERBOSE)
       cerr << "[writing abismal index to: " << outfile << "]" << endl;
 
-    abismal_index.write(outfile);
+    abismal_index.write(outfile, seed::n_solid_positions, max_candidates);
 
   }
   catch (const std::runtime_error &e) {

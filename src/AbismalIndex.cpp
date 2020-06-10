@@ -98,8 +98,9 @@ AbismalIndex::get_bucket_sizes(unordered_set<uint32_t> &big_buckets) {
       progress.report(cerr, i);
     shift_hash_key_4bit(*gi++, hash_key);
     invalid_count += invalid_base(*end_invalid_counter++);
-    if (invalid_count <= max_invalid_per_seed)
-      counter[hash_key]++;
+    if (i & 1) // only odd positiosn are stored in the index
+      if (invalid_count <= max_invalid_per_seed)
+        counter[hash_key]++;
     invalid_count -= invalid_base(*start_invalid_counter++);
   }
   if (VERBOSE)
@@ -152,9 +153,10 @@ AbismalIndex::hash_genome(const unordered_set<uint32_t> &big_buckets) {
       progress.report(cerr, i);
     invalid_count += invalid_base(*end_invalid_counter++);
     shift_hash_key_4bit(*gi++, hash_key);
-    if (invalid_count <= max_invalid_per_seed &&
+    if (i & 1)
+      if (invalid_count <= max_invalid_per_seed &&
         big_buckets.find(hash_key) == end(big_buckets))
-      index[--counter[hash_key]] = i;
+        index[--counter[hash_key]] = i;
 
     invalid_count -= invalid_base(*start_invalid_counter++);
   }
@@ -333,18 +335,18 @@ write_internal_identifier(FILE *out) {
 }
 
 void
-AbismalIndex::write(const string &index_file) const {
+AbismalIndex::write(const string &index_file,
+                    const uint32_t n_solid,
+                    const uint32_t max_cand) const {
 
   FILE *out = fopen(index_file.c_str(), "wb");
   if (!out)
     throw runtime_error("cannot open output file " + index_file);
 
   write_internal_identifier(out);
-
-  const AbismalSeed the_seed(seed::n_solid_positions,
-                             seed::key_weight);
-
-  the_seed.write(out);
+  if (fwrite((char*) &n_solid, sizeof(uint32_t), 1, out) != 1 ||
+      fwrite((char*) &max_cand, sizeof(uint32_t), 1, out) != 1)
+    throw runtime_error("failed writng index");
 
   cl.write(out);
   if (fwrite((char*)&genome[0], 1, genome.size(), out) != genome.size() ||
@@ -372,7 +374,9 @@ check_internal_identifier(FILE *in) {
 
 
 void
-AbismalIndex::read(const string &index_file) {
+AbismalIndex::read(const string &index_file,
+                   uint32_t &n_solid,
+                   uint32_t &max_cand) {
 
   static const string error_msg("failed loading index file");
 
@@ -383,16 +387,9 @@ AbismalIndex::read(const string &index_file) {
   if (!check_internal_identifier(in))
     throw runtime_error("index file format problem: " + index_file);
 
-  AbismalSeed the_seed;
-  the_seed.read(in);
-
-  const AbismalSeed expected_seed(seed::n_solid_positions,
-                                  seed::key_weight);
-
-  if (!(the_seed == expected_seed))
-    throw runtime_error("inconsistent seeds (expected, indexed):\n" +
-                        expected_seed.tostring() + "\n" +
-                        the_seed.tostring());
+  if (fread((char*) &n_solid, sizeof(uint32_t), 1, in) != 1 ||
+      fread((char*) &max_cand, sizeof(uint32_t), 1, in) != 1)
+    throw runtime_error("index file format problem: " + index_file);
 
   cl.read(in);
 

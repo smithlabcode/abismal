@@ -91,8 +91,8 @@ is_rc(const flags_t flags) {
 
 namespace align_scores {
   static const score_t
-    match = 1,
-    mismatch = -1,
+    match = 2,
+    mismatch = -6,
     indel = -5;
 };
 
@@ -797,27 +797,32 @@ process_seeds(const uint32_t max_candidates,
   const auto index_st(begin(abismal_index.index));
   const auto counter_st(begin(abismal_index.counter));
   const size_t shift_lim =
-    readlen > seed::n_seed_positions ? readlen - seed::n_seed_positions : 0;
+    readlen > (seed::n_seed_positions + 1) ?
+              (readlen - seed::n_seed_positions -1) : 0;
   const size_t shift = std::max(1ul, shift_lim/(seed::n_shifts - 1));
   uint32_t k;
   bool found_good_seed = false;
 
   for (uint32_t i = 0; i <= shift_lim && !res.sure_ambig(i); i += shift) {
-    k = 0;
-    get_1bit_hash_4bit(read_start + i, k);
-    auto s_idx(index_st + *(counter_st + k));
-    auto e_idx(index_st + *(counter_st + k + 1));
+    // try odd and even seed positions since only odd positions exist
+    // on the index
+    for (uint32_t j = 0; j <= 1; ++j) {
+      k = 0;
+      get_1bit_hash_4bit(read_start + i + j, k);
+      auto s_idx(index_st + *(counter_st + k));
+      auto e_idx(index_st + *(counter_st + k + 1));
 
-    if (s_idx < e_idx) {
-      find_candidates(read_start + i, gi, readlen - i,
-                      seed::n_seed_positions, s_idx, e_idx);
+      if (s_idx < e_idx) {
+        find_candidates(read_start + i + j, gi, readlen - i - j,
+                        seed::n_seed_positions, s_idx, e_idx);
 
-      if (e_idx - s_idx < max_candidates) {
-        found_good_seed = true;
-        check_hits<strand_code>(s_idx, e_idx,
-                            even_read_start, even_read_mid, even_read_end,
-                            odd_read_start, odd_read_mid, odd_read_end,
-                            genome_st, i, res);
+        if (e_idx - s_idx < max_candidates) {
+          found_good_seed = true;
+          check_hits<strand_code>(s_idx, e_idx,
+                              even_read_start, even_read_mid, even_read_end,
+                              odd_read_start, odd_read_mid, odd_read_end,
+                              genome_st, i + j, res);
+        }
       }
     }
   }
@@ -1619,7 +1624,27 @@ int main(int argc, const char **argv) {
       cerr << "[loading abismal index]" << endl;
     AbismalIndex abismal_index;
     const double start_time = omp_get_wtime();
-    abismal_index.read(index_file);
+    uint32_t index_max_cand = 6;
+    abismal_index.read(index_file, seed::n_solid_positions, index_max_cand);
+    __builtin_prefetch(&abismal_index.index[0]);
+    if (VERBOSE)
+      cerr << "[index: n_solid = " << seed::n_solid_positions
+           << ", max_cand = " << index_max_cand << "]" << endl;
+
+    if (seed::n_seed_positions > seed::n_solid_positions)
+      throw runtime_error("requesting seed length = " +
+                          std::to_string(seed::n_seed_positions) +
+                          " but index " + index_file +
+                          " was built sorting by " +
+                          std::to_string(seed::n_solid_positions) +
+                          " positions");
+
+
+    if (max_candidates > index_max_cand)
+      throw runtime_error("requesting " + std::to_string(max_candidates) +
+                          " max candidates but index " + index_file +
+                          " was built excluding " +
+                          std::to_string(index_max_cand) + " candidates.");
 
     const double end_time = omp_get_wtime();
     if (VERBOSE)
