@@ -36,19 +36,19 @@ AC_CHECK_LIB([z], [zlibVersion], [],
   [AC_MSG_FAILURE([Zlib must be installed to build abismal])], [])
 
 dnl specify location for the smithlab_cpp library
-AC_ARG_WITH([smithlab-cpp],
-  [AS_HELP_STRING([--with-smithlab-cpp],
-    [location of smithlab_cpp library and headers @<:@default=check@:>@])],
-    [], [with_smithlab_cpp=check])
-AS_IF([test x$with_smithlab_cpp != xcheck],
-  [
-    CPPFLAGS="-I${withval}/include ${CPPFLAGS}"
-    LDFLAGS="-L${withval}/lib ${LDFLAGS}"
-  ]
-)
+dnl AC_ARG_WITH([smithlab-cpp],
+dnl  [AS_HELP_STRING([--with-smithlab-cpp],
+dnl    [location of smithlab_cpp library and headers @<:@default=check@:>@])],
+dnl    [], [with_smithlab_cpp=check])
+dnl AS_IF([test x$with_smithlab_cpp != xcheck],
+dnl  [
+dnl    CPPFLAGS="-I${withval}/include ${CPPFLAGS}"
+dnl    LDFLAGS="-L${withval}/lib ${LDFLAGS}"
+dnl  ]
+dnl )
 dnl check the smithlab_cpp library is where it should be
-AC_CHECK_LIB([smithlab_cpp], [have_smithlab_cpp], [],
-  [AC_MSG_FAILURE([smithlab_cpp must be installed to build abismal])], [])
+dnl AC_CHECK_LIB([smithlab_cpp], [have_smithlab_cpp], [],
+dnl  [AC_MSG_FAILURE([smithlab_cpp must be installed to build abismal])], [])
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT
