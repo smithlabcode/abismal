@@ -90,10 +90,9 @@ is_rc(const flags_t flags) {
 }
 
 namespace align_scores {
-  static const score_t
-    match = 2,
-    mismatch = -6,
-    indel = -5;
+  static const score_t match = 2,
+               mismatch = -1,
+               indel = -5;
 };
 
 struct ReadLoader {
@@ -196,7 +195,7 @@ struct se_element {
   static uint16_t min_aligned_length;
 };
 
-score_t se_element::invalid_hit_diffs = 30;
+score_t se_element::invalid_hit_diffs = 40;
 uint16_t se_element::min_aligned_length = ReadLoader::min_length;
 
 struct se_result {
@@ -803,39 +802,45 @@ process_seeds(const uint32_t max_candidates,
   const auto counter_st(begin(abismal_index.counter));
   const size_t shift_lim =
     readlen > (seed::n_seed_positions + 1) ?
-              (readlen - seed::n_seed_positions -1) : 0;
+              (readlen - seed::n_seed_positions - 1) : 0;
   const size_t shift = std::max(1ul, shift_lim/(seed::n_shifts - 1));
   uint32_t k;
   bool found_good_seed = false;
 
-  for (uint32_t i = 0; i <= shift_lim && !res.sure_ambig(i); i += shift) {
-    // try odd and even seed positions since only odd positions exist
-    // on the index
-    for (uint32_t j = 0; j <= 1; ++j) {
-      k = 0;
-      get_1bit_hash_4bit(read_start + i + j, k);
-      auto s_idx(index_st + *(counter_st + k));
-      auto e_idx(index_st + *(counter_st + k + 1));
+  size_t reseed_shift = 0;
+  // reseeding step
+  for (;(!found_good_seed) && reseed_shift != shift;
+        reseed_shift += seed::reseed_step)
 
-      if (s_idx < e_idx) {
-        find_candidates(read_start + i + j, gi, readlen - i - j,
-                        seed::n_seed_positions, s_idx, e_idx);
+    // uniformly spaced seeds
+    for (uint32_t i = 0; i <= shift_lim && !res.sure_ambig(i); i += shift)
 
-        if (e_idx - s_idx < max_candidates) {
-          found_good_seed = true;
-          check_hits<strand_code>(s_idx, e_idx,
-                              even_read_start, even_read_mid, even_read_end,
-                              odd_read_start, odd_read_mid, odd_read_end,
-                              genome_st, i + j, res);
+      // fix the fact that only odd positions exist in the index
+      for (uint32_t j = 0; j <= 1; ++j) {
+        const size_t offset = i + j + reseed_shift;
+        k = 0;
+        get_1bit_hash_4bit(read_start + i + j + reseed_shift, k);
+        auto s_idx(index_st + *(counter_st + k));
+        auto e_idx(index_st + *(counter_st + k + 1));
+
+        if (s_idx < e_idx) {
+          find_candidates(read_start + offset, gi,
+                          readlen    - offset,
+                          seed::n_seed_positions, s_idx, e_idx);
+
+          if (e_idx - s_idx < max_candidates) {
+            found_good_seed = true;
+            check_hits<strand_code>(s_idx, e_idx,
+                                even_read_start, even_read_mid, even_read_end,
+                                odd_read_start, odd_read_mid, odd_read_end,
+                                genome_st, offset, res);
+          }
         }
       }
-    }
-  }
-
+  // if reseeding fails, use entire read as seed
   if (!found_good_seed) {
     k = 0;
     get_1bit_hash_4bit(read_start, k);
-
     auto s_idx(index_st + *(counter_st + k));
     auto e_idx(index_st + *(counter_st + k + 1));
     if (s_idx < e_idx) {
@@ -870,7 +875,7 @@ prep_for_seeds(const Read &pread_seed, Read &pread_even, Read &pread_odd) {
   size_t i, j = 0;
   for (i = 0; i < sz; i += 2) pread_even[j++] = pread_seed[i];
   for (i = 1; i < sz; i += 2) pread_even[j++] = (pread_seed[i] << 4);
- 
+
   j = 0;
   for (i = 0; i < sz; i += 2) pread_odd[j++] = (pread_seed[i] << 4);
   for (i = 1; i < sz; i += 2) pread_odd[j++] = pread_seed[i];
@@ -887,8 +892,8 @@ template <score_t (*scr_fun)(const char, const uint8_t),
 static void
 align_read(se_element &res, string &cigar, const string &read,
            Read &pread, AbismalAlign<scr_fun, indel_pen> &aln) {
-  // ends early if alignment is diagonal
-  if (res.diffs <= 1) {
+  // ends early if alignment is nearly diagonal
+  if (res.diffs <= 3) {
     cigar = std::to_string(read.length())+"M";
     res.aln_score = align_scores::match * (read.length() - res.diffs) +
                     align_scores::mismatch * res.diffs;
@@ -1565,7 +1570,7 @@ int main(int argc, const char **argv) {
     bool allow_ambig = false;
     bool pbat_mode = false;
     bool random_pbat = false;
-    uint32_t max_candidates = 3000;
+    uint32_t max_candidates = 2000;
     size_t batch_size = 100000;
     size_t n_threads = omp_get_max_threads();
 
@@ -1599,6 +1604,9 @@ int main(int argc, const char **argv) {
                       false, random_pbat);
     opt_parse.add_opt("a-rich", 'A', "indicates reads are a-rich (se mode)",
                       false, GA_conversion);
+    //opt_parse.add_opt("match", 'x', "match score", false, align_scores::match);
+    //opt_parse.add_opt("mismatch", 'm', "mismatch score", false,
+    //                  align_scores::mismatch);
     opt_parse.add_opt("verbose", 'v', "print more run info", false, VERBOSE);
     vector<string> leftover_args;
     opt_parse.parse(argc, argv, leftover_args);
@@ -1636,7 +1644,6 @@ int main(int argc, const char **argv) {
     const double start_time = omp_get_wtime();
     uint32_t index_max_cand = 6;
     abismal_index.read(index_file, seed::n_solid_positions, index_max_cand);
-    __builtin_prefetch(&abismal_index.index[0]);
     if (VERBOSE)
       cerr << "[index: n_solid = " << seed::n_solid_positions
            << ", max_cand = " << index_max_cand << "]" << endl;

@@ -64,9 +64,14 @@ namespace seed {
   // choice we can make for any seed pattern.
   extern uint32_t n_shifts;
 
-  //number of positions covered by the seed
+  // number of positions covered by the seed during reading
   extern uint32_t n_seed_positions;
+
+  // number of subsequent positions in which the index is sorted
   extern uint32_t n_solid_positions;
+  
+  // number of steps to find unambiguous seeds
+  const uint32_t reseed_step = 5;
   const uint32_t key_weight = 26;
   const size_t hash_mask = (1 << seed::key_weight) - 1;
 };
