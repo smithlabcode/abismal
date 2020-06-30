@@ -29,26 +29,15 @@ AC_CONFIG_MACRO_DIR([m4])
 AC_LANG(C++)
 AC_PROG_CXX
 AX_CXX_COMPILE_STDCXX_11([noext], [mandatory])
+AC_PROG_RANLIB
 AC_OPENMP([C++]) dnl make sure we have openmp for multi-core in abismal
 
 dnl check for the Zlib library
 AC_CHECK_LIB([z], [zlibVersion], [],
   [AC_MSG_FAILURE([Zlib must be installed to build abismal])], [])
 
-dnl specify location for the smithlab_cpp library
-dnl AC_ARG_WITH([smithlab-cpp],
-dnl  [AS_HELP_STRING([--with-smithlab-cpp],
-dnl    [location of smithlab_cpp library and headers @<:@default=check@:>@])],
-dnl    [], [with_smithlab_cpp=check])
-dnl AS_IF([test x$with_smithlab_cpp != xcheck],
-dnl  [
-dnl    CPPFLAGS="-I${withval}/include ${CPPFLAGS}"
-dnl    LDFLAGS="-L${withval}/lib ${LDFLAGS}"
-dnl  ]
-dnl )
-dnl check the smithlab_cpp library is where it should be
-dnl AC_CHECK_LIB([smithlab_cpp], [have_smithlab_cpp], [],
-dnl  [AC_MSG_FAILURE([smithlab_cpp must be installed to build abismal])], [])
+dnl recursively configure smithlab_cpp
+AC_CONFIG_SUBDIRS([src/smithlab_cpp])
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT
