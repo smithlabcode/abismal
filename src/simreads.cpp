@@ -86,8 +86,6 @@ struct FragInfo {
   erase_info_through_insert(const size_t read_length) {
     const size_t orig_ref_len = end_pos - start_pos;
     if (2*read_length < seq.length()) {
-      seq = seq.substr(0, read_length) +
-        seq.substr(seq.length() - read_length, read_length);
       string cigar2(cigar);
       truncate_cigar_q(cigar, read_length);
       reverse_cigar(begin(cigar2), end(cigar2));
@@ -95,6 +93,10 @@ struct FragInfo {
       reverse_cigar(begin(cigar2), end(cigar2));
       const size_t rseq_ops = cigar_rseq_ops(cigar) + cigar_rseq_ops(cigar2);
       cigar = cigar + to_string(orig_ref_len - rseq_ops) + "N" + cigar2;
+      seq = seq.substr(0, read_length) +
+        string(orig_ref_len - rseq_ops, 'N') +
+        seq.substr(seq.length() - read_length, read_length);
+
     }
   }
   void
