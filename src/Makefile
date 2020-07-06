@@ -14,8 +14,12 @@
 # or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
 # License for more details.
 
-ifndef SMITHLAB_CPP
-$(error Must define SMITHLAB_CPP variable)
+# check if recursive clone was done
+SMITHLAB_CPP=$(abspath $(dir $(MAKEFILE_LIST)))/smithlab_cpp
+
+ifeq (,$(wildcard $(SMITHLAB_CPP)/Makefile))
+$(error src/smithlab_cpp does not have a Makefile. \
+	      Did you use --recursive when running git clone?)
 endif
 
 PROGS = abismal abismalidx simreads seedtool
