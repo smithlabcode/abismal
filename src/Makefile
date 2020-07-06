@@ -38,6 +38,9 @@ CXXFLAGS += $(OPTFLAGS)
 endif
 
 all: $(PROGS)
+install: $(PROGS)
+	@mkdir -p $(SRC_ROOT)/bin
+	@install -m 755 $(PROGS) $(SRC_ROOT)/bin
 
 %.o: %.cpp %.hpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $< $(CPPFLAGS)

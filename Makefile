@@ -14,11 +14,12 @@
 # or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
 # License for more details.
 
+SRC_ROOT=$(shell pwd)
 all:
 	@make -C src OPT=1
 
 install:
-	@make -C src OPT=1 install
+	@make -C src SRC_ROOT=$(SRC_ROOT) OPT=1 install
 
 clean:
 	@make -C src clean
