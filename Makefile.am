@@ -1,6 +1,6 @@
 # This file is part of abismal
 #
-# Copyright (C) 2018-2019: Andrew D. Smith
+# Copyright (C) 2018-2020: Andrew D. Smith
 #
 # Authors: Andrew D. Smith
 #
@@ -17,39 +17,14 @@
 EXTRA_DIST = README.md
 ACLOCAL_AMFLAGS = -I m4
 
-SUBDIRS = src/smithlab_cpp
-AM_CPPFLAGS = -I $(top_srcdir)/src -I $(top_srcdir)/src/smithlab_cpp
+SUBDIRS := src/smithlab_cpp
+install installdirs: SUBDIRS := $(filter-out src/smithlab_cpp, $(SUBDIRS))
+AM_CPPFLAGS = -I $(top_srcdir)/src/smithlab_cpp
 
-CXXFLAGS = -O3 -Wall -funroll-loops # default has optimization on
+CXXFLAGS = -O3 -funroll-loops # default has optimization on
 AM_CXXFLAGS = $(OPENMP_CXXFLAGS)
 
-noinst_LIBRARIES = libsmithlab_cpp.a
-libsmithlab_cpp_a_SOURCES = \
-	src/smithlab_cpp/GenomicRegion.cpp \
-	src/smithlab_cpp/MappedRead.cpp \
-	src/smithlab_cpp/OptionParser.cpp \
-	src/smithlab_cpp/QualityScore.cpp \
-	src/smithlab_cpp/bisulfite_utils.cpp \
-	src/smithlab_cpp/chromosome_utils.cpp \
-	src/smithlab_cpp/sim_utils.cpp \
-	src/smithlab_cpp/smithlab_os.cpp \
-	src/smithlab_cpp/smithlab_utils.cpp \
-	src/smithlab_cpp/dna_four_bit.cpp \
-	src/smithlab_cpp/zlib_wrapper.cpp
-libsmithlab_cpp_a_SOURCES += \
-	src/smithlab_cpp/GenomicRegion.hpp \
-	src/smithlab_cpp/MappedRead.hpp \
-	src/smithlab_cpp/OptionParser.hpp \
-	src/smithlab_cpp/QualityScore.hpp \
-	src/smithlab_cpp/bisulfite_utils.hpp \
-	src/smithlab_cpp/chromosome_utils.hpp \
-	src/smithlab_cpp/sim_utils.hpp \
-	src/smithlab_cpp/smithlab_os.hpp \
-	src/smithlab_cpp/smithlab_utils.hpp \
-	src/smithlab_cpp/dna_four_bit.hpp \
-	src/smithlab_cpp/zlib_wrapper.hpp
-
-LDADD = libsmithlab_cpp.a
+LDADD = src/smithlab_cpp/libsmithlab_cpp.a
 
 bin_PROGRAMS = abismal abismalidx simreads seedtool
 
