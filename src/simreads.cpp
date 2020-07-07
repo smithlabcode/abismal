@@ -166,7 +166,8 @@ sim_frag_position(const string &genome, const size_t frag_len,
 // simulate from a uniform distribution in a range
 static size_t
 sim_frag_length(const size_t min_length, const size_t max_length) {
-  assert(max_length > min_length);
+  assert(max_length >= min_length);
+  if (min_length == max_length) return min_length;
   const size_t diff = max_length - min_length;
   return min_length + (rand() % diff);
 }
