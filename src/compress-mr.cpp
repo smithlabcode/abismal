@@ -2,9 +2,9 @@
 #include <fstream>
 #include <string>
 #include <vector>
-#include "smithlab_os.cpp"
-#include "smithlab_utils.cpp"
-#include "OptionParser.cpp"
+#include "smithlab_os.hpp"
+#include "smithlab_utils.hpp"
+#include "OptionParser.hpp"
 #include "cigar_utils.hpp"
 #include "dna_four_bit.hpp"
 
@@ -98,11 +98,14 @@ main(int argc, const char **argv) {
     char strand;
     while(in >> chrom >> start >> end >> name >> mapq
              >> strand >> seq >> cigar) {
+      //if (strand == '-') revcomp_inplace(seq);
       apply_cigar(seq, cigar);
+      //if (strand == '-') revcomp_inplace(seq);
       if (seq.size() != end - start) {
-        cerr << "inconsistent number of rseq ops! "  << name << "\n";
-        cerr << "got " << std::to_string(seq.size()) << ", expected "
-             << std::to_string(end - start) << "\n";
+        throw runtime_error("inconsistent number of rseq ops! " +
+                        seq + " "  + cigar + " got " + std::to_string(seq.size()) +
+                        " expected " + std::to_string(end - start));
+
       }
       out << chrom << '\t' << start << '\t' << name << '\t' << mapq << '\t'
           << strand << '\t' << seq << '\n';
