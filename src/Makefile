@@ -22,7 +22,7 @@ $(error src/smithlab_cpp does not have a Makefile. \
 	      Did you use --recursive when running git clone?)
 endif
 
-PROGS = abismal abismalidx simreads seedtool
+PROGS = abismal abismalidx simreads seedtool compress-mr
 
 CXX = g++
 CXXFLAGS = -Wall -std=c++11 -fopenmp
