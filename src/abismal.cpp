@@ -402,14 +402,17 @@ get_overlap_rlen(const bool rc, const long int s1, const long int e1,
   return rc ? e1 - s2 : e2 - s1;
 }
 
-
-bool
+void
 get_pe_overlap(GenomicRegion &gr,
                const bool rc,
                uint32_t r_s1, uint32_t r_e1, uint32_t chr1,
                uint32_t r_s2, uint32_t r_e2, uint32_t chr2,
                string &read1, string &read2,
                string &cig1, string &cig2) {
+  if (rc) {
+    reverse_cigar(cig1);
+    reverse_cigar(cig2);
+  }
   const int spacer = get_spacer_rlen(rc, r_s1, r_e1, r_s2, r_e2);
   if (spacer >= 0) {
     /* fragments longer than or equal to 2x read length: this size of
@@ -431,20 +434,20 @@ get_pe_overlap(GenomicRegion &gr,
   else {
     const int head = get_head_rlen(rc, r_s1, r_e1, r_s2, r_e2);
     if (head >= 0) { //
-      /* fragment longer than or equal to the read length, but shorter
-       * than twice the read length: this is determined by obtaining the
-       * size of the "head" in the diagram below: the portion of end1
-       * that is not within [=]. If the read maps to the positive
-       * strand, this depends on the reference start of end2 minus the
-       * reference start of end1. For negative strand, this is reference
-       * start of end1 minus reference start of end2.
-       *
-       * left                                                 right
-       * r_s1                   r_s2   r_e1                   r_e2
-       * [------------end1------[======]------end2------------]
-       */
+    /* fragment longer than or equal to the read length, but shorter
+     * than twice the read length: this is determined by obtaining the
+     * size of the "head" in the diagram below: the portion of end1
+     * that is not within [=]. If the read maps to the positive
+     * strand, this depends on the reference start of end2 minus the
+     * reference start of end1. For negative strand, this is reference
+     * start of end1 minus reference start of end2.
+     *
+     * left                                                 right
+     * r_s1                   r_s2   r_e1                   r_e2
+     * [------------end1------[======]------end2------------]
+     */
       gr.set_name("FRAG_M:" + gr.get_name()); // DEBUG
-      truncate_cigar_q(cig1, head);
+      truncate_cigar_r(cig1, head);
       read1.resize(cigar_qseq_ops(cig1));
       cig1 += cig2;
       merge_equal_neighbor_cigar_ops(cig1);
@@ -464,21 +467,23 @@ get_pe_overlap(GenomicRegion &gr,
       int overlap = get_overlap_rlen(rc, r_s1, r_e1, r_s2, r_e2);
       if (overlap > 0) {
         gr.set_name("FRAG_S:" + gr.get_name()); // DEBUG
+        truncate_cigar_r(cig1, overlap);
+        const size_t len = cigar_qseq_ops(cig1);
 
-        // if read has been soft clipped, keep the soft clipping part
-        // for consistency with SAM format
-        overlap += get_soft_clip_size_start(cig1);
-        truncate_cigar_q(cig1, overlap);
-        read1.resize(overlap);
+        // specific case where indels happen on the edge between
+        // head and dovetail
+        if (len < read1.size()) read1.resize(len);
+        else truncate_cigar_q(cig1, read1.size());
+      } else {
+        cerr << '\n' << gr << ' ' << rc << '\n';
+        cerr << r_s1 << ' ' << r_e1 << ' ' << chr1 << '\n';
+        cerr << r_s2 << ' ' << r_e2 << ' ' << chr2 << '\n';
+        cerr << read1 << ' ' << read2 << '\n';
+        cerr << cig1 << ' ' << cig2 << '\n';
+        throw runtime_error("PE read fall through!");
       }
-
-      else return false;
     }
   }
-  internal_S_to_M(cig1);
-  merge_equal_neighbor_cigar_ops(cig1);
-  gr.set_end(gr.get_start() + cigar_rseq_ops(cig1));
-  return true;
 }
 
 bool
@@ -506,10 +511,8 @@ format_pe(const pe_result &res, const ChromLookup &cl,
     GenomicRegion(cl.names[chr2], r_s2, r_e1, name2, p.diffs(), p.strand()) :
     GenomicRegion(cl.names[chr1], r_s1, r_e2, name1, p.diffs(), p.strand());
 
-  // CIGAR makes dovetail reads no longer overlap, treat as unmapped
-  if (!get_pe_overlap(gr, p.rc(), r_s1, r_e1, chr1, r_s2, r_e2, chr2,
-                      read1, read2, cig1, cig2))
-    return false;
+  get_pe_overlap(gr, p.rc(), r_s1, r_e1, chr1, r_s2, r_e2, chr2,
+                      read1, read2, cig1, cig2);
 
   if (p.elem_is_a_rich()) { // final revcomp if the first end was a-rich
     gr.set_strand(gr.get_strand() == '+' ? '-' : '+');
@@ -809,7 +812,7 @@ process_seeds(const uint32_t max_candidates,
 
   size_t reseed_shift = 0;
   // reseeding step
-  for (;(!found_good_seed) && reseed_shift != shift;
+  for (;(!found_good_seed) && reseed_shift < shift;
         reseed_shift += seed::reseed_step)
 
     // uniformly spaced seeds
@@ -967,6 +970,7 @@ map_single_ended(const bool VERBOSE,
         if (!reads[i].empty()) {
           prep_read<conv>(reads[i], pread_seed);
           prep_for_seeds(pread_seed, pread_even, pread_odd);
+
           process_seeds<get_strand_code('+', conv)>(max_candidates,
                                                     abismal_index, genome_st,
                                                     gi, pread_seed, pread_even,
@@ -996,7 +1000,6 @@ map_single_ended(const bool VERBOSE,
       for (size_t i = 0; i < n_reads; ++i) {
         if (res[i].best.valid_hit())
           align_read(res[i].best, cigar[i], reads[i], pread, aln);
-
         if (res[i].second_best.valid_hit())
           align_read(res[i].second_best, tmp_cigar, reads[i], pread, aln);
 
@@ -1178,6 +1181,14 @@ best_single(const pe_candidates &pres, se_result &res) {
     res.update_by_mismatch(i->pos, i->diffs, i->flags);
 }
 
+// reject alignments where one read is contained within the other
+inline bool
+read_inside_read(const uint32_t s1, const uint32_t e1,
+                 const uint32_t s2, const uint32_t e2) {
+  return (s2 >= s1 && e2 <= e1) ||
+         (s1 >= s2 && e1 <= e2);
+}
+
 template <const bool swap_ends>
 static void
 best_pair(const pe_candidates &res1, const pe_candidates &res2,
@@ -1196,6 +1207,7 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
     s2 = *j2;
     if (s2.valid_hit()){
       bool aligned_s2 = false;
+      uint32_t lim_s2 = 0;
       const uint32_t lim = j2->pos + read2.length();
       while (j1 != j1_end && j1->pos + pe_element::max_dist < lim) ++j1;
       while (j1 != j1_end && j1->pos + pe_element::min_dist <= lim) {
@@ -1204,13 +1216,22 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
           align_read(s1, cand_cig1, read1, pread, aln);
           if (!aligned_s2) {
             align_read(s2, cand_cig2, read2, pread, aln);
+            lim_s2 = s2.pos + cigar_rseq_ops(cand_cig2);
             aligned_s2 = true;
           }
 
-          const pe_element p(swap_ends ? s2 : s1, swap_ends ? s1 : s2);
-          if (best.update_by_score(p)) {
-            cig1 = cand_cig1;
-            cig2 = cand_cig2;
+          // get length after alignment, and only accept if it is
+          // still within fragment limits
+          const uint32_t lim_s1 = s1.pos + cigar_rseq_ops(cand_cig1);
+          if ((s1.pos + pe_element::max_dist >= lim_s2) &&
+              (s1.pos + pe_element::min_dist <= lim_s2) &&
+              !read_inside_read(s1.pos, lim_s1, s2.pos, lim_s2)
+              ) {
+            const pe_element p(swap_ends ? s2 : s1, swap_ends ? s1 : s2);
+            if (best.update_by_score(p)) {
+              cig1 = cand_cig1;
+              cig2 = cand_cig2;
+            }
           }
         }
         ++j1;
