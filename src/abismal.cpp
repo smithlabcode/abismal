@@ -53,7 +53,7 @@ typedef uint16_t flags_t; // every bit is a flag
 typedef int16_t score_t; // alignment score
 typedef bool cmp_t; // match/mismatch type
 typedef vector<uint8_t> Read; //4-bit encoding of reads
-typedef genome_four_bit_itr genome_iterator;
+typedef genome_four_bit_itr genome_iterator; // iterates over 4 bits per byte
 
 enum conversion_type { t_rich = false, a_rich = true };
 enum genome_pos_parity { pos_even = false, pos_odd = true };
@@ -107,11 +107,14 @@ struct ReadLoader {
   bool good() const {return bool(*in);}
   size_t get_current_byte() const {return gztell(in->fileobj);}
 
-  void load_reads(vector<string> &names, vector<string> &reads) {
+  void load_reads(vector<string> &names,
+                  vector<string> &reads,
+                  vector<string> &quals) {
     static const size_t reserve_size = 250;
 
     reads.clear();
     names.clear();
+    quals.clear();
 
     size_t line_count = 0;
     const size_t num_lines_to_read = 4*batch_size;
@@ -126,6 +129,9 @@ struct ReadLoader {
           line.clear();
         std::replace(begin(line), end(line), 'N', 'Z');
         reads.push_back(line);
+      }
+      else if (line_count % 4 == 3) {
+        quals.push_back(line);
       }
       ++line_count;
     }
@@ -180,7 +186,9 @@ struct se_element {
     return aln_score > rhs.aln_score;
   }
 
-
+  uint16_t sam_flags() const {
+    return rc() ? 16 : 0;
+  }
   bool rc() const {return is_rc(flags);}
   bool elem_is_a_rich() const {return is_a_rich(flags);}
   bool valid_hit() const {return diffs <= invalid_hit_diffs;}
@@ -279,7 +287,8 @@ chrom_and_posn(const ChromLookup &cl, const string &cig, const uint32_t p,
 
 static void
 format_se(se_result res, const ChromLookup &cl,
-          string &read, const string &read_name,
+          const string &read, const string &read_name,
+          const string &qual,
           const string &cigar,
           const bool allow_ambig,
           ofstream &out) {
@@ -289,11 +298,12 @@ format_se(se_result res, const ChromLookup &cl,
   if (res.should_report(allow_ambig) &&
       chrom_and_posn(cl, cigar, s.pos, r_s, r_e, chrom_idx)) {
 
-    if (s.elem_is_a_rich()) { // since SE, this is only for GA conversion
-      revcomp_inplace(read);
-      s.flip_strand();
-    }
+    //if (s.elem_is_a_rich()) { // since SE, this is only for GA conversion
+    //  revcomp_inplace(read);
+    //  s.flip_strand();
+    //}
 
+    /*
     out << cl.names[chrom_idx] << '\t'
       << r_s << '\t'
       << r_e << '\t'
@@ -302,6 +312,16 @@ format_se(se_result res, const ChromLookup &cl,
       << s.strand() << '\t'
       << read << '\t'
       << cigar << '\n';
+      */
+    // SAM
+    out << read_name << '\t'                         // qname
+        << s.sam_flags() << '\t'                     // flag
+        << cl.names[chrom_idx] << '\t'               // rname
+        << r_s + 1 << '\t'                           // pos (1-based!)
+        << static_cast<unsigned>(res.mapq()) << '\t' // mapq
+        << cigar << "\t*\t0\t0\t"                    // rnext, pnext, tlen
+        << read << '\t'                              // seq
+        << qual << '\n';                             // qual
   }
 }
 
@@ -336,7 +356,13 @@ struct pe_element {
     return (score() > rhs.score());
   }
 
+  uint16_t sam_flags_r1() const {
+    return rc() ? 83 : 99;
+  }
 
+  uint16_t sam_flags_r2() const {
+    return rc() ? 163 : 147;
+  }
   void reset() {r1.reset(); r2.reset();}
   static uint32_t min_dist;
   static uint32_t max_dist;
@@ -403,12 +429,11 @@ get_overlap_rlen(const bool rc, const long int s1, const long int e1,
 }
 
 void
-get_pe_overlap(GenomicRegion &gr,
-               const bool rc,
-               uint32_t r_s1, uint32_t r_e1, uint32_t chr1,
-               uint32_t r_s2, uint32_t r_e2, uint32_t chr2,
-               string &read1, string &read2,
-               string &cig1, string &cig2) {
+merge_reads_and_cigars(GenomicRegion &gr, const bool rc,
+                       uint32_t r_s1, uint32_t r_e1,
+                       uint32_t r_s2, uint32_t r_e2,
+                       string &read1, string &read2,
+                       string &cig1, string &cig2) {
   if (rc) {
     reverse_cigar(cig1);
     reverse_cigar(cig2);
@@ -474,51 +499,48 @@ get_pe_overlap(GenomicRegion &gr,
         // head and dovetail
         if (len < read1.size()) read1.resize(len);
         else truncate_cigar_q(cig1, read1.size());
-      } else {
-        cerr << '\n' << gr << ' ' << rc << '\n';
-        cerr << r_s1 << ' ' << r_e1 << ' ' << chr1 << '\n';
-        cerr << r_s2 << ' ' << r_e2 << ' ' << chr2 << '\n';
-        cerr << read1 << ' ' << read2 << '\n';
-        cerr << cig1 << ' ' << cig2 << '\n';
-        throw runtime_error("PE read fall through!");
-      }
+      } else throw runtime_error("PE read fall through!");
+
     }
   }
 }
 
 bool
 format_pe(const pe_result &res, const ChromLookup &cl,
-          string &read1, string &read2,
+          const string &read1, const string &read2,
           const string &name1, const string &name2,
-          string &cig1, string &cig2,
+          const string &qual1, const string &qual2,
+          const string &cig1, const string &cig2,
           const bool allow_ambig,
           ofstream &out) {
   uint32_t r_s1 = 0, r_e1 = 0, chr1 = 0;
   uint32_t r_s2 = 0, r_e2 = 0, chr2 = 0;
   const pe_element p = res.best;
+
   // PE chromosomes differ or couldn't be found, treat read as unmapped
   if (!chrom_and_posn(cl, cig1, p.r1.pos, r_s1, r_e1, chr1) ||
       !chrom_and_posn(cl, cig2, p.r2.pos, r_s2, r_e2, chr2) ||
       chr1 != chr2)
     return false;
 
-  revcomp_inplace(read2);
+  // revcomp_inplace(read2);
 
   // Select the end points based on orientation, which indicates which
   // end is to the left (first) in the genome. Set the strand and read
   // name based on the first end.
-  auto gr = p.rc() ?
-    GenomicRegion(cl.names[chr2], r_s2, r_e1, name2, p.diffs(), p.strand()) :
-    GenomicRegion(cl.names[chr1], r_s1, r_e2, name1, p.diffs(), p.strand());
+  //auto gr = p.rc() ?
+  //  GenomicRegion(cl.names[chr2], r_s2, r_e1, name2, p.diffs(), p.strand()) :
+  //  GenomicRegion(cl.names[chr1], r_s1, r_e2, name1, p.diffs(), p.strand());
 
-  get_pe_overlap(gr, p.rc(), r_s1, r_e1, chr1, r_s2, r_e2, chr2,
-                      read1, read2, cig1, cig2);
+  // merge_reads_and_cigars(gr, p.rc(), r_s1, r_e1, r_s2, r_e2, read1, read2,
+  //                       cig1, cig2);
 
-  if (p.elem_is_a_rich()) { // final revcomp if the first end was a-rich
-    gr.set_strand(gr.get_strand() == '+' ? '-' : '+');
-    revcomp_inplace(read1);
-  }
-
+  // if (p.elem_is_a_rich()) { // final revcomp if the first end was a-rich
+  //  gr.set_strand(gr.get_strand() == '+' ? '-' : '+');
+  //  revcomp_inplace(read1);
+  //}
+  //
+  /*
   out << gr.get_chrom() << '\t'
       << gr.get_start() << '\t'
       << gr.get_end() << '\t'
@@ -527,6 +549,33 @@ format_pe(const pe_result &res, const ChromLookup &cl,
       << gr.get_strand() << '\t'
       << read1 << '\t'
       << cig1 << '\n';
+  */
+  // used in both r1 and r2
+  const int tlen = p.rc() ? (r_s1 - r_e2) : (r_e2 - r_s1);
+  const uint8_t mapq = res.mapq();
+
+  // SAM r1
+  out << name1 << '\t'                       // qname
+      << p.sam_flags_r1() << '\t'            // flag
+      << chr1 << '\t'                        // rname
+      << r_s1 + 1 << '\t'                    // pos (1-based!)
+      << static_cast<unsigned>(mapq) << '\t' // mapq
+      << cig1 << "\t=\t0\t"                  // cigar, rnext, pnext
+      << tlen << '\t'                        // tlen
+      << read1 << '\t'                       // seq
+      << qual1 << '\n';                      // qual
+
+  // SAM r2
+  out << name2 << '\t'                       // qname
+      << p.sam_flags_r2() << '\t'            // flag
+      << chr2 << '\t'                        // rname
+      << r_s2 + 1 << '\t'                    // pos (1-based!)
+      << static_cast<unsigned>(mapq) << '\t' // mapq
+      << cig2 << "\t=\t0\t"                  // cigar, rnext, pnext
+      << -tlen << '\t'                       // tlen
+      << read2 << '\t'                       // seq
+      << qual2 << '\n';                      // qual
+
   return true;
 }
 
@@ -661,13 +710,13 @@ static void
 select_output(const ChromLookup &cl,
               pe_result &best,
               se_result &se1, se_result &se2,
-              string &read1, const string &name1,
-              string &read2, const string &name2,
-              string &cig1, string &cig2,
+              const string &read1, const string &name1, const string &qual1,
+              const string &read2, const string &name2, const string &qual2,
+              const string &cig1, const string &cig2,
               const bool allow_ambig,
               ofstream &out) {
   if (best.should_report(false)) {
-    if (!format_pe(best, cl, read1, read2, name1, name2,
+    if (!format_pe(best, cl, read1, read2, name1, name2, qual1, qual2,
                    cig1, cig2, allow_ambig, out)) {
       // if unable to fetch chromosome positions (i.e. due to read mapping in
       // between chromosomes or cigars breaking dovetail reads),
@@ -678,8 +727,8 @@ select_output(const ChromLookup &cl,
     }
   }
   else {
-    format_se(se1, cl, read1, name1, cig1, allow_ambig, out);
-    format_se(se2, cl, read2, name2, cig2, allow_ambig, out);
+    format_se(se1, cl, read1, name1, qual1, cig1, allow_ambig, out);
+    format_se(se2, cl, read2, name2, qual2, cig2, allow_ambig, out);
   }
 }
 
@@ -933,9 +982,10 @@ map_single_ended(const bool VERBOSE,
   const genome_iterator gi(genome_st);
 
   size_t max_batch_read_length;
-  vector<string> names, reads;
+  vector<string> names, reads, quals;
   reads.reserve(batch_size);
   names.reserve(batch_size);
+  quals.reserve(batch_size);
   vector<se_result> res(batch_size);
   vector<string> cigar(batch_size);
 
@@ -951,7 +1001,7 @@ map_single_ended(const bool VERBOSE,
     if (VERBOSE && progress.time_to_report(rl.get_current_byte()))
       progress.report(cerr, rl.get_current_byte());
 
-    rl.load_reads(names, reads);
+    rl.load_reads(names, reads, quals);
 
     max_batch_read_length = 0;
     update_max_read_length(max_batch_read_length, reads);
@@ -1010,7 +1060,7 @@ map_single_ended(const bool VERBOSE,
 
     for (size_t i = 0 ; i < n_reads; ++i) {
       se_stats.update(reads[i], res[i]);
-      format_se(res[i], abismal_index.cl, reads[i], names[i],
+      format_se(res[i], abismal_index.cl, reads[i], names[i], quals[i],
                 cigar[i], allow_ambig, out);
     }
   }
@@ -1035,9 +1085,10 @@ map_single_ended_rand(const bool VERBOSE,
   const genome_iterator gi(genome_st);
 
   size_t max_batch_read_length;
-  vector<string> names, reads;
+  vector<string> names, reads, quals;
   reads.reserve(batch_size);
   names.reserve(batch_size);
+  quals.reserve(batch_size);
   vector<string> cigar(batch_size);
   vector<se_result> res(batch_size);
 
@@ -1054,7 +1105,7 @@ map_single_ended_rand(const bool VERBOSE,
     if (VERBOSE && progress.time_to_report(rl.get_current_byte()))
       progress.report(cerr, rl.get_current_byte());
 
-    rl.load_reads(names, reads);
+    rl.load_reads(names, reads, quals);
     max_batch_read_length = 0;
     update_max_read_length(max_batch_read_length, reads);
 
@@ -1123,7 +1174,7 @@ map_single_ended_rand(const bool VERBOSE,
 
     for (size_t i = 0 ; i < n_reads; ++i) {
       se_stats.update(reads[i], res[i]);
-      format_se(res[i], abismal_index.cl, reads[i], names[i],
+      format_se(res[i], abismal_index.cl, reads[i], names[i], quals[i],
                 cigar[i], allow_ambig, out);
     }
   }
@@ -1225,6 +1276,7 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
           const uint32_t lim_s1 = s1.pos + cigar_rseq_ops(cand_cig1);
           if ((s1.pos + pe_element::max_dist >= lim_s2) &&
               (s1.pos + pe_element::min_dist <= lim_s2) &&
+              // particular case that is not frag_s, frag_m or frag_l
               !read_inside_read(s1.pos, lim_s1, s2.pos, lim_s2)
               ) {
             const pe_element p(swap_ends ? s2 : s1, swap_ends ? s1 : s2);
@@ -1274,8 +1326,10 @@ map_paired_ended(const bool VERBOSE,
   ReadLoader rl2(reads_file2, batch_size);
 
   size_t max_batch_read_length;
-  vector<string> names1(batch_size), reads1(batch_size), cigar1(batch_size),
-    names2(batch_size), reads2(batch_size), cigar2(batch_size);
+  vector<string> names1(batch_size), reads1(batch_size), quals1(batch_size),
+                 cigar1(batch_size),
+                 names2(batch_size), reads2(batch_size), quals2(batch_size),
+                 cigar2(batch_size);
   vector<pe_candidates> res1(batch_size), res2(batch_size);
   vector<pe_result> bests(batch_size);
   vector<se_result> res_se1(batch_size), res_se2(batch_size);
@@ -1292,9 +1346,10 @@ map_paired_ended(const bool VERBOSE,
     if (VERBOSE && progress.time_to_report(rl1.get_current_byte()))
       progress.report(cerr, rl1.get_current_byte());
 
-    rl1.load_reads(names1, reads1);
-    rl2.load_reads(names2, reads2);
+    rl1.load_reads(names1, reads1, quals1);
+    rl2.load_reads(names2, reads2, quals2);
 
+       // used to get AbismalAlign size
     max_batch_read_length = 0;
     update_max_read_length(max_batch_read_length, reads1);
     update_max_read_length(max_batch_read_length, reads2);
@@ -1384,7 +1439,8 @@ map_paired_ended(const bool VERBOSE,
 
     for (size_t i = 0 ; i < n_reads; ++i)
       select_output(abismal_index.cl, bests[i], res_se1[i], res_se2[i],
-                         reads1[i], names1[i], reads2[i], names2[i],
+                         reads1[i], names1[i], quals1[i],
+                         reads2[i], names2[i], quals2[i],
                          cigar1[i], cigar2[i], allow_ambig, out);
 
     for (size_t i = 0 ; i < n_reads; ++i)
@@ -1415,8 +1471,10 @@ map_paired_ended_rand(const bool VERBOSE,
   ReadLoader rl2(reads_file2, batch_size);
 
   size_t max_batch_read_length;
-  vector<string> names1(batch_size), reads1(batch_size), cigar1(batch_size),
-    names2(batch_size), reads2(batch_size), cigar2(batch_size);
+  vector<string> names1(batch_size), reads1(batch_size), quals1(batch_size),
+                 cigar1(batch_size),
+                 names2(batch_size), reads2(batch_size), quals2(batch_size),
+                 cigar2(batch_size);
 
   vector<pe_candidates> res1(batch_size), res2(batch_size);
   vector<pe_result> bests(batch_size);
@@ -1435,8 +1493,8 @@ map_paired_ended_rand(const bool VERBOSE,
     if (VERBOSE && progress.time_to_report(rl1.get_current_byte()))
       progress.report(cerr, rl1.get_current_byte());
 
-    rl1.load_reads(names1, reads1);
-    rl2.load_reads(names2, reads2);
+    rl1.load_reads(names1, reads1, quals1);
+    rl2.load_reads(names2, reads2, quals2);
 
     max_batch_read_length = 0;
     update_max_read_length(max_batch_read_length, reads1);
@@ -1564,8 +1622,8 @@ map_paired_ended_rand(const bool VERBOSE,
 
     for (size_t i = 0 ; i < n_reads; ++i)
       select_output(abismal_index.cl, bests[i], res_se1[i], res_se2[i],
-                    reads1[i], names1[i],
-                    reads2[i], names2[i],
+                    reads1[i], names1[i], quals1[i],
+                    reads2[i], names2[i], quals2[i],
                     cigar1[i], cigar2[i], allow_ambig, out);
 
     for (size_t i = 0 ; i < n_reads; ++i)
