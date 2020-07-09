@@ -57,6 +57,7 @@ typedef genome_four_bit_itr genome_iterator; // iterates over 4 bits per byte
 
 enum conversion_type { t_rich = false, a_rich = true };
 enum genome_pos_parity { pos_even = false, pos_odd = true };
+enum sam_record_type { single = 0, pe_first_mate = 1, pe_second_mate = 2 };
 
 namespace BSFlags {
   static const flags_t a_rich = 0x1000;
@@ -186,8 +187,16 @@ struct se_element {
     return aln_score > rhs.aln_score;
   }
 
+  template<const sam_record_type type>
   uint16_t sam_flags() const {
-    return rc() ? 16 : 0;
+    return
+    (type != single) *        (SamFlags::read_paired |
+                               SamFlags::read_pair_mapped) |
+    (rc()) *                   SamFlags::read_rc |
+    (!rc()) *                  SamFlags::mate_rc |
+    (type == pe_first_mate) *  SamFlags::template_first |
+    (type == pe_second_mate) * SamFlags::template_second;
+
   }
   bool rc() const {return is_rc(flags);}
   bool elem_is_a_rich() const {return is_a_rich(flags);}
@@ -287,7 +296,7 @@ chrom_and_posn(const ChromLookup &cl, const string &cig, const uint32_t p,
 
 static void
 format_se(se_result res, const ChromLookup &cl,
-          const string &read, const string &read_name,
+          string &read, const string &read_name,
           const string &qual,
           const string &cigar,
           const bool allow_ambig,
@@ -298,24 +307,12 @@ format_se(se_result res, const ChromLookup &cl,
   if (res.should_report(allow_ambig) &&
       chrom_and_posn(cl, cigar, s.pos, r_s, r_e, chrom_idx)) {
 
-    //if (s.elem_is_a_rich()) { // since SE, this is only for GA conversion
-    //  revcomp_inplace(read);
-    //  s.flip_strand();
-    //}
+    // to-mr applies cigar directly
+    if (s.rc()) revcomp_inplace(read);
 
-    /*
-    out << cl.names[chrom_idx] << '\t'
-      << r_s << '\t'
-      << r_e << '\t'
-      << (res.ambig() ? "AMBIG:" : "") + read_name << '\t'
-      << (unsigned) res.mapq() << '\t'
-      << s.strand() << '\t'
-      << read << '\t'
-      << cigar << '\n';
-      */
     // SAM
     out << read_name << '\t'                         // qname
-        << s.sam_flags() << '\t'                     // flag
+        << s.sam_flags<single>() << '\t'             // flag
         << cl.names[chrom_idx] << '\t'               // rname
         << r_s + 1 << '\t'                           // pos (1-based!)
         << static_cast<unsigned>(res.mapq()) << '\t' // mapq
@@ -356,13 +353,6 @@ struct pe_element {
     return (score() > rhs.score());
   }
 
-  uint16_t sam_flags_r1() const {
-    return rc() ? 83 : 99;
-  }
-
-  uint16_t sam_flags_r2() const {
-    return rc() ? 163 : 147;
-  }
   void reset() {r1.reset(); r2.reset();}
   static uint32_t min_dist;
   static uint32_t max_dist;
@@ -409,105 +399,9 @@ struct pe_result { // assert(sizeof(pe_result) == 16);
   }
 };
 
-
-static int
-get_spacer_rlen(const bool rc, const long int s1, const long int e1,
-                const long int s2, const long int e2) {
-  return rc ? s1 - e2 : s2 - e1;
-}
-
-static int
-get_head_rlen(const bool rc, const long int s1, const long int e1,
-              const long int s2, const long int e2) {
-  return rc ? e1 - e2 : s2 - s1;
-}
-
-static int
-get_overlap_rlen(const bool rc, const long int s1, const long int e1,
-                 const long int s2, const long int e2) {
-  return rc ? e1 - s2 : e2 - s1;
-}
-
-void
-merge_reads_and_cigars(GenomicRegion &gr, const bool rc,
-                       uint32_t r_s1, uint32_t r_e1,
-                       uint32_t r_s2, uint32_t r_e2,
-                       string &read1, string &read2,
-                       string &cig1, string &cig2) {
-  if (rc) {
-    reverse_cigar(cig1);
-    reverse_cigar(cig2);
-  }
-  const int spacer = get_spacer_rlen(rc, r_s1, r_e1, r_s2, r_e2);
-  if (spacer >= 0) {
-    /* fragments longer than or equal to 2x read length: this size of
-     * the spacer ("_") is determined based on the reference positions
-     * of the two ends, and depends on whether the mapping is on the
-     * negative strand of the genome.
-     *
-     * left                                                             right
-     * r_s1                         r_e1   r_s2                         r_e2
-     * [------------end1------------]______[------------end2------------]
-     */
-    gr.set_name("FRAG_L:" + gr.get_name()); // DEBUG
-    read1 += string(spacer, 'N');
-    read1 += read2;
-
-    cig1 += std::to_string(spacer) + "N";
-    cig1 += cig2;
-  }
-  else {
-    const int head = get_head_rlen(rc, r_s1, r_e1, r_s2, r_e2);
-    if (head >= 0) { //
-    /* fragment longer than or equal to the read length, but shorter
-     * than twice the read length: this is determined by obtaining the
-     * size of the "head" in the diagram below: the portion of end1
-     * that is not within [=]. If the read maps to the positive
-     * strand, this depends on the reference start of end2 minus the
-     * reference start of end1. For negative strand, this is reference
-     * start of end1 minus reference start of end2.
-     *
-     * left                                                 right
-     * r_s1                   r_s2   r_e1                   r_e2
-     * [------------end1------[======]------end2------------]
-     */
-      gr.set_name("FRAG_M:" + gr.get_name()); // DEBUG
-      truncate_cigar_r(cig1, head);
-      read1.resize(cigar_qseq_ops(cig1));
-      cig1 += cig2;
-      merge_equal_neighbor_cigar_ops(cig1);
-      read1 += read2;
-    }
-    else {
-      /* dovetail fragments shorter than read length: this is
-       * identified if the above conditions are not satisfied, but
-       * there is still some overlap. The overlap will be at the 5'
-       * ends of reads, which in theory shouldn't happen unless the
-       * two ends are covering identical genomic intervals.
-       *
-       * left                                           right
-       * r_s2             r_s1         r_e2             r_e1
-       * [--end2----------[============]----------end1--]
-       */
-      int overlap = get_overlap_rlen(rc, r_s1, r_e1, r_s2, r_e2);
-      if (overlap > 0) {
-        gr.set_name("FRAG_S:" + gr.get_name()); // DEBUG
-        truncate_cigar_r(cig1, overlap);
-        const size_t len = cigar_qseq_ops(cig1);
-
-        // specific case where indels happen on the edge between
-        // head and dovetail
-        if (len < read1.size()) read1.resize(len);
-        else truncate_cigar_q(cig1, read1.size());
-      } else throw runtime_error("PE read fall through!");
-
-    }
-  }
-}
-
 bool
 format_pe(const pe_result &res, const ChromLookup &cl,
-          const string &read1, const string &read2,
+          string &read1, string &read2,
           const string &name1, const string &name2,
           const string &qual1, const string &qual2,
           const string &cig1, const string &cig2,
@@ -523,58 +417,38 @@ format_pe(const pe_result &res, const ChromLookup &cl,
       chr1 != chr2)
     return false;
 
-  // revcomp_inplace(read2);
-
-  // Select the end points based on orientation, which indicates which
-  // end is to the left (first) in the genome. Set the strand and read
-  // name based on the first end.
-  //auto gr = p.rc() ?
-  //  GenomicRegion(cl.names[chr2], r_s2, r_e1, name2, p.diffs(), p.strand()) :
-  //  GenomicRegion(cl.names[chr1], r_s1, r_e2, name1, p.diffs(), p.strand());
-
-  // merge_reads_and_cigars(gr, p.rc(), r_s1, r_e1, r_s2, r_e2, read1, read2,
-  //                       cig1, cig2);
-
-  // if (p.elem_is_a_rich()) { // final revcomp if the first end was a-rich
-  //  gr.set_strand(gr.get_strand() == '+' ? '-' : '+');
-  //  revcomp_inplace(read1);
-  //}
-  //
-  /*
-  out << gr.get_chrom() << '\t'
-      << gr.get_start() << '\t'
-      << gr.get_end() << '\t'
-      << (res.ambig() ? "AMBIG:" : "") + gr.get_name() << '\t'
-      << (unsigned) res.mapq() << '\t'
-      << gr.get_strand() << '\t'
-      << read1 << '\t'
-      << cig1 << '\n';
-  */
-  // used in both r1 and r2
-  const int tlen = p.rc() ? (r_s1 - r_e2) : (r_e2 - r_s1);
+  // used in both r1 and r2, so calculated once
+  const bool rc = p.rc();
   const uint8_t mapq = res.mapq();
+  const int tlen = rc ? (r_s1 - r_e2) : (r_e2 - r_s1);
+
+  // adjust read to reference
+  if (rc) revcomp_inplace(read1);
+  else    revcomp_inplace(read2);
 
   // SAM r1
-  out << name1 << '\t'                       // qname
-      << p.sam_flags_r1() << '\t'            // flag
-      << chr1 << '\t'                        // rname
-      << r_s1 + 1 << '\t'                    // pos (1-based!)
-      << static_cast<unsigned>(mapq) << '\t' // mapq
-      << cig1 << "\t=\t0\t"                  // cigar, rnext, pnext
-      << tlen << '\t'                        // tlen
-      << read1 << '\t'                       // seq
-      << qual1 << '\n';                      // qual
+  out << name1 << '\t'                           // qname
+      << p.r1.sam_flags<pe_first_mate>() << '\t' // flag
+      << cl.names[chr1] << '\t'                  // rname
+      << r_s1 + 1 << '\t'                        // pos (1-based!)
+      << static_cast<unsigned>(mapq) << '\t'     // mapq
+      << cig1 << "\t=\t"                         // cigar, rnext
+      << r_s2 + 1 << '\t'                        // pnext
+      << tlen << '\t'                            // tlen
+      << read1 << '\t'                           // seq
+      << qual1 << '\n';                          // qual
 
   // SAM r2
-  out << name2 << '\t'                       // qname
-      << p.sam_flags_r2() << '\t'            // flag
-      << chr2 << '\t'                        // rname
-      << r_s2 + 1 << '\t'                    // pos (1-based!)
-      << static_cast<unsigned>(mapq) << '\t' // mapq
-      << cig2 << "\t=\t0\t"                  // cigar, rnext, pnext
-      << -tlen << '\t'                       // tlen
-      << read2 << '\t'                       // seq
-      << qual2 << '\n';                      // qual
+  out << name2 << '\t'                             // qname
+      << p.r2.sam_flags<pe_second_mate>() << '\t'  // flag
+      << cl.names[chr2] << '\t'                    // rname
+      << r_s2 + 1 << '\t'                          // pos (1-based!)
+      << static_cast<unsigned>(mapq) << '\t'       // mapq
+      << cig2 << "\t=\t"                           // cigar, rnext
+      << r_s1 + 1 << '\t'                          // pnext
+      << -tlen <<  '\t'                            // tlen
+      << read2 << '\t'                             // seq
+      << qual2 << '\n';                            // qual
 
   return true;
 }
@@ -710,8 +584,8 @@ static void
 select_output(const ChromLookup &cl,
               pe_result &best,
               se_result &se1, se_result &se2,
-              const string &read1, const string &name1, const string &qual1,
-              const string &read2, const string &name2, const string &qual2,
+              string &read1, const string &name1, const string &qual1,
+              string &read2, const string &name2, const string &qual2,
               const string &cig1, const string &cig2,
               const bool allow_ambig,
               ofstream &out) {
@@ -1639,6 +1513,26 @@ map_paired_ended_rand(const bool VERBOSE,
   }
 }
 
+void
+write_sam_header(const ChromLookup &cl,
+                 const int argc,
+                 const char **argv,
+                 ofstream &out) {
+  out <<"@HD\tVN:1.0\n"; // sam version
+  const size_t sz = cl.names.size();
+  size_t prev = cl.starts[0];
+  for (size_t i = 1; i < sz; ++i) {
+    out << "@SQ\tSN:" << cl.names[i] << "\tLN:" << cl.starts[i] - prev << '\n';
+    prev = cl.starts[i];
+  }
+
+  out << "@PG\tID:ABISMAL\tVN:1.0.0\tCL:\"";
+  out << string(*(argv));
+  for (int i = 1; i < argc; ++i)
+    out << " " << string(*(argv + i));
+  out << "\"\n";
+
+}
 
 int main(int argc, const char **argv) {
   try {
@@ -1767,6 +1661,7 @@ int main(int argc, const char **argv) {
     if (!out)
       throw runtime_error("failed to open output file: " + outfile);
 
+    write_sam_header(abismal_index.cl, argc, argv, out);
     if (reads_file2.empty()) {
       if (GA_conversion || pbat_mode)
         map_single_ended<a_rich>(VERBOSE, reads_file, batch_size,
