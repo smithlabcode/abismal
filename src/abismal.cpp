@@ -23,7 +23,8 @@
 #include "AbismalAlign.hpp"
 #include "GenomicRegion.hpp"
 #include "dna_four_bit.hpp"
-#include "htslib_wrapper.hpp"
+#include "sam_rec.hpp"
+#include "bisulfite_utils.hpp"
 
 #include <cstdint>
 #include <iostream>
@@ -55,39 +56,18 @@ typedef bool cmp_t; // match/mismatch type
 typedef vector<uint8_t> Read; //4-bit encoding of reads
 typedef genome_four_bit_itr genome_iterator; // iterates over 4 bits per byte
 
-enum conversion_type { t_rich = false, a_rich = true };
 enum genome_pos_parity { pos_even = false, pos_odd = true };
-enum sam_record_type { single = 0, pe_first_mate = 1, pe_second_mate = 2 };
 
-namespace BSFlags {
-  static const flags_t a_rich = 0x1000;
-  static const flags_t ambig = 0x2000;
-};
-
-constexpr conversion_type
-flip_conv(const conversion_type conv) {
-  return conv == t_rich ? a_rich : t_rich;
-}
-
+// functions to simultaneously get/set rc and a/t-richness flags
 constexpr flags_t
 get_strand_code(const char strand, const conversion_type conv) {
-  return (((strand == '-')  ? SamFlags::read_rc : 0) |
-          ((conv == a_rich) ? BSFlags::a_rich : 0));
+  return (((strand == '-')  ? samflags::read_rc : 0) |
+          ((conv == a_rich) ? bsflags::a_rich : 0));
 }
 
 constexpr flags_t
 flip_strand_code(const flags_t sc) {
-  return (sc ^ SamFlags::read_rc) ^ BSFlags::a_rich;
-}
-
-constexpr bool
-is_a_rich(const flags_t flags) {
-  return (flags & BSFlags::a_rich) != 0;
-}
-
-constexpr bool
-is_rc(const flags_t flags) {
-  return (flags & SamFlags::read_rc) != 0;
+  return (sc ^ samflags::read_rc) ^ bsflags::a_rich;
 }
 
 namespace align_scores {
@@ -190,16 +170,16 @@ struct se_element {
   template<const sam_record_type type>
   uint16_t sam_flags() const {
     return
-    (type != single) *        (SamFlags::read_paired |
-                               SamFlags::read_pair_mapped) |
-    (rc()) *                   SamFlags::read_rc |
-    (!rc()) *                  SamFlags::mate_rc |
-    (type == pe_first_mate) *  SamFlags::template_first |
-    (type == pe_second_mate) * SamFlags::template_second;
+    (type != single) *        (samflags::read_paired |
+                               samflags::read_pair_mapped) |
+    (rc()) *                   samflags::read_rc |
+    (!rc()) *                  samflags::mate_rc |
+    (type == pe_first_mate) *  samflags::template_first |
+    (type == pe_second_mate) * samflags::template_second;
 
   }
-  bool rc() const {return is_rc(flags);}
-  bool elem_is_a_rich() const {return is_a_rich(flags);}
+  bool rc() const {return samflags::is_read_rc(flags);}
+  bool elem_is_a_rich() const {return bsflags::is_a_rich(flags);}
   bool valid_hit() const {return diffs < invalid_hit_diffs;}
   char strand() const {return rc() ? '-' : '+';}
   void flip_strand() {flags = flip_strand_code(flags);}
