@@ -91,9 +91,9 @@ is_rc(const flags_t flags) {
 }
 
 namespace align_scores {
-  static const score_t match = 2,
+  static const score_t match = 1,
                mismatch = -1,
-               indel = -5;
+               indel = -1;
 };
 
 struct ReadLoader {
@@ -162,7 +162,7 @@ struct se_element {
   flags_t flags;
 
   se_element() : pos(0),
-                 diffs(invalid_hit_diffs + 1),
+                 diffs(invalid_hit_diffs),
                  aln_score(0),
                  flags(0) {}
 
@@ -200,10 +200,10 @@ struct se_element {
   }
   bool rc() const {return is_rc(flags);}
   bool elem_is_a_rich() const {return is_a_rich(flags);}
-  bool valid_hit() const {return diffs <= invalid_hit_diffs;}
+  bool valid_hit() const {return diffs < invalid_hit_diffs;}
   char strand() const {return rc() ? '-' : '+';}
   void flip_strand() {flags = flip_strand_code(flags);}
-  void reset() { diffs = invalid_hit_diffs + 1; aln_score = 0; }
+  void reset() { diffs = invalid_hit_diffs; aln_score = 0; }
 
   bool is_equal_to (const se_element &rhs) const {
     return (diffs == rhs.diffs) && (pos != rhs.pos);
@@ -318,7 +318,8 @@ format_se(se_result res, const ChromLookup &cl,
         << static_cast<unsigned>(res.mapq()) << '\t' // mapq
         << cigar << "\t*\t0\t0\t"                    // rnext, pnext, tlen
         << read << '\t'                              // seq
-        << qual << '\n';                             // qual
+        << qual << '\t'                              // qual
+        << "NM:i:" << s.diffs << '\n';               // edit distance to ref
   }
 }
 
@@ -337,9 +338,10 @@ struct pe_element {
   flags_t flags() const { return r1.flags; }
 
   bool valid_hit() const {
-    return r1.diffs <= se_element::invalid_hit_diffs &&
-           r2.diffs <= se_element::invalid_hit_diffs;
+    return r1.diffs < se_element::invalid_hit_diffs &&
+           r2.diffs < se_element::invalid_hit_diffs;
   }
+
   bool is_equal_to(const pe_element &rhs) const {
     return diffs() == rhs.diffs() && !(r1.pos == rhs.r1.pos &&
                                        r2.pos == rhs.r2.pos);
@@ -436,7 +438,8 @@ format_pe(const pe_result &res, const ChromLookup &cl,
       << r_s2 + 1 << '\t'                        // pnext
       << tlen << '\t'                            // tlen
       << read1 << '\t'                           // seq
-      << qual1 << '\n';                          // qual
+      << qual1 << '\t'                           // qual
+      << "NM:i:" << p.r1.diffs << '\n';          // edit distance to ref
 
   // SAM r2
   out << name2 << '\t'                             // qname
@@ -448,8 +451,8 @@ format_pe(const pe_result &res, const ChromLookup &cl,
       << r_s1 + 1 << '\t'                          // pnext
       << -tlen <<  '\t'                            // tlen
       << read2 << '\t'                             // seq
-      << qual2 << '\n';                            // qual
-
+      << qual2 << '\t'                             // qual
+      << "NM:i:" << p.r2.diffs << '\n';            // edit distance to ref
   return true;
 }
 
@@ -733,37 +736,32 @@ process_seeds(const uint32_t max_candidates,
   uint32_t k;
   bool found_good_seed = false;
 
-  size_t reseed_shift = 0;
-  // reseeding step
-  for (;(!found_good_seed) && reseed_shift < shift;
-        reseed_shift += seed::reseed_step)
+  // uniformly spaced seeds
+  for (uint32_t i = 0; i <= shift_lim && !res.sure_ambig(i); i += shift)
+    // fix the fact that only odd positions exist in the index
+    for (uint32_t j = 0; j <= 1; ++j) {
+      const uint32_t offset = i + j;
+      k = 0;
+      get_1bit_hash_4bit(read_start + offset, k);
+      auto s_idx(index_st + *(counter_st + k));
+      auto e_idx(index_st + *(counter_st + k + 1));
 
-    // uniformly spaced seeds
-    for (uint32_t i = 0; i <= shift_lim && !res.sure_ambig(i); i += shift)
+      if (s_idx < e_idx) {
+        find_candidates(read_start + offset, gi,
+                        readlen    - offset,
+                        seed::n_seed_positions, s_idx, e_idx);
 
-      // fix the fact that only odd positions exist in the index
-      for (uint32_t j = 0; j <= 1; ++j) {
-        const size_t offset = i + j + reseed_shift;
-        k = 0;
-        get_1bit_hash_4bit(read_start + i + j + reseed_shift, k);
-        auto s_idx(index_st + *(counter_st + k));
-        auto e_idx(index_st + *(counter_st + k + 1));
-
-        if (s_idx < e_idx) {
-          find_candidates(read_start + offset, gi,
-                          readlen    - offset,
-                          seed::n_seed_positions, s_idx, e_idx);
-
-          if (e_idx - s_idx < max_candidates) {
-            found_good_seed = true;
-            check_hits<strand_code>(s_idx, e_idx,
-                                even_read_start, even_read_mid, even_read_end,
-                                odd_read_start, odd_read_mid, odd_read_end,
-                                genome_st, offset, res);
-          }
+        if (e_idx - s_idx < max_candidates) {
+          found_good_seed = true;
+          check_hits<strand_code>(s_idx, e_idx,
+                              even_read_start, even_read_mid, even_read_end,
+                              odd_read_start, odd_read_mid, odd_read_end,
+                              genome_st, offset, res);
         }
       }
-  // if reseeding fails, use entire read as seed
+    }
+
+  // if no good seeds found, use entire read as seed
   if (!found_good_seed) {
     k = 0;
     get_1bit_hash_4bit(read_start, k);
@@ -825,18 +823,19 @@ align_read(se_element &res, string &cigar, const string &read,
                     align_scores::mismatch * res.diffs;
   } else {
     uint32_t len; // the region of the read the alignment spans
-    const bool a_rich = res.elem_is_a_rich();
     if (res.rc()) {
       const string read_rc(revcomp(read));
       // rc reverses richness of read
-      if (a_rich) prep_read<false>(read_rc, pread);
+      if (res.elem_is_a_rich()) prep_read<false>(read_rc, pread);
       else prep_read<true>(read_rc, pread);
     }
     else {
-      if (a_rich) prep_read<true>(read, pread);
+      if (res.elem_is_a_rich()) prep_read<true>(read, pread);
       else prep_read<false>(read, pread);
     }
     res.aln_score = aln.align(pread, res.pos, len, cigar);
+    // will be used to print edit distance on sam. Only works with 1 -1 -1
+    res.diffs = (len - res.aln_score) / 2;
   }
 }
 
@@ -1106,14 +1105,6 @@ best_single(const pe_candidates &pres, se_result &res) {
     res.update_by_mismatch(i->pos, i->diffs, i->flags);
 }
 
-// reject alignments where one read is contained within the other
-inline bool
-read_inside_read(const uint32_t s1, const uint32_t e1,
-                 const uint32_t s2, const uint32_t e2) {
-  return (s2 >= s1 && e2 <= e1) ||
-         (s1 >= s2 && e1 <= e2);
-}
-
 template <const bool swap_ends>
 static void
 best_pair(const pe_candidates &res1, const pe_candidates &res2,
@@ -1147,12 +1138,8 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
 
           // get length after alignment, and only accept if it is
           // still within fragment limits
-          const uint32_t lim_s1 = s1.pos + cigar_rseq_ops(cand_cig1);
           if ((s1.pos + pe_element::max_dist >= lim_s2) &&
-              (s1.pos + pe_element::min_dist <= lim_s2) &&
-              // particular case that is not frag_s, frag_m or frag_l
-              !read_inside_read(s1.pos, lim_s1, s2.pos, lim_s2)
-              ) {
+              (s1.pos + pe_element::min_dist <= lim_s2)) {
             const pe_element p(swap_ends ? s2 : s1, swap_ends ? s1 : s2);
             if (best.update_by_score(p)) {
               cig1 = cand_cig1;
@@ -1521,11 +1508,14 @@ write_sam_header(const ChromLookup &cl,
   out <<"@HD\tVN:1.0\n"; // sam version
   const size_t sz = cl.names.size();
   size_t prev = cl.starts[0];
+
+  // sequence lengths
   for (size_t i = 1; i < sz; ++i) {
     out << "@SQ\tSN:" << cl.names[i] << "\tLN:" << cl.starts[i] - prev << '\n';
     prev = cl.starts[i];
   }
 
+  // function call
   out << "@PG\tID:ABISMAL\tVN:1.0.0\tCL:\"";
   out << string(*(argv));
   for (int i = 1; i < argc; ++i)
