@@ -74,6 +74,7 @@ namespace align_scores {
   static const score_t match = 1,
                mismatch = -1,
                indel = -1;
+  static const vector<score_t> score_lookup = {match, mismatch};
 };
 
 struct ReadLoader {
@@ -787,8 +788,7 @@ prep_for_seeds(const Read &pread_seed, Read &pread_even, Read &pread_odd) {
 
 static inline score_t
 mismatch_score(const char q_base, const uint8_t t_base) {
-  return the_comp(q_base, t_base) ?
-    align_scores::mismatch : align_scores::match;
+  return align_scores::score_lookup[the_comp(q_base, t_base)];
 }
 
 template <score_t (*scr_fun)(const char, const uint8_t),
