@@ -70,13 +70,6 @@ flip_strand_code(const flags_t sc) {
   return (sc ^ samflags::read_rc) ^ bsflags::a_rich;
 }
 
-namespace align_scores {
-  static const score_t match = 1,
-               mismatch = -1,
-               indel = -1;
-  static const vector<score_t> score_lookup = {match, mismatch};
-};
-
 struct ReadLoader {
   ReadLoader(const string &fn,
              const size_t bs = numeric_limits<size_t>::max()) :
@@ -171,6 +164,7 @@ struct se_element {
   template<const sam_record_type type>
   uint16_t sam_flags() const {
     return
+    (elem_is_a_rich()) *       bsflags::a_rich |
     (type != single) *        (samflags::read_paired |
                                samflags::read_pair_mapped) |
     (rc()) *                   samflags::read_rc |
@@ -786,10 +780,18 @@ prep_for_seeds(const Read &pread_seed, Read &pread_even, Read &pread_odd) {
   for (i = 1; i < sz; i += 2) pread_odd[j++] = pread_seed[i];
 }
 
-static inline score_t
-mismatch_score(const char q_base, const uint8_t t_base) {
-  return align_scores::score_lookup[the_comp(q_base, t_base)];
-}
+namespace local_aln {
+  static const score_t match = 1,
+               mismatch = -1,
+               indel = -1;
+
+  // this lookup improves speed when running alignment
+  static const vector<score_t> score_lookup = {match, mismatch};
+  static inline score_t mismatch_score(const char q_base,
+                                       const uint8_t t_base) {
+    return score_lookup[the_comp(q_base, t_base)];
+  }
+};
 
 template <score_t (*scr_fun)(const char, const uint8_t),
           score_t indel_pen>
@@ -799,8 +801,8 @@ align_read(se_element &res, string &cigar, const string &read,
   // ends early if alignment is nearly diagonal
   if (res.diffs <= 3) {
     cigar = std::to_string(read.length())+"M";
-    res.aln_score = align_scores::match * (read.length() - res.diffs) +
-                    align_scores::mismatch * res.diffs;
+    res.aln_score = local_aln::match * (read.length() - res.diffs) +
+                    local_aln::mismatch * res.diffs;
   } else {
     uint32_t len; // the region of the read the alignment spans
     if (res.rc()) {
@@ -896,7 +898,7 @@ map_single_ended(const bool VERBOSE,
     {
       Read pread;
       string tmp_cigar;
-      AbismalAlign<mismatch_score, align_scores::indel>
+      AbismalAlign<local_aln::mismatch_score, local_aln::indel>
         aln(gi, genome_size, max_batch_read_length);
 
 #pragma omp for
@@ -1009,7 +1011,7 @@ map_single_ended_rand(const bool VERBOSE,
     {
       Read pread;
       string tmp_cigar;
-      AbismalAlign<mismatch_score, align_scores::indel>
+      AbismalAlign<local_aln::mismatch_score, local_aln::indel>
         aln(gi, genome_size, max_batch_read_length);
 
 #pragma omp for
@@ -1090,7 +1092,7 @@ static void
 best_pair(const pe_candidates &res1, const pe_candidates &res2,
           const string &read1, const string &read2,
           string &cig1, string &cig2,
-          AbismalAlign<mismatch_score, align_scores::indel> &aln,
+          AbismalAlign<local_aln::mismatch_score, local_aln::indel> &aln,
           pe_result &best) {
 
   auto j1 = begin(res1.v);
@@ -1139,7 +1141,7 @@ select_maps(const string &read1, const string &read2,
             string &cig1, string &cig2,
             pe_candidates &res1, pe_candidates &res2,
             se_result &res_se1, se_result &res_se2,
-            AbismalAlign<mismatch_score, align_scores::indel> &aln,
+            AbismalAlign<local_aln::mismatch_score, local_aln::indel> &aln,
             pe_result &best) {
   res1.prepare_for_mating();
   res2.prepare_for_mating();
@@ -1215,7 +1217,7 @@ map_paired_ended(const bool VERBOSE,
 
 #pragma omp parallel
     {
-      AbismalAlign<mismatch_score, align_scores::indel>
+      AbismalAlign<local_aln::mismatch_score, local_aln::indel>
         aln(gi, genome_size, max_batch_read_length);
 
 #pragma omp for
@@ -1235,7 +1237,7 @@ map_paired_ended(const bool VERBOSE,
 
 #pragma omp parallel
     {
-      AbismalAlign<mismatch_score, align_scores::indel>
+      AbismalAlign<local_aln::mismatch_score, local_aln::indel>
         aln(gi, genome_size, max_batch_read_length);
 
 #pragma omp for
@@ -1251,7 +1253,7 @@ map_paired_ended(const bool VERBOSE,
     {
       Read pread;
       string tmp_cigar;
-      AbismalAlign<mismatch_score, align_scores::indel>
+      AbismalAlign<local_aln::mismatch_score, local_aln::indel>
         aln(gi, genome_size, max_batch_read_length);
 
 #pragma omp for
@@ -1358,7 +1360,7 @@ map_paired_ended_rand(const bool VERBOSE,
                                                res1, res2);
 #pragma omp parallel
     {
-      AbismalAlign<mismatch_score, align_scores::indel>
+      AbismalAlign<local_aln::mismatch_score, local_aln::indel>
         aln(gi, genome_size, max_batch_read_length);
 
 #pragma omp for
@@ -1377,7 +1379,7 @@ map_paired_ended_rand(const bool VERBOSE,
                                                res2, res1);
 #pragma omp parallel
     {
-      AbismalAlign<mismatch_score, align_scores::indel>
+      AbismalAlign<local_aln::mismatch_score, local_aln::indel>
       aln(gi, genome_size, max_batch_read_length);
 
 #pragma omp for
@@ -1396,7 +1398,7 @@ map_paired_ended_rand(const bool VERBOSE,
                                                res1, res2);
 #pragma omp parallel
     {
-      AbismalAlign<mismatch_score, align_scores::indel>
+      AbismalAlign<local_aln::mismatch_score, local_aln::indel>
       aln(gi, genome_size, max_batch_read_length);
 
 #pragma omp for
@@ -1415,7 +1417,7 @@ map_paired_ended_rand(const bool VERBOSE,
                                                res2, res1);
 #pragma omp parallel
     {
-      AbismalAlign<mismatch_score, align_scores::indel>
+      AbismalAlign<local_aln::mismatch_score, local_aln::indel>
       aln(gi, genome_size, max_batch_read_length);
 
 #pragma omp for
@@ -1432,7 +1434,7 @@ map_paired_ended_rand(const bool VERBOSE,
     {
       Read pread;
       string tmp_cigar;
-      AbismalAlign<mismatch_score, align_scores::indel>
+      AbismalAlign<local_aln::mismatch_score, local_aln::indel>
         aln(gi, genome_size, max_batch_read_length);
 
 #pragma omp for
@@ -1547,9 +1549,6 @@ int main(int argc, const char **argv) {
                       false, random_pbat);
     opt_parse.add_opt("a-rich", 'A', "indicates reads are a-rich (se mode)",
                       false, GA_conversion);
-    //opt_parse.add_opt("match", 'x', "match score", false, align_scores::match);
-    //opt_parse.add_opt("mismatch", 'm', "mismatch score", false,
-    //                  align_scores::mismatch);
     opt_parse.add_opt("verbose", 'v', "print more run info", false, VERBOSE);
     vector<string> leftover_args;
     opt_parse.parse(argc, argv, leftover_args);
