@@ -13,9 +13,18 @@
 # ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
 # or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public
 # License for more details.
+#
+SMITHLAB_CPP=$(abspath $(dir $(MAKEFILE_LIST)))/src/smithlab_cpp
+
+ifeq (,$(wildcard $(SMITHLAB_CPP)/Makefile))
+$(error src/smithlab_cpp does not have a Makefile. \
+	      Did you use --recursive when running git clone?)
+endif
+
 
 SRC_ROOT=$(shell pwd)
 all:
+	@make -C $(SMITHLAB_CPP) all
 	@make -C src OPT=1
 
 install:
