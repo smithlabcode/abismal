@@ -15,6 +15,13 @@
  * General Public License for more details.
  */
 
+#include <cstdint>
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <vector>
+#include <stdexcept>
+
 #include "smithlab_os.hpp"
 #include "smithlab_utils.hpp"
 #include "OptionParser.hpp"
@@ -23,15 +30,8 @@
 #include "AbismalAlign.hpp"
 #include "GenomicRegion.hpp"
 #include "dna_four_bit.hpp"
-#include "sam_rec.hpp"
+//#include "sam_rec.hpp"
 #include "bisulfite_utils.hpp"
-
-#include <cstdint>
-#include <iostream>
-#include <fstream>
-#include <string>
-#include <vector>
-#include <stdexcept>
 
 #include <omp.h>
 
@@ -57,17 +57,23 @@ typedef vector<uint8_t> Read; //4-bit encoding of reads
 typedef genome_four_bit_itr genome_iterator; // iterates over 4 bits per byte
 
 enum genome_pos_parity { pos_even = false, pos_odd = true };
+enum conversion_type { t_rich = false, a_rich = true };
 
 // functions to simultaneously get/set rc and a/t-richness flags
 constexpr flags_t
 get_strand_code(const char strand, const conversion_type conv) {
   return (((strand == '-')  ? samflags::read_rc : 0) |
-          ((conv == a_rich) ? bsflags::a_rich : 0));
+          ((conv == t_rich) ? bsflags::read_is_t_rich: 0));
 }
 
 constexpr flags_t
 flip_strand_code(const flags_t sc) {
-  return (sc ^ samflags::read_rc) ^ bsflags::a_rich;
+  return (sc ^ samflags::read_rc) ^ bsflags::read_is_t_rich;
+}
+
+constexpr conversion_type
+flip_conv(const conversion_type conv) {
+    return conv == t_rich ? a_rich : t_rich;
 }
 
 struct ReadLoader {
@@ -161,20 +167,10 @@ struct se_element {
     return aln_score > rhs.aln_score;
   }
 
-  template<const sam_record_type type>
-  uint16_t sam_flags() const {
-    return
-    (elem_is_a_rich()) *       bsflags::a_rich |
-    (type != single) *        (samflags::read_paired |
-                               samflags::read_pair_mapped) |
-    (rc()) *                   samflags::read_rc |
-    (!rc()) *                  samflags::mate_rc |
-    (type == pe_first_mate) *  samflags::template_first |
-    (type == pe_second_mate) * samflags::template_second;
-
+  bool rc() const {return samflags::check(flags, samflags::read_rc);}
+  bool elem_is_a_rich() const {
+    return !samflags::check(flags, bsflags::read_is_t_rich);
   }
-  bool rc() const {return samflags::is_read_rc(flags);}
-  bool elem_is_a_rich() const {return bsflags::is_a_rich(flags);}
   bool valid_hit() const {return diffs < invalid_hit_diffs;}
   char strand() const {return rc() ? '-' : '+';}
   void flip_strand() {flags = flip_strand_code(flags);}
@@ -282,6 +278,7 @@ format_se(se_result res, const ChromLookup &cl,
   if (res.should_report(allow_ambig) &&
       chrom_and_posn(cl, cigar, s.pos, r_s, r_e, chrom_idx)) {
 
+    /*
     // to-mr applies cigar directly
     if (s.rc()) revcomp_inplace(read);
 
@@ -295,6 +292,12 @@ format_se(se_result res, const ChromLookup &cl,
         << read << '\t'                              // seq
         << qual << '\t'                              // qual
         << "NM:i:" << s.diffs << '\n';               // edit distance to ref
+        */
+
+    out << sam_rec(read_name, sam_record_type::single, s.rc(),
+                   cl.names[chrom_idx], r_s, res.mapq(), cigar, read, qual,
+                   s.elem_is_a_rich())
+        << "\tNM:i:" << s.diffs << '\n';
   }
 }
 
@@ -393,7 +396,19 @@ format_pe(const pe_result &res, const ChromLookup &cl,
       !chrom_and_posn(cl, cig2, p.r2.pos, r_s2, r_e2, chr2) ||
       chr1 != chr2)
     return false;
+  const bool rc = p.rc();
+  const bool a_rich = p.elem_is_a_rich();
+  const uint8_t mapq = res.mapq();
+  out << sam_rec(name1, sam_record_type::pe_first_mate, rc, cl.names[chr1],
+                 r_s1, mapq, cig1, read1, qual1, r_s2, r_e2, a_rich)
+      << "\tNM:i:" << p.r1.diffs << '\n';
 
+  // second mate is reverse strand and richness of 1st mate
+  out << sam_rec(name2, sam_record_type::pe_second_mate, !rc, cl.names[chr2],
+                 r_s2, mapq, cig2, read2, qual2, r_s1, r_e2, !a_rich)
+      << "\tNM:i:" << p.r2.diffs << '\n';
+
+  /*
   // used in both r1 and r2, so calculated once
   const bool rc = p.rc();
   const uint8_t mapq = res.mapq();
@@ -428,6 +443,8 @@ format_pe(const pe_result &res, const ChromLookup &cl,
       << read2 << '\t'                             // seq
       << qual2 << '\t'                             // qual
       << "NM:i:" << p.r2.diffs << '\n';            // edit distance to ref
+      */
+
   return true;
 }
 
