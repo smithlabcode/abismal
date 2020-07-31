@@ -221,7 +221,7 @@ struct se_result {
   uint8_t mapq() const {
     if (!second_best.valid_hit()) return unknown_mapq_score;
     return max_mapq_score*(best.aln_score - second_best.aln_score) /
-           best.aln_score;
+      best.aln_score;
   }
 
   bool ambig() const {
@@ -240,7 +240,7 @@ struct se_result {
 
   bool should_report(const bool allow_ambig) const {
     return (allow_ambig || !ambig())  // unique mapping
-        &&  best.valid_hit(); // concordant pair
+      &&  best.valid_hit(); // concordant pair
   }
 
   void reset() {best.reset(); second_best.reset();}
@@ -317,7 +317,7 @@ struct pe_element {
 
   bool valid_hit() const {
     return r1.diffs < se_element::invalid_hit_diffs &&
-           r2.diffs < se_element::invalid_hit_diffs;
+                      r2.diffs < se_element::invalid_hit_diffs;
   }
 
   bool is_equal_to(const pe_element &rhs) const {
@@ -370,12 +370,12 @@ struct pe_result { // assert(sizeof(pe_result) == 16);
   uint8_t mapq() const {
     if (!second_best.valid_hit()) return se_result::unknown_mapq_score;
     return se_result::max_mapq_score*(best.score() - second_best.score()) /
-           best.score();
+      best.score();
   }
 
   bool should_report(const bool allow_ambig) const {
     return (allow_ambig || !ambig())  // unique mapping
-        &&  best.valid_hit(); // concordant pair
+      &&  best.valid_hit(); // concordant pair
   }
 };
 
@@ -646,16 +646,16 @@ check_hits(vector<uint32_t>::const_iterator start_idx,
            const uint32_t offset,
            result_type &res) {
   for (auto it(start_idx);
-            it != end_idx &&
-            !res.sure_ambig(offset != 0); ++it) {
+       it != end_idx &&
+         !res.sure_ambig(offset != 0); ++it) {
     const uint32_t pos = (*it) - offset;
     const score_t diffs = ((pos & 1) ?
-    full_compare<pos_odd>(res.get_cutoff(),
-                          odd_read_st, odd_read_mid, odd_read_end,
-                          genome_st + (pos >> 1)) :
-    full_compare<pos_even>(res.get_cutoff(),
-                          even_read_st, even_read_mid, even_read_end,
-                          genome_st + (pos >> 1)));
+                           full_compare<pos_odd>(res.get_cutoff(),
+                                                 odd_read_st, odd_read_mid, odd_read_end,
+                                                 genome_st + (pos >> 1)) :
+                           full_compare<pos_even>(res.get_cutoff(),
+                                                  even_read_st, even_read_mid, even_read_end,
+                                                  genome_st + (pos >> 1)));
     res.update_by_mismatch(pos, diffs, strand_code);
   }
 }
@@ -723,7 +723,7 @@ process_seeds(const uint32_t max_candidates,
   const auto counter_st(begin(abismal_index.counter));
   const size_t shift_lim =
     readlen > (seed::n_seed_positions + 1) ?
-              (readlen - seed::n_seed_positions - 1) : 0;
+    (readlen - seed::n_seed_positions - 1) : 0;
   const size_t shift = std::max(1ul, shift_lim/(seed::n_shifts - 1));
   uint32_t k;
   bool found_good_seed = false;
@@ -746,9 +746,9 @@ process_seeds(const uint32_t max_candidates,
         if (e_idx - s_idx < max_candidates) {
           found_good_seed = true;
           check_hits<strand_code>(s_idx, e_idx,
-                              even_read_start, even_read_mid, even_read_end,
-                              odd_read_start, odd_read_mid, odd_read_end,
-                              genome_st, offset, res);
+                                  even_read_start, even_read_mid, even_read_end,
+                                  odd_read_start, odd_read_mid, odd_read_end,
+                                  genome_st, offset, res);
         }
       }
     }
@@ -778,8 +778,8 @@ prep_read(const string &r, Read &pread) {
   pread.resize(r.size());
   for (size_t i = 0; i < r.size(); ++i)
     pread[i] = encode_dna_four_bit(convert_a_to_g ?
-                                  (r[i] == 'A' ? 'R' : r[i]) :
-                                  (r[i] == 'T' ? 'Y' : r[i]));
+                                   (r[i] == 'A' ? 'R' : r[i]) :
+                                   (r[i] == 'T' ? 'Y' : r[i]));
 }
 
 // creates reads meant for comparison on a compressed genome
@@ -799,8 +799,8 @@ prep_for_seeds(const Read &pread_seed, Read &pread_even, Read &pread_odd) {
 
 namespace local_aln {
   static const score_t match = 1,
-               mismatch = -1,
-               indel = -1;
+    mismatch = -1,
+    indel = -1;
 
   // this lookup improves speed when running alignment
   static const vector<score_t> score_lookup = {match, mismatch};
@@ -819,8 +819,9 @@ align_read(se_element &res, string &cigar, const string &read,
   if (res.diffs <= 3) {
     cigar = std::to_string(read.length())+"M";
     res.aln_score = local_aln::match * (read.length() - res.diffs) +
-                    local_aln::mismatch * res.diffs;
-  } else {
+      local_aln::mismatch * res.diffs;
+  }
+  else {
     uint32_t len; // the region of the read the alignment spans
     if (res.rc()) {
       const string read_rc(revcomp(read));
@@ -1187,9 +1188,9 @@ map_paired_ended(const bool VERBOSE,
 
   size_t max_batch_read_length;
   vector<string> names1(batch_size), reads1(batch_size), quals1(batch_size),
-                 cigar1(batch_size),
-                 names2(batch_size), reads2(batch_size), quals2(batch_size),
-                 cigar2(batch_size);
+    cigar1(batch_size),
+    names2(batch_size), reads2(batch_size), quals2(batch_size),
+    cigar2(batch_size);
   vector<pe_candidates> res1(batch_size), res2(batch_size);
   vector<pe_result> bests(batch_size);
   vector<se_result> res_se1(batch_size), res_se2(batch_size);
@@ -1209,7 +1210,7 @@ map_paired_ended(const bool VERBOSE,
     rl1.load_reads(names1, reads1, quals1);
     rl2.load_reads(names2, reads2, quals2);
 
-       // used to get AbismalAlign size
+    // used to get AbismalAlign size
     max_batch_read_length = 0;
     update_max_read_length(max_batch_read_length, reads1);
     update_max_read_length(max_batch_read_length, reads2);
@@ -1299,9 +1300,9 @@ map_paired_ended(const bool VERBOSE,
 
     for (size_t i = 0 ; i < n_reads; ++i)
       select_output(abismal_index.cl, bests[i], res_se1[i], res_se2[i],
-                         reads1[i], names1[i], quals1[i],
-                         reads2[i], names2[i], quals2[i],
-                         cigar1[i], cigar2[i], allow_ambig, out);
+                    reads1[i], names1[i], quals1[i],
+                    reads2[i], names2[i], quals2[i],
+                    cigar1[i], cigar2[i], allow_ambig, out);
 
     for (size_t i = 0 ; i < n_reads; ++i)
       update_pe_stats(bests[i], res_se1[i], res_se2[i], reads1[i],
@@ -1332,9 +1333,9 @@ map_paired_ended_rand(const bool VERBOSE,
 
   size_t max_batch_read_length;
   vector<string> names1(batch_size), reads1(batch_size), quals1(batch_size),
-                 cigar1(batch_size),
-                 names2(batch_size), reads2(batch_size), quals2(batch_size),
-                 cigar2(batch_size);
+    cigar1(batch_size),
+    names2(batch_size), reads2(batch_size), quals2(batch_size),
+    cigar2(batch_size);
 
   vector<pe_candidates> res1(batch_size), res2(batch_size);
   vector<pe_result> bests(batch_size);
@@ -1397,7 +1398,7 @@ map_paired_ended_rand(const bool VERBOSE,
 #pragma omp parallel
     {
       AbismalAlign<local_aln::mismatch_score, local_aln::indel>
-      aln(gi, genome_size, max_batch_read_length);
+        aln(gi, genome_size, max_batch_read_length);
 
 #pragma omp for
       for (size_t i = 0 ; i < n_reads; ++i)
@@ -1416,7 +1417,7 @@ map_paired_ended_rand(const bool VERBOSE,
 #pragma omp parallel
     {
       AbismalAlign<local_aln::mismatch_score, local_aln::indel>
-      aln(gi, genome_size, max_batch_read_length);
+        aln(gi, genome_size, max_batch_read_length);
 
 #pragma omp for
       for (size_t i = 0 ; i < n_reads; ++i)
@@ -1435,7 +1436,7 @@ map_paired_ended_rand(const bool VERBOSE,
 #pragma omp parallel
     {
       AbismalAlign<local_aln::mismatch_score, local_aln::indel>
-      aln(gi, genome_size, max_batch_read_length);
+        aln(gi, genome_size, max_batch_read_length);
 
 #pragma omp for
       for (size_t i = 0 ; i < n_reads; ++i)
@@ -1632,7 +1633,7 @@ int main(int argc, const char **argv) {
     if (VERBOSE) {
       if (paired_end)
         cerr << "[mapping paired end: " << reads_file << " "
-                                        << reads_file2 << "]\n";
+             << reads_file2 << "]\n";
       else
         cerr << "[mapping single end: " << reads_file << "]\n";
     }
