@@ -34,47 +34,7 @@ using std::runtime_error;
 
 uint32_t seed::n_shifts = 3;
 uint32_t seed::n_seed_positions = 32;
-uint32_t seed::n_solid_positions = 200;
-
-/*
-AbismalSeed::AbismalSeed( //const string &pattern_arg,
-                   const uint32_t key_weight_,
-                   const uint32_t n_solid_positions_) :
-  key_weight(key_weight_),
-  n_solid_positions(n_solid_positions_) {
-
-  if (n_solid_positions < key_weight)
-    throw runtime_error("key weight less than total solid bits");
-  bool found_solid = false;
-  vector<bool> period;
-  for (size_t i = 0; i < pattern_arg.length(); ++i) {
-    if (pattern_arg[i] == '0')
-      period.push_back(false);
-    else if (pattern_arg[i] == '1') {
-      found_solid = true;
-      period.push_back(true);
-    }
-    else throw runtime_error("bad pattern: " + pattern_arg);
-  }
-  if (!found_solid)
-    throw runtime_error("bad pattern: " + pattern_arg);
-
-  const size_t period_size = period.size();
-  vector<bool> seed_pattern;
-  size_t solid_pos_count = 0;
-  for (size_t i = 0; solid_pos_count < n_solid_positions; ++i) {
-    seed_pattern.push_back(period[i % period_size]);
-    if (seed_pattern.back())
-      ++solid_pos_count;
-  }
-
-  for (size_t i = 0; i < seed_pattern.size(); ++i)
-    if (seed_pattern[i])
-      solid_positions.push_back(i);
-
-  n_solid_positions = solid_positions.back() + 1;
-}*/
-
+uint32_t seed::n_sorting_positions = 1000;
 
 string
 AbismalSeed::tostring() const {

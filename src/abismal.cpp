@@ -26,12 +26,13 @@
 #include "smithlab_utils.hpp"
 #include "OptionParser.hpp"
 #include "zlib_wrapper.hpp"
-#include "AbismalIndex.hpp"
-#include "AbismalAlign.hpp"
 #include "GenomicRegion.hpp"
 #include "dna_four_bit.hpp"
-//#include "sam_rec.hpp"
+#include "sam_record.hpp"
 #include "bisulfite_utils.hpp"
+
+#include "AbismalIndex.hpp"
+#include "AbismalAlign.hpp"
 
 #include <omp.h>
 
@@ -52,12 +53,16 @@ using std::min;
 // Aliases for different types used throughout abismal
 typedef uint16_t flags_t; // every bit is a flag
 typedef int16_t score_t; // alignment score
-typedef bool cmp_t; // match/mismatch type
 typedef vector<uint8_t> Read; //4-bit encoding of reads
 typedef genome_four_bit_itr genome_iterator; // iterates over 4 bits per byte
 
 enum genome_pos_parity { pos_even = false, pos_odd = true };
 enum conversion_type { t_rich = false, a_rich = true };
+
+constexpr conversion_type
+flip_conv(const conversion_type conv) {
+  return conv == t_rich ? a_rich : t_rich;
+}
 
 // functions to simultaneously get/set rc and a/t-richness flags
 constexpr flags_t
@@ -69,11 +74,6 @@ get_strand_code(const char strand, const conversion_type conv) {
 constexpr flags_t
 flip_strand_code(const flags_t sc) {
   return (sc ^ samflags::read_rc) ^ bsflags::read_is_t_rich;
-}
-
-constexpr conversion_type
-flip_conv(const conversion_type conv) {
-    return conv == t_rich ? a_rich : t_rich;
 }
 
 struct ReadLoader {
@@ -266,33 +266,16 @@ chrom_and_posn(const ChromLookup &cl, const string &cig, const uint32_t p,
 }
 
 static void
-format_se(se_result res, const ChromLookup &cl,
+format_se(const bool allow_ambig,
+          se_result res, const ChromLookup &cl,
           string &read, const string &read_name,
-          const string &qual,
-          const string &cigar,
-          const bool allow_ambig,
+          const string &qual, const string &cigar,
           ofstream &out) {
   uint32_t r_s= 0, r_e = 0, chrom_idx = 0;
 
   se_element s = res.best;
   if (res.should_report(allow_ambig) &&
       chrom_and_posn(cl, cigar, s.pos, r_s, r_e, chrom_idx)) {
-
-    /*
-    // to-mr applies cigar directly
-    if (s.rc()) revcomp_inplace(read);
-
-    // SAM
-    out << read_name << '\t'                         // qname
-        << s.sam_flags<single>() << '\t'             // flag
-        << cl.names[chrom_idx] << '\t'               // rname
-        << r_s + 1 << '\t'                           // pos (1-based!)
-        << static_cast<unsigned>(res.mapq()) << '\t' // mapq
-        << cigar << "\t*\t0\t0\t"                    // rnext, pnext, tlen
-        << read << '\t'                              // seq
-        << qual << '\t'                              // qual
-        << "NM:i:" << s.diffs << '\n';               // edit distance to ref
-        */
 
     out << sam_rec(read_name, sam_record_type::single, s.rc(),
                    cl.names[chrom_idx], r_s, res.mapq(), cigar, read, qual,
@@ -380,13 +363,13 @@ struct pe_result { // assert(sizeof(pe_result) == 16);
 };
 
 bool
-format_pe(const pe_result &res, const ChromLookup &cl,
+format_pe(const bool allow_ambig,
+          const pe_result &res, const ChromLookup &cl,
           string &read1, string &read2,
           const string &name1, const string &name2,
           const string &qual1, const string &qual2,
-          const string &cig1, const string &cig2,
-          const bool allow_ambig,
-          ofstream &out) {
+          const string &cig1, const string &cig2, ofstream &out) {
+
   uint32_t r_s1 = 0, r_e1 = 0, chr1 = 0;
   uint32_t r_s2 = 0, r_e2 = 0, chr2 = 0;
   const pe_element p = res.best;
@@ -420,30 +403,30 @@ format_pe(const pe_result &res, const ChromLookup &cl,
 
   // SAM r1
   out << name1 << '\t'                           // qname
-      << p.r1.sam_flags<pe_first_mate>() << '\t' // flag
-      << cl.names[chr1] << '\t'                  // rname
-      << r_s1 + 1 << '\t'                        // pos (1-based!)
-      << static_cast<unsigned>(mapq) << '\t'     // mapq
-      << cig1 << "\t=\t"                         // cigar, rnext
-      << r_s2 + 1 << '\t'                        // pnext
-      << tlen << '\t'                            // tlen
-      << read1 << '\t'                           // seq
-      << qual1 << '\t'                           // qual
-      << "NM:i:" << p.r1.diffs << '\n';          // edit distance to ref
+  << p.r1.sam_flags<pe_first_mate>() << '\t' // flag
+  << cl.names[chr1] << '\t'                  // rname
+  << r_s1 + 1 << '\t'                        // pos (1-based!)
+  << static_cast<unsigned>(mapq) << '\t'     // mapq
+  << cig1 << "\t=\t"                         // cigar, rnext
+  << r_s2 + 1 << '\t'                        // pnext
+  << tlen << '\t'                            // tlen
+  << read1 << '\t'                           // seq
+  << qual1 << '\t'                           // qual
+  << "NM:i:" << p.r1.diffs << '\n';          // edit distance to ref
 
   // SAM r2
   out << name2 << '\t'                             // qname
-      << p.r2.sam_flags<pe_second_mate>() << '\t'  // flag
-      << cl.names[chr2] << '\t'                    // rname
-      << r_s2 + 1 << '\t'                          // pos (1-based!)
-      << static_cast<unsigned>(mapq) << '\t'       // mapq
-      << cig2 << "\t=\t"                           // cigar, rnext
-      << r_s1 + 1 << '\t'                          // pnext
-      << -tlen <<  '\t'                            // tlen
-      << read2 << '\t'                             // seq
-      << qual2 << '\t'                             // qual
-      << "NM:i:" << p.r2.diffs << '\n';            // edit distance to ref
-      */
+  << p.r2.sam_flags<pe_second_mate>() << '\t'  // flag
+  << cl.names[chr2] << '\t'                    // rname
+  << r_s2 + 1 << '\t'                          // pos (1-based!)
+  << static_cast<unsigned>(mapq) << '\t'       // mapq
+  << cig2 << "\t=\t"                           // cigar, rnext
+  << r_s1 + 1 << '\t'                          // pnext
+  << -tlen <<  '\t'                            // tlen
+  << read2 << '\t'                             // seq
+  << qual2 << '\t'                             // qual
+  << "NM:i:" << p.r2.diffs << '\n';            // edit distance to ref
+  */
 
   return true;
 }
@@ -576,17 +559,15 @@ update_pe_stats(const pe_result &best,
 
 
 static void
-select_output(const ChromLookup &cl,
-              pe_result &best,
-              se_result &se1, se_result &se2,
+select_output(const bool allow_ambig, const ChromLookup &cl,
+              pe_result &best, se_result &se1, se_result &se2,
               string &read1, const string &name1, const string &qual1,
               string &read2, const string &name2, const string &qual2,
-              const string &cig1, const string &cig2,
-              const bool allow_ambig,
-              ofstream &out) {
+              const string &cig1, const string &cig2, ofstream &out) {
+
   if (best.should_report(false)) {
-    if (!format_pe(best, cl, read1, read2, name1, name2, qual1, qual2,
-                   cig1, cig2, allow_ambig, out)) {
+    if (!format_pe(allow_ambig, best, cl, read1, read2, name1, name2,
+                   qual1, qual2, cig1, cig2, out)) {
       // if unable to fetch chromosome positions (i.e. due to read mapping in
       // between chromosomes or cigars breaking dovetail reads),
       // consider it unmapped
@@ -596,14 +577,13 @@ select_output(const ChromLookup &cl,
     }
   }
   else {
-    format_se(se1, cl, read1, name1, qual1, cig1, allow_ambig, out);
-    format_se(se2, cl, read2, name2, qual2, cig2, allow_ambig, out);
+    format_se(allow_ambig, se1, cl, read1, name1, qual1, cig1, out);
+    format_se(allow_ambig, se2, cl, read2, name2, qual2, cig2, out);
   }
 }
 
 
-
-inline cmp_t
+inline bool
 the_comp(const char a, const char b) {
   return (a & b) == 0;
 }
@@ -645,17 +625,16 @@ check_hits(vector<uint32_t>::const_iterator start_idx,
            const Genome::const_iterator genome_st,
            const uint32_t offset,
            result_type &res) {
-  for (auto it(start_idx);
-       it != end_idx &&
-         !res.sure_ambig(offset != 0); ++it) {
-    const uint32_t pos = (*it) - offset;
-    const score_t diffs = ((pos & 1) ?
-                           full_compare<pos_odd>(res.get_cutoff(),
-                                                 odd_read_st, odd_read_mid, odd_read_end,
-                                                 genome_st + (pos >> 1)) :
-                           full_compare<pos_even>(res.get_cutoff(),
-                                                  even_read_st, even_read_mid, even_read_end,
-                                                  genome_st + (pos >> 1)));
+  for (auto i(start_idx); i != end_idx && !res.sure_ambig(offset != 0); ++i) {
+    const uint32_t pos = (*i) - offset;
+    const score_t diffs =
+      ((pos & 1) ?
+       full_compare<pos_odd>(res.get_cutoff(),
+                             odd_read_st, odd_read_mid, odd_read_end,
+                             genome_st + (pos >> 1)) :
+       full_compare<pos_even>(res.get_cutoff(),
+                              even_read_st, even_read_mid, even_read_end,
+                              genome_st + (pos >> 1)));
     res.update_by_mismatch(pos, diffs, strand_code);
   }
 }
@@ -663,7 +642,7 @@ check_hits(vector<uint32_t>::const_iterator start_idx,
 struct compare_bases {
   compare_bases(const genome_iterator g_) : g(g_) {}
   bool operator()(const uint32_t mid, const uint32_t chr) const {
-    return (get_bit_4bit(*(g + mid)) < chr);
+    return get_bit(*(g + mid)) < chr;
   }
   const genome_iterator g;
 };
@@ -673,14 +652,14 @@ void
 find_candidates(const Read::const_iterator read_start,
                 const genome_iterator gi,
                 const uint32_t read_lim, // not necessarily read len
-                const uint32_t n_solid_positions,
+                const uint32_t n_sorting_positions,
                 vector<uint32_t>::const_iterator &low,
                 vector<uint32_t>::const_iterator &high) {
   size_t p = seed::key_weight;
-  const size_t lim = std::min(read_lim, n_solid_positions);
+  const size_t lim = std::min(read_lim, n_sorting_positions);
   while (p != lim) {
     auto first_1 = lower_bound(low, high, 1, compare_bases(gi + p));
-    if (get_bit_4bit(*(read_start + p)) == 0) {
+    if (get_bit(*(read_start + p)) == 0) {
       if (first_1 == high) return; // need 0s; whole range is 0s
       high = first_1;
     }
@@ -734,13 +713,13 @@ process_seeds(const uint32_t max_candidates,
     for (uint32_t j = 0; j <= 1; ++j) {
       const uint32_t offset = i + j;
       k = 0;
-      get_1bit_hash_4bit(read_start + offset, k);
+      get_1bit_hash(read_start + offset, k);
       auto s_idx(index_st + *(counter_st + k));
       auto e_idx(index_st + *(counter_st + k + 1));
 
       if (s_idx < e_idx) {
         find_candidates(read_start + offset, gi,
-                        readlen    - offset,
+                        readlen - offset,
                         seed::n_seed_positions, s_idx, e_idx);
 
         if (e_idx - s_idx < max_candidates) {
@@ -756,12 +735,12 @@ process_seeds(const uint32_t max_candidates,
   // if no good seeds found, use entire read as seed
   if (!found_good_seed) {
     k = 0;
-    get_1bit_hash_4bit(read_start, k);
+    get_1bit_hash(read_start, k);
     auto s_idx(index_st + *(counter_st + k));
     auto e_idx(index_st + *(counter_st + k + 1));
     if (s_idx < e_idx) {
       find_candidates(read_start, gi, readlen,
-                      min(readlen, seed::n_solid_positions), s_idx, e_idx);
+                      min(readlen, seed::n_sorting_positions), s_idx, e_idx);
 
       if (e_idx - s_idx < max_candidates)
         check_hits<strand_code>(s_idx, e_idx,
@@ -798,9 +777,9 @@ prep_for_seeds(const Read &pread_seed, Read &pread_even, Read &pread_odd) {
 }
 
 namespace local_aln {
-  static const score_t match = 1,
-    mismatch = -1,
-    indel = -1;
+  static const score_t match = 1;
+  static const score_t mismatch = -1;
+  static const score_t indel = -1;
 
   // this lookup improves speed when running alignment
   static const vector<score_t> score_lookup = {match, mismatch};
@@ -842,10 +821,10 @@ align_read(se_element &res, string &cigar, const string &read,
 template <const  conversion_type conv>
 void
 map_single_ended(const bool VERBOSE,
+                 const bool allow_ambig,
                  const string &reads_file,
                  const size_t batch_size,
                  const size_t max_candidates,
-                 const bool allow_ambig,
                  const AbismalIndex &abismal_index,
                  se_map_stats &se_stats,
                  ofstream &out) {
@@ -933,8 +912,8 @@ map_single_ended(const bool VERBOSE,
 
     for (size_t i = 0 ; i < n_reads; ++i) {
       se_stats.update(reads[i], res[i]);
-      format_se(res[i], abismal_index.cl, reads[i], names[i], quals[i],
-                cigar[i], allow_ambig, out);
+      format_se(allow_ambig, res[i], abismal_index.cl,
+                reads[i], names[i], quals[i], cigar[i], out);
     }
   }
 
@@ -946,10 +925,10 @@ map_single_ended(const bool VERBOSE,
 
 void
 map_single_ended_rand(const bool VERBOSE,
+                      const bool allow_ambig,
                       const string &reads_file,
                       const size_t batch_size,
                       const size_t max_candidates,
-                      const bool allow_ambig,
                       const AbismalIndex &abismal_index,
                       se_map_stats &se_stats,
                       ofstream &out) {
@@ -1047,8 +1026,8 @@ map_single_ended_rand(const bool VERBOSE,
 
     for (size_t i = 0 ; i < n_reads; ++i) {
       se_stats.update(reads[i], res[i]);
-      format_se(res[i], abismal_index.cl, reads[i], names[i], quals[i],
-                cigar[i], allow_ambig, out);
+      format_se(allow_ambig, res[i], abismal_index.cl,
+                reads[i], names[i], quals[i], cigar[i], out);
     }
   }
   if (VERBOSE) {
@@ -1173,11 +1152,11 @@ select_maps(const string &read1, const string &read2,
 template <const conversion_type conv>
 void
 map_paired_ended(const bool VERBOSE,
+                 const bool allow_ambig,
                  const string &reads_file1,
                  const string &reads_file2,
                  const size_t batch_size,
                  const size_t max_candidates,
-                 const bool allow_ambig,
                  const AbismalIndex &abismal_index,
                  pe_map_stats &pe_stats,
                  ofstream &out) {
@@ -1299,10 +1278,11 @@ map_paired_ended(const bool VERBOSE,
     }
 
     for (size_t i = 0 ; i < n_reads; ++i)
-      select_output(abismal_index.cl, bests[i], res_se1[i], res_se2[i],
+      select_output(allow_ambig, abismal_index.cl,
+                    bests[i], res_se1[i], res_se2[i],
                     reads1[i], names1[i], quals1[i],
                     reads2[i], names2[i], quals2[i],
-                    cigar1[i], cigar2[i], allow_ambig, out);
+                    cigar1[i], cigar2[i], out);
 
     for (size_t i = 0 ; i < n_reads; ++i)
       update_pe_stats(bests[i], res_se1[i], res_se2[i], reads1[i],
@@ -1318,11 +1298,11 @@ map_paired_ended(const bool VERBOSE,
 
 void
 map_paired_ended_rand(const bool VERBOSE,
+                      const bool allow_ambig,
                       const string &reads_file1,
                       const string &reads_file2,
                       const size_t batch_size,
                       const size_t max_candidates,
-                      const bool allow_ambig,
                       const AbismalIndex &abismal_index,
                       pe_map_stats &pe_stats,
                       ofstream &out) {
@@ -1482,10 +1462,11 @@ map_paired_ended_rand(const bool VERBOSE,
     }
 
     for (size_t i = 0 ; i < n_reads; ++i)
-      select_output(abismal_index.cl, bests[i], res_se1[i], res_se2[i],
+      select_output(allow_ambig, abismal_index.cl,
+                    bests[i], res_se1[i], res_se2[i],
                     reads1[i], names1[i], quals1[i],
                     reads2[i], names2[i], quals2[i],
-                    cigar1[i], cigar2[i], allow_ambig, out);
+                    cigar1[i], cigar2[i], out);
 
     for (size_t i = 0 ; i < n_reads; ++i)
       update_pe_stats(bests[i], res_se1[i], res_se2[i], reads1[i],
@@ -1525,7 +1506,9 @@ write_sam_header(const ChromLookup &cl,
 }
 
 int main(int argc, const char **argv) {
+
   try {
+
     string index_file;
     string outfile;
     bool VERBOSE = false;
@@ -1602,26 +1585,14 @@ int main(int argc, const char **argv) {
       cerr << "[loading abismal index]" << endl;
     AbismalIndex abismal_index;
     const double start_time = omp_get_wtime();
-    uint32_t index_max_cand = 6;
-    abismal_index.read(index_file, seed::n_solid_positions, index_max_cand);
+    uint32_t index_max_cand = 0;
+    abismal_index.read(index_file, seed::n_sorting_positions, index_max_cand);
     if (VERBOSE)
-      cerr << "[index: n_solid = " << seed::n_solid_positions
-           << ", max_cand = " << index_max_cand << "]" << endl;
-
-    if (seed::n_seed_positions > seed::n_solid_positions)
-      throw runtime_error("requesting seed length = " +
-                          std::to_string(seed::n_seed_positions) +
-                          " but index " + index_file +
-                          " was built sorting by " +
-                          std::to_string(seed::n_solid_positions) +
-                          " positions");
-
-
-    if (max_candidates > index_max_cand)
-      throw runtime_error("requesting " + std::to_string(max_candidates) +
-                          " max candidates but index " + index_file +
-                          " was built excluding " +
-                          std::to_string(index_max_cand) + " candidates.");
+      // ADS: this should be removed soon; not helpful to a user
+      cerr << "[index: n_sorting_positions = "
+           << seed::n_sorting_positions << "]" << endl
+           << "[index: max_candidates = "
+           << seed::n_sorting_positions << "]" << endl;
 
     const double end_time = omp_get_wtime();
     if (VERBOSE)
@@ -1651,29 +1622,28 @@ int main(int argc, const char **argv) {
     write_sam_header(abismal_index.cl, argc, argv, out);
     if (reads_file2.empty()) {
       if (GA_conversion || pbat_mode)
-        map_single_ended<a_rich>(VERBOSE, reads_file, batch_size,
-                                 max_candidates, allow_ambig, abismal_index,
-                                 se_stats, out);
+        map_single_ended<a_rich>(VERBOSE, allow_ambig, reads_file, batch_size,
+                                 max_candidates, abismal_index, se_stats, out);
       else if (random_pbat)
-        map_single_ended_rand(VERBOSE, reads_file, batch_size, max_candidates,
-                              allow_ambig, abismal_index, se_stats, out);
+        map_single_ended_rand(VERBOSE, allow_ambig, reads_file, batch_size,
+                              max_candidates, abismal_index, se_stats, out);
       else
-        map_single_ended<t_rich>(VERBOSE, reads_file, batch_size,
-                                 max_candidates, allow_ambig, abismal_index,
+        map_single_ended<t_rich>(VERBOSE, allow_ambig, reads_file, batch_size,
+                                 max_candidates, abismal_index,
                                  se_stats, out);
     }
     else {
       if (pbat_mode)
-        map_paired_ended<a_rich>(VERBOSE, reads_file, reads_file2,
-                                 batch_size, max_candidates, allow_ambig,
+        map_paired_ended<a_rich>(VERBOSE, allow_ambig, reads_file, reads_file2,
+                                 batch_size, max_candidates,
                                  abismal_index, pe_stats, out);
       else if (random_pbat)
-        map_paired_ended_rand(VERBOSE, reads_file, reads_file2,
-                              batch_size, max_candidates, allow_ambig,
+        map_paired_ended_rand(VERBOSE,  allow_ambig, reads_file, reads_file2,
+                              batch_size, max_candidates,
                               abismal_index, pe_stats, out);
       else
-        map_paired_ended<t_rich>(VERBOSE, reads_file, reads_file2,
-                                 batch_size, max_candidates, allow_ambig,
+        map_paired_ended<t_rich>(VERBOSE, allow_ambig, reads_file, reads_file2,
+                                 batch_size, max_candidates,
                                  abismal_index, pe_stats, out);
     }
 

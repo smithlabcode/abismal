@@ -39,9 +39,9 @@ using std::cout;
 using std::min;
 
 bool AbismalIndex::VERBOSE = false;
-uint32_t AbismalIndex::max_invalid_per_seed = 0;
-
 string AbismalIndex::internal_identifier = "AbismalIndex";
+
+static const uint32_t max_invalid_bases_per_seed = 0;
 
 using genome_iterator = genome_four_bit_itr;
 
@@ -50,8 +50,8 @@ bool
 invalid_base(const nuc_type &x) {return x == 0;/*Z*/}
 
 inline void
-shift_hash_key_4bit(const uint8_t c, size_t &hash_key) {
-  hash_key = ((hash_key << 1) | get_bit_4bit(c)) & seed::hash_mask;
+shift_hash_key(const uint8_t c, size_t &hash_key) {
+  hash_key = ((hash_key << 1) | get_bit(c)) & seed::hash_mask;
 }
 
 void
@@ -72,7 +72,7 @@ AbismalIndex::get_bucket_sizes() {
   // the "counter" has an additional entry for convenience
   counter.resize(counter_size + 1, 0);
 
-  const size_t lim = cl.get_genome_size() - seed::n_solid_positions;
+  const size_t lim = cl.get_genome_size() - seed::n_sorting_positions;
   ProgressBar progress(lim, "counting bucket sizes");
   if (VERBOSE)
     progress.report(cerr, 0);
@@ -82,7 +82,7 @@ AbismalIndex::get_bucket_sizes() {
   auto end_invalid_counter(start_invalid_counter);
   uint32_t invalid_count = 0;
   while (end_invalid_counter !=
-         start_invalid_counter + (seed::n_solid_positions - 1))
+         start_invalid_counter + (seed::n_sorting_positions - 1))
     invalid_count += invalid_base(*end_invalid_counter++);
 
   // start building up the hash key
@@ -90,16 +90,16 @@ AbismalIndex::get_bucket_sizes() {
   const auto gi_lim(gi + (seed::key_weight - 1));
   size_t hash_key = 0;
   while (gi != gi_lim)
-    shift_hash_key_4bit(*gi++, hash_key);
+    shift_hash_key(*gi++, hash_key);
 
   for (size_t i = 0; i < lim; ++i) {
     if (VERBOSE && progress.time_to_report(i))
       progress.report(cerr, i);
-    shift_hash_key_4bit(*gi++, hash_key);
+    shift_hash_key(*gi++, hash_key);
     invalid_count += invalid_base(*end_invalid_counter++);
-    if (i & 1) // only odd positiosn are stored in the index
-      if (invalid_count <= max_invalid_per_seed)
-        counter[hash_key]++;
+    // if (i & 1) // only odd positiosn are stored in the index
+    if (invalid_count <= max_invalid_bases_per_seed)
+      counter[hash_key]++;
     invalid_count -= invalid_base(*start_invalid_counter++);
   }
   if (VERBOSE)
@@ -118,7 +118,7 @@ AbismalIndex::hash_genome() {
   index.resize(index_size, 0);
 
   // ADS: make sure this works even if genome super small
-  const size_t lim = cl.get_genome_size() - seed::n_solid_positions;
+  const size_t lim = cl.get_genome_size() - seed::n_sorting_positions;
   ProgressBar progress(lim, "hashing genome");
 
   // start counting Ns in the seed windows
@@ -126,7 +126,7 @@ AbismalIndex::hash_genome() {
   auto end_invalid_counter(start_invalid_counter);
   uint32_t invalid_count = 0;
   while (end_invalid_counter !=
-         start_invalid_counter + (seed::n_solid_positions - 1))
+         start_invalid_counter + (seed::n_sorting_positions - 1))
     invalid_count += invalid_base(*end_invalid_counter++);
 
   // start building up the hash key
@@ -134,16 +134,16 @@ AbismalIndex::hash_genome() {
   const auto gi_lim(gi + (seed::key_weight - 1));
   size_t hash_key = 0;
   while (gi != gi_lim)
-    shift_hash_key_4bit(*gi++, hash_key);
+    shift_hash_key(*gi++, hash_key);
 
   for (size_t i = 0; i < lim; ++i) {
     if (VERBOSE && progress.time_to_report(i))
       progress.report(cerr, i);
     invalid_count += invalid_base(*end_invalid_counter++);
-    shift_hash_key_4bit(*gi++, hash_key);
-    if (i & 1)
-      if (invalid_count <= max_invalid_per_seed)
-        index[--counter[hash_key]] = i;
+    shift_hash_key(*gi++, hash_key);
+    // if (i & 1)
+    if (invalid_count <= max_invalid_bases_per_seed)
+      index[--counter[hash_key]] = i;
 
     invalid_count -= invalid_base(*start_invalid_counter++);
   }
@@ -172,11 +172,11 @@ struct BucketLessTwo {
   BucketLessTwo(const Genome &g) : g_start(begin(g)) {}
   bool operator()(const uint32_t a, const uint32_t b) const {
     auto idx1(g_start + a + seed::key_weight);
-    auto lim1(g_start + a + seed::n_solid_positions);
+    auto lim1(g_start + a + seed::n_sorting_positions);
     auto idx2(g_start + b + seed::key_weight);
     while (idx1 != lim1) {
-      const char c1 = get_bit_4bit(*(idx1++));
-      const char c2 = get_bit_4bit(*(idx2++));
+      const char c1 = get_bit(*(idx1++));
+      const char c2 = get_bit(*(idx2++));
       if (c1 != c2) return c1 < c2;
     }
     return false;
@@ -192,7 +192,7 @@ AbismalIndex::sort_buckets(const sort_type st) {
          << " letters]" << endl;
 
   if (st == four_letter) {
-    const BucketLessFour bucket_less(genome, seed::n_solid_positions);
+    const BucketLessFour bucket_less(genome, seed::n_sorting_positions);
 #pragma omp parallel for
     for (size_t i = 0; i < counter_size; ++i)
       if (counter[i + 1] > counter[i] + 1)
@@ -234,7 +234,7 @@ struct BucketEqualTwo {
     const auto lim1(g_start + a);
     auto idx2(g_start + b + offset);
     while (idx1 != lim1)
-      if (get_bit_4bit(*(--idx1)) != get_bit_4bit(*(--idx2)))
+      if (get_bit(*(--idx1)) != get_bit(*(--idx2)))
         return false;
     return true;
   }
@@ -253,7 +253,7 @@ AbismalIndex::remove_big_buckets(const sort_type st,
   const auto b(begin(index));
 
   if (st == four_letter) {
-    const BucketEqualFour bucket_equal(genome, seed::n_solid_positions);
+    const BucketEqualFour bucket_equal(genome, seed::n_sorting_positions);
 #pragma omp parallel for
     for (size_t i = 0; i < counter_size; ++i) {
       uint32_t j = counter[i];
@@ -268,7 +268,7 @@ AbismalIndex::remove_big_buckets(const sort_type st,
     }
   }
   else {
-    const BucketEqualTwo bucket_equal(genome, seed::n_solid_positions);
+    const BucketEqualTwo bucket_equal(genome, seed::n_sorting_positions);
 #pragma omp parallel for
     for (size_t i = 0; i < counter_size; ++i) {
       uint32_t j = counter[i];

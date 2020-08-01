@@ -118,8 +118,6 @@ operator<<(std::ostream &out, const ChromLookup &cl);
 struct AbismalIndex {
 
   static bool VERBOSE;
-  static uint32_t max_invalid_per_seed;
-  static uint32_t deadzone_kmer_length;
 
   uint32_t counter_size; // number of kmers indexed
   uint32_t index_size; // size of the index

@@ -1,6 +1,6 @@
 /* Copyright (C) 2018 Andrew D. Smith and Meng Zhou
  *
- * Authors: Andrew D. Smith
+ * Authors: Andrew D. Smith and Guilherme de Sena Brandine
  *
  * This file is part of ABISMAL.
  *
@@ -76,17 +76,10 @@ int main(int argc, const char **argv) {
     OptionParser opt_parse(strip_path(argv[0]), "build abismal index",
                            "<genome-fasta> <abismal-index-file>", 2);
     opt_parse.set_show_defaults();
-    //opt_parse.add_opt("too-big", 'B', "ignore buckets bigger than this",
-    //                  false, AbismalIndex::valid_bucket_limit);
     opt_parse.add_opt("threads", 't', "number of threads", false, n_threads);
-    opt_parse.add_opt("max-candidates", 'c',
-                      "maximum candidates used in practice",
-                      false, max_candidates);
-    opt_parse.add_opt("solid", 's', "number of solid positions", false,
-                      seed::n_solid_positions);
-    opt_parse.add_opt("deadzone", 'd', "number of times a "
-                      + std::to_string(seed::n_solid_positions) + "-mer should "
-                      "appear to be excluded from the genome",
+    opt_parse.add_opt("deadzone", 'd', "number of times a " +
+                      std::to_string(seed::n_sorting_positions) +
+                      "-mer should appear to be excluded from the genome",
                       false, deadzone_freq);
     opt_parse.add_opt("verbose", 'v', "print more run info", false, VERBOSE);
     vector<string> leftover_args;
@@ -122,7 +115,7 @@ int main(int argc, const char **argv) {
     if (VERBOSE)
       cerr << "[writing abismal index to: " << outfile << "]" << endl;
 
-    abismal_index.write(outfile, seed::n_solid_positions, max_candidates);
+    abismal_index.write(outfile, seed::n_sorting_positions, max_candidates);
 
   }
   catch (const std::runtime_error &e) {
