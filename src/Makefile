@@ -45,7 +45,7 @@ install: $(PROGS)
 %.o: %.cpp %.hpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $< $(CPPFLAGS)
 
-$(PROGS): AbismalIndex.o AbismalSeed.o \
+$(PROGS): AbismalIndex.o \
 	$(addprefix $(SMITHLAB_CPP)/, libsmithlab_cpp.a)
 
 %: %.cpp

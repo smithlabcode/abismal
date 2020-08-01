@@ -38,6 +38,12 @@ using std::sort;
 using std::cout;
 using std::min;
 
+
+uint32_t seed::n_shifts = 3;
+uint32_t seed::n_seed_positions = 32;
+uint32_t seed::n_sorting_positions = 1000;
+
+
 bool AbismalIndex::VERBOSE = false;
 string AbismalIndex::internal_identifier = "AbismalIndex";
 

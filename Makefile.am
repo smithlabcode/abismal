@@ -30,15 +30,12 @@ bin_PROGRAMS = abismal abismalidx simreads
 
 abismal_SOURCES = \
 	src/abismal.cpp \
-	src/AbismalIndex.cpp \
-	src/AbismalSeed.cpp
+	src/AbismalIndex.cpp
 
 abismalidx_SOURCES = \
 	src/abismalidx.cpp \
-	src/AbismalIndex.cpp \
-	src/AbismalSeed.cpp
+	src/AbismalIndex.cpp
 
 simreads_SOURCES = \
 	src/simreads.cpp \
-	src/AbismalIndex.cpp \
-	src/AbismalSeed.cpp
+	src/AbismalIndex.cpp
