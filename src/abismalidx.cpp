@@ -54,9 +54,8 @@ BuildIndex(const bool VERBOSE,
   load_genome(genome_file, ai.genome, ai.cl);
 
   ai.encode_genome();
-  unordered_set<uint32_t> big_buckets;
-  ai.get_bucket_sizes(big_buckets);
-  ai.hash_genome(big_buckets);
+  ai.get_bucket_sizes();
+  ai.hash_genome();
 
   ai.sort_buckets(four_letter);
   ai.remove_big_buckets(four_letter, deadzone_freq);

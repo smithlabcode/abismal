@@ -118,7 +118,6 @@ operator<<(std::ostream &out, const ChromLookup &cl);
 struct AbismalIndex {
 
   static bool VERBOSE;
-  static uint32_t valid_bucket_limit;
   static uint32_t max_invalid_per_seed;
   static uint32_t deadzone_kmer_length;
 
@@ -131,12 +130,10 @@ struct AbismalIndex {
   ChromLookup cl;
 
   /* count how many positions must be stored for each hash value */
-  void
-  get_bucket_sizes(std::unordered_set<uint32_t> &big_buckets);
+  void get_bucket_sizes();
 
   /* put genome positions in the appropriate buckets */
-  void
-  hash_genome(const std::unordered_set<uint32_t>& big_buckets);
+  void hash_genome();
 
   /* Sort each bucket, if the seed length is more than 26, then use
    * binary search for the rest part of the seed */
@@ -151,7 +148,7 @@ struct AbismalIndex {
   void write(const std::string &index_file,
              const uint32_t n_solid,
              const uint32_t max_candidates) const;
-  void read(const std::string &index_file, 
+  void read(const std::string &index_file,
             uint32_t &n_solid, uint32_t &max_candidates);
 
   static std::string internal_identifier;

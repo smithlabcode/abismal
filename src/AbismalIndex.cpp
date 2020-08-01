@@ -40,7 +40,6 @@ using std::min;
 
 bool AbismalIndex::VERBOSE = false;
 uint32_t AbismalIndex::max_invalid_per_seed = 0;
-uint32_t AbismalIndex::valid_bucket_limit = 500000;
 
 string AbismalIndex::internal_identifier = "AbismalIndex";
 
@@ -66,7 +65,7 @@ AbismalIndex::encode_genome() {
 }
 
 void
-AbismalIndex::get_bucket_sizes(unordered_set<uint32_t> &big_buckets) {
+AbismalIndex::get_bucket_sizes() {
   if (VERBOSE)
     cerr << "[allocating bucket counter]" << endl;
   counter_size = (1u << seed::key_weight);
@@ -105,17 +104,7 @@ AbismalIndex::get_bucket_sizes(unordered_set<uint32_t> &big_buckets) {
   }
   if (VERBOSE)
     progress.report(cerr, lim);
-  /*
-  if (VERBOSE)
-    cerr << "[erasing big buckets]" << endl;
-  for (uint32_t i = 0; i < counter_size; ++i)
-    if (counter[i] > valid_bucket_limit) {
-      counter[i] = 0;
-      big_buckets.insert(i);
-    }
-  if (VERBOSE)
-    cerr << "[erased " << big_buckets.size() << " buckets]" << endl;
-    */
+
   if (VERBOSE)
     cerr << "[computing bucket locations]" << endl;
   std::partial_sum(begin(counter), end(counter), begin(counter));
@@ -123,7 +112,7 @@ AbismalIndex::get_bucket_sizes(unordered_set<uint32_t> &big_buckets) {
 }
 
 void
-AbismalIndex::hash_genome(const unordered_set<uint32_t> &big_buckets) {
+AbismalIndex::hash_genome() {
   if (VERBOSE)
     cerr << "[allocating hash table]" << endl;
   index.resize(index_size, 0);
@@ -147,15 +136,13 @@ AbismalIndex::hash_genome(const unordered_set<uint32_t> &big_buckets) {
   while (gi != gi_lim)
     shift_hash_key_4bit(*gi++, hash_key);
 
-  // begin(counter) + hash_key
   for (size_t i = 0; i < lim; ++i) {
     if (VERBOSE && progress.time_to_report(i))
       progress.report(cerr, i);
     invalid_count += invalid_base(*end_invalid_counter++);
     shift_hash_key_4bit(*gi++, hash_key);
     if (i & 1)
-      if (invalid_count <= max_invalid_per_seed &&
-        big_buckets.find(hash_key) == end(big_buckets))
+      if (invalid_count <= max_invalid_per_seed)
         index[--counter[hash_key]] = i;
 
     invalid_count -= invalid_base(*start_invalid_counter++);
@@ -165,7 +152,7 @@ AbismalIndex::hash_genome(const unordered_set<uint32_t> &big_buckets) {
 }
 
 struct BucketLessFour {
-  BucketLessFour(const Genome &g, const uint32_t off) : 
+  BucketLessFour(const Genome &g, const uint32_t off) :
     g_start(begin(g)), offset(off) {}
   bool operator()(const uint32_t a, const uint32_t b) const {
     auto idx1(g_start + a);
@@ -279,7 +266,8 @@ AbismalIndex::remove_big_buckets(const sort_type st,
         j = k;
       }
     }
-  } else {
+  }
+  else {
     const BucketEqualTwo bucket_equal(genome, seed::n_solid_positions);
 #pragma omp parallel for
     for (size_t i = 0; i < counter_size; ++i) {
@@ -587,4 +575,3 @@ ChromLookup::get_chrom_idx_and_offset(const uint32_t pos,
   offset = pos - starts[chrom_idx];
   return (pos + readlen <= starts[chrom_idx + 1]);
 }
-
