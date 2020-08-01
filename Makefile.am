@@ -26,7 +26,7 @@ AM_CXXFLAGS = $(OPENMP_CXXFLAGS)
 
 LDADD = src/smithlab_cpp/libsmithlab_cpp.a
 
-bin_PROGRAMS = abismal abismalidx simreads seedtool
+bin_PROGRAMS = abismal abismalidx simreads
 
 abismal_SOURCES = \
 	src/abismal.cpp \
@@ -41,8 +41,4 @@ abismalidx_SOURCES = \
 simreads_SOURCES = \
 	src/simreads.cpp \
 	src/AbismalIndex.cpp \
-	src/AbismalSeed.cpp
-
-seedtool_SOURCES = \
-	src/seedtool.cpp \
 	src/AbismalSeed.cpp
