@@ -51,7 +51,6 @@ using std::max;
 using std::min;
 using std::to_string;
 
-// Aliases for different types used throughout abismal
 typedef uint16_t flags_t; // every bit is a flag
 typedef int16_t score_t; // alignment score
 typedef vector<uint8_t> Read; //4-bit encoding of reads
@@ -64,6 +63,8 @@ constexpr conversion_type
 flip_conv(const conversion_type conv) {
   return conv == t_rich ? a_rich : t_rich;
 }
+
+// ADS: why did we decide to have the flag set to "1" for t-rich?
 
 // functions to simultaneously get/set rc and a/t-richness flags
 constexpr flags_t
@@ -256,8 +257,7 @@ format_se(const bool allow_ambig, se_result res, const ChromLookup &cl,
     if (s.rc())
       set_flag(sr, samflags::read_rc);
     sr.add_tag("NM:i:" + to_string(s.diffs));
-    if (s.elem_is_a_rich())
-      sr.add_tag("CV:A:A");
+    sr.add_tag(s.elem_is_a_rich() ? "CV:A:A" : "CV:A:T");
     out << sr << '\n';
   }
 }
@@ -356,7 +356,9 @@ format_pe(const bool allow_ambig,
 
   const bool rc = p.rc();
 
-  // ensure read orientation represented on forward genomic strand
+  // Ensure read orientation represented on forward genomic strand. At
+  // this stage, any pe_result includes elements that mapped to
+  // opposite strands.
   if (rc)
     revcomp_inplace(read1);
   else
@@ -372,8 +374,7 @@ format_pe(const bool allow_ambig,
   sam_rec sr1(name1, 0, cl.names[chr1], r_s1 + 1, mapq,
               cig1, "=", r_s2 + 1, tlen, read1, "*");
   sr1.add_tag("NM:i:" + to_string(p.r1.diffs));
-  if (p.r1.elem_is_a_rich())
-    sr1.add_tag("CV:A:A");
+  sr1.add_tag(p.r1.elem_is_a_rich() ? "CV:A:A" : "CV:A:T");
   set_flag(sr1, samflags::read_paired);
   set_flag(sr1, samflags::read_pair_mapped);
   set_flag(sr1, samflags::template_first);
@@ -381,8 +382,7 @@ format_pe(const bool allow_ambig,
   sam_rec sr2(name2, 0, cl.names[chr2], r_s2 + 1, mapq,
               cig2, "=", r_s1 + 1, -tlen, read2, "*");
   sr2.add_tag("NM:i:" + to_string(p.r2.diffs));
-  if (p.r2.elem_is_a_rich())
-    sr2.add_tag("CV:A:A");
+  sr2.add_tag(p.r2.elem_is_a_rich() ? "CV:A:A" : "CV:A:T");
   set_flag(sr2, samflags::read_paired);
   set_flag(sr2, samflags::read_pair_mapped);
   set_flag(sr2, samflags::template_last);
@@ -583,8 +583,7 @@ full_compare(const score_t cutoff,
   return d;
 }
 
-template <const uint16_t strand_code,
-          class result_type>
+template <const uint16_t strand_code, class result_type>
 void
 check_hits(vector<uint32_t>::const_iterator start_idx,
            const vector<uint32_t>::const_iterator end_idx,
@@ -611,6 +610,8 @@ check_hits(vector<uint32_t>::const_iterator start_idx,
   }
 }
 
+
+// ADS: probably should be a lambda function for brevity
 struct compare_bases {
   compare_bases(const genome_iterator g_) : g(g_) {}
   bool operator()(const uint32_t mid, const uint32_t chr) const {
@@ -709,6 +710,7 @@ process_seeds(const uint32_t max_candidates,
     auto e_idx(index_st + *(counter_st + k + 1));
     if (s_idx < e_idx) {
       const uint32_t posns_to_compare = min(readlen, seed::n_sorting_positions);
+      // ADS: is above "min" needed, given check inside find_candidates?
       find_candidates(read_start, gi, readlen, posns_to_compare, s_idx, e_idx);
 
       if (e_idx - s_idx < max_candidates)
@@ -773,7 +775,7 @@ align_read(se_element &res, string &cigar, const string &read,
       local_aln::mismatch*res.diffs;
   }
   else {
-    uint32_t len; // the region of the read the alignment spans
+    uint32_t len = 0; // the region of the read the alignment spans
     if (res.rc()) {
       const string read_rc(revcomp(read));
       // rc reverses richness of read
@@ -1028,7 +1030,6 @@ map_pe_batch(const vector<string> &reads1, const vector<string> &reads2,
                                     gi, pread_seed, pread_even, pread_odd,
                                     res1[i]);
       }
-
       if (!reads2[i].empty()) {
         const string read_rc(revcomp(reads2[i]));
         prep_read<cmp>(read_rc, pread_seed);
