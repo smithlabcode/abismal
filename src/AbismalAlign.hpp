@@ -38,8 +38,17 @@ using std::cerr;
 using std::endl;
 using std::max;
 
-template <score_t (*scr_fun)(const char, const uint8_t),
-          score_t indel_pen = -1>
+static const score_t match_score = 1;
+static const score_t mismatch_score = -1;
+static const score_t indel_score = -1;
+
+inline score_t
+local_aln_score(const char q_base, const uint8_t t_base) {
+  return ((q_base & t_base) == 0 ? mismatch_score : match_score);
+}
+
+template <score_t (*scr_fun)(const char, const uint8_t) = local_aln_score,
+          score_t indel_pen = indel_score>
 struct AbismalAlign {
 
   AbismalAlign(const genome_iterator &target_start,
@@ -235,5 +244,7 @@ AbismalAlign<scr_fun, indel_pen>::align(const std::vector<uint8_t> &qseq,
   t_pos = t_beg + the_row;
   return r;
 }
+
+using AbismalAlignSimple = AbismalAlign<>;
 
 #endif
