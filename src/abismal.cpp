@@ -72,11 +72,6 @@ get_strand_code(const char strand, const conversion_type conv) {
           ((conv == t_rich) ? bsflags::read_is_t_rich: 0));
 }
 
-constexpr flags_t
-flip_strand_code(const flags_t sc) {
-  return (sc ^ samflags::read_rc) ^ bsflags::read_is_t_rich;
-}
-
 struct ReadLoader {
   ReadLoader(const string &fn,
              const size_t bs = numeric_limits<size_t>::max()) :
@@ -168,7 +163,6 @@ struct se_element {
   }
   bool valid_hit() const {return diffs < invalid_hit_diffs;}
   char strand() const {return rc() ? '-' : '+';}
-  void flip_strand() {flags = flip_strand_code(flags);}
   void reset() { diffs = invalid_hit_diffs; aln_score = 0; }
 
   bool is_equal_to (const se_element &rhs) const {
@@ -787,36 +781,28 @@ prep_for_seeds(const Read &pread_seed, Read &pread_even, Read &pread_odd) {
   const size_t sz = pread_seed.size();
   pread_even.resize(sz);
   pread_odd.resize(sz);
-  size_t i, j = 0;
-  for (i = 0; i < sz; i += 2) pread_even[j++] = pread_seed[i];
-  for (i = 1; i < sz; i += 2) pread_even[j++] = (pread_seed[i] << 4);
+  size_t j = 0;
+  for (size_t i = 0; i < sz; i += 2) pread_even[++j] = pread_seed[i];
+  for (size_t i = 1; i < sz; i += 2) pread_even[++j] = (pread_seed[i] << 4);
 
   j = 0;
-  for (i = 0; i < sz; i += 2) pread_odd[j++] = (pread_seed[i] << 4);
-  for (i = 1; i < sz; i += 2) pread_odd[j++] = pread_seed[i];
+  for (size_t i = 0; i < sz; i += 2) pread_odd[++j] = (pread_seed[i] << 4);
+  for (size_t i = 1; i < sz; i += 2) pread_odd[++j] = pread_seed[i];
 }
 
 namespace local_aln {
   static const score_t match = 1;
   static const score_t mismatch = -1;
   static const score_t indel = -1;
-
-  // this lookup improves speed when running alignment
-  static const vector<score_t> score_lookup = {match, mismatch};
-  static inline score_t mismatch_score(const char q_base,
-                                       const uint8_t t_base) {
-    return score_lookup[the_comp(q_base, t_base)];
-  }
 };
 
-template <score_t (*scr_fun)(const char, const uint8_t),
-          score_t indel_pen>
 static void
 align_read(se_element &res, string &cigar, const string &read,
-           Read &pread, AbismalAlign<scr_fun, indel_pen> &aln) {
+           Read &pread, AbismalAlignSimple &aln) {
   // ends early if alignment is nearly diagonal
   if (res.diffs <= 3) {
     cigar = std::to_string(read.length()) + "M";
+    // ADS: aln_score
     res.aln_score = local_aln::match*(read.length() - res.diffs) +
       local_aln::mismatch*res.diffs;
   }
@@ -913,8 +899,7 @@ map_single_ended(const bool VERBOSE,
     {
       Read pread;
       string tmp_cigar;
-      AbismalAlign<local_aln::mismatch_score, local_aln::indel>
-        aln(gi, genome_size, max_batch_read_length);
+      AbismalAlignSimple aln(gi, genome_size, max_batch_read_length);
 
 #pragma omp for
       for (size_t i = 0; i < n_reads; ++i) {
@@ -1025,8 +1010,7 @@ map_single_ended_rand(const bool VERBOSE,
     {
       Read pread;
       string tmp_cigar;
-      AbismalAlign<local_aln::mismatch_score, local_aln::indel>
-        aln(gi, genome_size, max_batch_read_length);
+      AbismalAlignSimple aln(gi, genome_size, max_batch_read_length);
 
 #pragma omp for
       for (size_t i = 0; i < reads.size(); ++i) {
@@ -1106,8 +1090,7 @@ static void
 best_pair(const pe_candidates &res1, const pe_candidates &res2,
           const string &read1, const string &read2,
           string &cig1, string &cig2,
-          AbismalAlign<local_aln::mismatch_score, local_aln::indel> &aln,
-          pe_result &best) {
+          AbismalAlignSimple &aln, pe_result &best) {
 
   auto j1 = begin(res1.v);
   const auto j1_end = j1 + res1.sz;
@@ -1155,8 +1138,7 @@ select_maps(const string &read1, const string &read2,
             string &cig1, string &cig2,
             pe_candidates &res1, pe_candidates &res2,
             se_result &res_se1, se_result &res_se2,
-            AbismalAlign<local_aln::mismatch_score, local_aln::indel> &aln,
-            pe_result &best) {
+            AbismalAlignSimple &aln, pe_result &best) {
   res1.prepare_for_mating();
   res2.prepare_for_mating();
   best_pair<swap_ends>(res1, res2, read1, read2, cig1, cig2, aln, best);
@@ -1229,8 +1211,7 @@ map_paired_ended(const bool VERBOSE,
 
 #pragma omp parallel
     {
-      AbismalAlign<local_aln::mismatch_score, local_aln::indel>
-        aln(gi, genome_size, max_batch_read_length);
+      AbismalAlignSimple aln(gi, genome_size, max_batch_read_length);
 
 #pragma omp for
       for (size_t i = 0 ; i < n_reads; ++i)
@@ -1249,8 +1230,7 @@ map_paired_ended(const bool VERBOSE,
 
 #pragma omp parallel
     {
-      AbismalAlign<local_aln::mismatch_score, local_aln::indel>
-        aln(gi, genome_size, max_batch_read_length);
+      AbismalAlignSimple aln(gi, genome_size, max_batch_read_length);
 
 #pragma omp for
       for (size_t i = 0 ; i < n_reads; ++i)
@@ -1265,8 +1245,7 @@ map_paired_ended(const bool VERBOSE,
     {
       Read pread;
       string tmp_cigar;
-      AbismalAlign<local_aln::mismatch_score, local_aln::indel>
-        aln(gi, genome_size, max_batch_read_length);
+      AbismalAlignSimple aln(gi, genome_size, max_batch_read_length);
 
 #pragma omp for
       for (size_t i = 0; i < n_reads; ++i) {
@@ -1371,8 +1350,7 @@ map_paired_ended_rand(const bool VERBOSE,
                                                res1, res2);
 #pragma omp parallel
     {
-      AbismalAlign<local_aln::mismatch_score, local_aln::indel>
-        aln(gi, genome_size, max_batch_read_length);
+      AbismalAlignSimple aln(gi, genome_size, max_batch_read_length);
 
 #pragma omp for
       for (size_t i = 0 ; i < n_reads; ++i)
@@ -1390,8 +1368,7 @@ map_paired_ended_rand(const bool VERBOSE,
                                                res2, res1);
 #pragma omp parallel
     {
-      AbismalAlign<local_aln::mismatch_score, local_aln::indel>
-        aln(gi, genome_size, max_batch_read_length);
+      AbismalAlignSimple aln(gi, genome_size, max_batch_read_length);
 
 #pragma omp for
       for (size_t i = 0 ; i < n_reads; ++i)
@@ -1409,8 +1386,7 @@ map_paired_ended_rand(const bool VERBOSE,
                                                res1, res2);
 #pragma omp parallel
     {
-      AbismalAlign<local_aln::mismatch_score, local_aln::indel>
-        aln(gi, genome_size, max_batch_read_length);
+      AbismalAlignSimple aln(gi, genome_size, max_batch_read_length);
 
 #pragma omp for
       for (size_t i = 0 ; i < n_reads; ++i)
@@ -1428,8 +1404,7 @@ map_paired_ended_rand(const bool VERBOSE,
                                                res2, res1);
 #pragma omp parallel
     {
-      AbismalAlign<local_aln::mismatch_score, local_aln::indel>
-        aln(gi, genome_size, max_batch_read_length);
+      AbismalAlignSimple aln(gi, genome_size, max_batch_read_length);
 
 #pragma omp for
       for (size_t i = 0 ; i < n_reads; ++i)
@@ -1445,8 +1420,7 @@ map_paired_ended_rand(const bool VERBOSE,
     {
       Read pread;
       string tmp_cigar;
-      AbismalAlign<local_aln::mismatch_score, local_aln::indel>
-        aln(gi, genome_size, max_batch_read_length);
+      AbismalAlignSimple aln(gi, genome_size, max_batch_read_length);
 
 #pragma omp for
       for (size_t i = 0; i < n_reads; ++i) {
