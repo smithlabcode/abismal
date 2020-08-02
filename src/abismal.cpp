@@ -72,11 +72,6 @@ get_strand_code(const char strand, const conversion_type conv) {
           ((conv == t_rich) ? bsflags::read_is_t_rich: 0));
 }
 
-constexpr flags_t
-flip_strand_code(const flags_t sc) {
-  return (sc ^ samflags::read_rc) ^ bsflags::read_is_t_rich;
-}
-
 struct ReadLoader {
   ReadLoader(const string &fn,
              const size_t bs = numeric_limits<size_t>::max()) :
@@ -136,14 +131,12 @@ struct se_element {
   score_t aln_score;
   flags_t flags;
 
-  se_element() : pos(0),
-                 diffs(invalid_hit_diffs),
-                 aln_score(0),
-                 flags(0) {}
+  se_element() :
+    pos(0), diffs(invalid_hit_diffs), aln_score(0), flags(0) {}
 
   se_element(const uint32_t p, const score_t d, const score_t scr,
              const flags_t f) :
-    pos(p), diffs(d), aln_score(scr), flags(f) { }
+    pos(p), diffs(d), aln_score(scr), flags(f) {}
 
   bool operator==(const se_element &rhs) const {
     return diffs == rhs.diffs && pos == rhs.pos;
@@ -168,10 +161,9 @@ struct se_element {
   }
   bool valid_hit() const {return diffs < invalid_hit_diffs;}
   char strand() const {return rc() ? '-' : '+';}
-  void flip_strand() {flags = flip_strand_code(flags);}
-  void reset() { diffs = invalid_hit_diffs; aln_score = 0; }
+  void reset() {diffs = invalid_hit_diffs; aln_score = 0;}
 
-  bool is_equal_to (const se_element &rhs) const {
+  bool is_equal_to(const se_element &rhs) const {
     return (diffs == rhs.diffs) && (pos != rhs.pos);
   }
   static score_t invalid_hit_diffs;
@@ -182,12 +174,9 @@ score_t se_element::invalid_hit_diffs = 40;
 uint16_t se_element::min_aligned_length = ReadLoader::min_read_length;
 
 struct se_result {
-  se_element best, second_best;
+  se_element best;
+  se_element second_best;
   se_result() : best(se_element()), second_best(se_element()) {}
-
-  se_result(const uint32_t p, const score_t d, const flags_t s,
-            const score_t scr) :
-    best(se_element(p, d, scr, s)), second_best(se_element()) {}
 
   void update_by_mismatch(const uint32_t p, const score_t d, const flags_t s) {
     // avoid having two copies of the best hit
@@ -212,8 +201,7 @@ struct se_result {
   }
 
   bool ambig() const {
-    return (max_mapq_score*(best.aln_score - second_best.aln_score) <
-            best.aln_score*min_mapq_score);
+    return best.aln_score == second_best.aln_score;
   }
 
   bool ambig_diffs() const {
@@ -265,12 +253,11 @@ format_se(const bool allow_ambig, se_result res, const ChromLookup &cl,
       revcomp_inplace(read);
     sam_rec sr(read_name, 0, cl.names[chrom_idx], ref_s + 1,
                res.mapq(), cigar, "*", 0, 0, read, "*");
-    sr.add_tag("NM:i:" + to_string(s.diffs));
     if (s.rc())
       set_flag(sr, samflags::read_rc);
-    if (!s.elem_is_a_rich())
-      set_a_rich(sr); // ADS: flag abuse from bisulfite_utils.hpp
-    else set_t_rich(sr);
+    sr.add_tag("NM:i:" + to_string(s.diffs));
+    if (s.elem_is_a_rich())
+      sr.add_tag("CV:A:A");
     out << sr << '\n';
   }
 }
@@ -375,16 +362,18 @@ format_pe(const bool allow_ambig,
   else
     revcomp_inplace(read2);
 
-  const bool a_rich = p.elem_is_a_rich();
   const uint8_t mapq = res.mapq();
 
   // ADS: will this always evaluate correctly with unsigned
   // intermediate vals?
   const int tlen = rc ? (r_s1 - r_e2) : (r_e2 - r_s1);
 
+  // ADS: +1 to POS & PNEXT; "=" for RNEXT; "*" for QUAL
   sam_rec sr1(name1, 0, cl.names[chr1], r_s1 + 1, mapq,
               cig1, "=", r_s2 + 1, tlen, read1, "*");
   sr1.add_tag("NM:i:" + to_string(p.r1.diffs));
+  if (p.r1.elem_is_a_rich())
+    sr1.add_tag("CV:A:A");
   set_flag(sr1, samflags::read_paired);
   set_flag(sr1, samflags::read_pair_mapped);
   set_flag(sr1, samflags::template_first);
@@ -392,6 +381,8 @@ format_pe(const bool allow_ambig,
   sam_rec sr2(name2, 0, cl.names[chr2], r_s2 + 1, mapq,
               cig2, "=", r_s1 + 1, -tlen, read2, "*");
   sr2.add_tag("NM:i:" + to_string(p.r2.diffs));
+  if (p.r2.elem_is_a_rich())
+    sr2.add_tag("CV:A:A");
   set_flag(sr2, samflags::read_paired);
   set_flag(sr2, samflags::read_pair_mapped);
   set_flag(sr2, samflags::template_last);
@@ -652,8 +643,7 @@ find_candidates(const Read::const_iterator read_start,
   }
 }
 
-template <const uint16_t strand_code, class Read,
-          class result_type>
+template <const uint16_t strand_code, class Read, class result_type>
 void
 process_seeds(const uint32_t max_candidates,
               const AbismalIndex &abismal_index,
@@ -663,6 +653,7 @@ process_seeds(const uint32_t max_candidates,
               const Read &read_even,
               const Read &read_odd,
               result_type &res) {
+
   const uint32_t readlen = read_seed.size();
 
   // seed iterators
@@ -671,12 +662,12 @@ process_seeds(const uint32_t max_candidates,
 
   // even comparison iterators
   const auto even_read_start(begin(read_even));
-  const auto even_read_mid(begin(read_even) + ((readlen + 1) / 2));
+  const auto even_read_mid(begin(read_even) + ((readlen + 1)/2));
   const auto even_read_end(end(read_even));
 
   // odd comparison iterators
   const auto odd_read_start(begin(read_odd));
-  const auto odd_read_mid(begin(read_odd) + ((readlen + 1) / 2));
+  const auto odd_read_mid(begin(read_odd) + ((readlen + 1)/2));
   const auto odd_read_end(end(read_odd));
 
   const auto index_st(begin(abismal_index.index));
@@ -685,20 +676,19 @@ process_seeds(const uint32_t max_candidates,
     readlen > (seed::n_seed_positions + 1) ?
     (readlen - seed::n_seed_positions - 1) : 0;
   const size_t shift = std::max(1ul, shift_lim/(seed::n_shifts - 1));
-  uint32_t k;
+
   bool found_good_seed = false;
 
   // uniformly spaced seeds
   for (uint32_t i = 0; i <= shift_lim && !res.sure_ambig(i); i += shift) {
     const uint32_t offset = i;
-    k = 0;
+    uint32_t k = 0;
     get_1bit_hash(read_start + offset, k);
     auto s_idx(index_st + *(counter_st + k));
     auto e_idx(index_st + *(counter_st + k + 1));
 
     if (s_idx < e_idx) {
-      find_candidates(read_start + offset, gi,
-                      readlen - offset,
+      find_candidates(read_start + offset, gi, readlen - offset,
                       seed::n_seed_positions, s_idx, e_idx);
 
       if (e_idx - s_idx < max_candidates) {
@@ -713,13 +703,13 @@ process_seeds(const uint32_t max_candidates,
 
   // if no good seeds found, use entire read as seed
   if (!found_good_seed) {
-    k = 0;
+    uint32_t k = 0;
     get_1bit_hash(read_start, k);
     auto s_idx(index_st + *(counter_st + k));
     auto e_idx(index_st + *(counter_st + k + 1));
     if (s_idx < e_idx) {
-      find_candidates(read_start, gi, readlen,
-                      min(readlen, seed::n_sorting_positions), s_idx, e_idx);
+      const uint32_t posns_to_compare = min(readlen, seed::n_sorting_positions);
+      find_candidates(read_start, gi, readlen, posns_to_compare, s_idx, e_idx);
 
       if (e_idx - s_idx < max_candidates)
         check_hits<strand_code>(s_idx, e_idx,
@@ -769,13 +759,12 @@ namespace local_aln {
   }
 };
 
-using AbismalAlignSimple = AbismalAlign<local_aln::mismatch_score, local_aln::indel>;
+using AbismalAlignSimple = AbismalAlign<local_aln::mismatch_score,
+                                        local_aln::indel>;
 
-template <score_t (*scr_fun)(const char, const uint8_t),
-          score_t indel_pen>
 static void
 align_read(se_element &res, string &cigar, const string &read,
-           Read &pread, AbismalAlign<scr_fun, indel_pen> &aln) {
+           Read &pread, AbismalAlignSimple &aln) {
   // ends early if alignment is nearly diagonal
   if (res.diffs <= 3) {
     cigar = std::to_string(read.length()) + "M";
@@ -852,9 +841,9 @@ map_single_ended(const bool VERBOSE,
 #pragma omp for
       for (size_t i = 0; i < reads.size(); ++i) {
         if (!reads[i].empty()) {
+
           prep_read<conv>(reads[i], pread_seed);
           prep_for_seeds(pread_seed, pread_even, pread_odd);
-
           process_seeds<get_strand_code('+', conv)>(max_candidates,
                                                     abismal_index, genome_st,
                                                     gi, pread_seed, pread_even,
@@ -973,7 +962,6 @@ map_single_ended_rand(const bool VERBOSE,
                                                       gi, pread_seed, pread_even,
                                                       pread_odd, res[i]);
 
-
           prep_read<a_rich>(read_rc, pread_seed);
           prep_for_seeds(pread_seed, pread_even, pread_odd);
           process_seeds<get_strand_code('-', t_rich)>(max_candidates,
@@ -1080,8 +1068,11 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
     if (s2.valid_hit()){
       bool aligned_s2 = false;
       uint32_t lim_s2 = 0;
+
       const uint32_t lim = j2->pos + read2.length();
-      while (j1 != j1_end && j1->pos + pe_element::max_dist < lim) ++j1;
+      while (j1 != j1_end && j1->pos + pe_element::max_dist < lim)
+        ++j1;
+
       while (j1 != j1_end && j1->pos + pe_element::min_dist <= lim) {
         s1 = *j1;
         if (s1.valid_hit()) {
