@@ -72,6 +72,11 @@ get_strand_code(const char strand, const conversion_type conv) {
           ((conv == t_rich) ? bsflags::read_is_t_rich: 0));
 }
 
+constexpr flags_t
+flip_strand_code(const flags_t sc) {
+  return (sc ^ samflags::read_rc) ^ bsflags::read_is_t_rich;
+}
+
 struct ReadLoader {
   ReadLoader(const string &fn,
              const size_t bs = numeric_limits<size_t>::max()) :
@@ -163,6 +168,7 @@ struct se_element {
   }
   bool valid_hit() const {return diffs < invalid_hit_diffs;}
   char strand() const {return rc() ? '-' : '+';}
+  void flip_strand() {flags = flip_strand_code(flags);}
   void reset() { diffs = invalid_hit_diffs; aln_score = 0; }
 
   bool is_equal_to (const se_element &rhs) const {
@@ -182,14 +188,6 @@ struct se_result {
   se_result(const uint32_t p, const score_t d, const flags_t s,
             const score_t scr) :
     best(se_element(p, d, scr, s)), second_best(se_element()) {}
-
-  bool operator==(const se_result &rhs) const {
-    return best == rhs.best;
-  }
-
-  bool operator<(const se_result &rhs) const {
-    return best < rhs.best;
-  }
 
   void update_by_mismatch(const uint32_t p, const score_t d, const flags_t s) {
     // avoid having two copies of the best hit
@@ -234,7 +232,6 @@ struct se_result {
 
   void reset() {best.reset(); second_best.reset();}
   uint32_t get_cutoff() const {return second_best.diffs;}
-  flags_t flags() const {return best.flags;}
 
   static uint8_t max_mapq_score;
   static uint8_t unknown_mapq_score;
@@ -290,7 +287,6 @@ struct pe_element {
   char strand() const {return r1.strand();}
   score_t diffs() const { return r1.diffs + r2.diffs; }
   score_t score() const { return r1.aln_score + r2.aln_score; }
-  flags_t flags() const { return r1.flags; }
 
   bool valid_hit() const {
     return r1.diffs < se_element::invalid_hit_diffs &&
@@ -329,7 +325,6 @@ struct pe_result { // assert(sizeof(pe_result) == 16);
     second_best.reset();
   }
 
-  flags_t flags() const { return best.flags(); }
   bool update_by_score(const pe_element &p) {
     if (p.is_better_aln_than(second_best)) second_best = p;
     if (second_best.is_better_aln_than(best)) {
@@ -382,6 +377,9 @@ format_pe(const bool allow_ambig,
 
   const bool a_rich = p.elem_is_a_rich();
   const uint8_t mapq = res.mapq();
+
+  // ADS: will this always evaluate correctly with unsigned
+  // intermediate vals?
   const int tlen = rc ? (r_s1 - r_e2) : (r_e2 - r_s1);
 
   sam_rec sr1(name1, 0, cl.names[chr1], r_s1 + 1, mapq,
@@ -410,38 +408,6 @@ format_pe(const bool allow_ambig,
 
   out << sr1 << '\n'
       << sr2 << '\n';
-
-  /*
-  // used in both r1 and r2, so calculated once
-  const bool rc = p.rc();
-  const uint8_t mapq = res.mapq();
-
-  // SAM r1
-  out << name1 << '\t'                           // qname
-  << p.r1.sam_flags<pe_first_mate>() << '\t' // flag
-  << cl.names[chr1] << '\t'                  // rname
-  << r_s1 + 1 << '\t'                        // pos (1-based!)
-  << static_cast<unsigned>(mapq) << '\t'     // mapq
-  << cig1 << "\t=\t"                         // cigar, rnext
-  << r_s2 + 1 << '\t'                        // pnext
-  << tlen << '\t'                            // tlen
-  << read1 << '\t'                           // seq
-  << qual1 << '\t'                           // qual
-  << "NM:i:" << p.r1.diffs << '\n';          // edit distance to ref
-
-  // SAM r2
-  out << name2 << '\t'                             // qname
-  << p.r2.sam_flags<pe_second_mate>() << '\t'  // flag
-  << cl.names[chr2] << '\t'                    // rname
-  << r_s2 + 1 << '\t'                          // pos (1-based!)
-  << static_cast<unsigned>(mapq) << '\t'       // mapq
-  << cig2 << "\t=\t"                           // cigar, rnext
-  << r_s1 + 1 << '\t'                          // pnext
-  << -tlen <<  '\t'                            // tlen
-  << read2 << '\t'                             // seq
-  << qual2 << '\t'                             // qual
-  << "NM:i:" << p.r2.diffs << '\n';            // edit distance to ref
-  */
 
   return true;
 }
@@ -781,24 +747,35 @@ prep_for_seeds(const Read &pread_seed, Read &pread_even, Read &pread_odd) {
   const size_t sz = pread_seed.size();
   pread_even.resize(sz);
   pread_odd.resize(sz);
-  size_t j = 0;
-  for (size_t i = 0; i < sz; i += 2) pread_even[++j] = pread_seed[i];
-  for (size_t i = 1; i < sz; i += 2) pread_even[++j] = (pread_seed[i] << 4);
+  size_t i, j = 0;
+  for (i = 0; i < sz; i += 2) pread_even[j++] = pread_seed[i];
+  for (i = 1; i < sz; i += 2) pread_even[j++] = (pread_seed[i] << 4);
 
   j = 0;
-  for (size_t i = 0; i < sz; i += 2) pread_odd[++j] = (pread_seed[i] << 4);
-  for (size_t i = 1; i < sz; i += 2) pread_odd[++j] = pread_seed[i];
+  for (i = 0; i < sz; i += 2) pread_odd[j++] = (pread_seed[i] << 4);
+  for (i = 1; i < sz; i += 2) pread_odd[j++] = pread_seed[i];
 }
 
 namespace local_aln {
   static const score_t match = 1;
   static const score_t mismatch = -1;
   static const score_t indel = -1;
+
+  // this lookup improves speed when running alignment
+  static const vector<score_t> score_lookup = {match, mismatch};
+  static inline score_t mismatch_score(const char q_base,
+                                       const uint8_t t_base) {
+    return score_lookup[the_comp(q_base, t_base)];
+  }
 };
 
+using AbismalAlignSimple = AbismalAlign<local_aln::mismatch_score, local_aln::indel>;
+
+template <score_t (*scr_fun)(const char, const uint8_t),
+          score_t indel_pen>
 static void
 align_read(se_element &res, string &cigar, const string &read,
-           Read &pread, AbismalAlignSimple &aln) {
+           Read &pread, AbismalAlign<scr_fun, indel_pen> &aln) {
   // ends early if alignment is nearly diagonal
   if (res.diffs <= 3) {
     cigar = std::to_string(read.length()) + "M";
