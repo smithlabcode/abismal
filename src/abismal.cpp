@@ -250,8 +250,6 @@ format_se(const bool allow_ambig, se_result res, const ChromLookup &cl,
   se_element s = res.best;
   if (res.should_report(allow_ambig) &&
       chrom_and_posn(cl, cigar, s.pos, ref_s, ref_e, chrom_idx)) {
-    if (s.rc())
-      revcomp_inplace(read);
     sam_rec sr(read_name, 0, cl.names[chrom_idx], ref_s + 1,
                res.mapq(), cigar, "*", 0, 0, read, "*");
     if (s.rc())
