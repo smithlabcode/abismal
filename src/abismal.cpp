@@ -357,10 +357,10 @@ format_pe(const bool allow_ambig,
   // Ensure read orientation represented on forward genomic strand. At
   // this stage, any pe_result includes elements that mapped to
   // opposite strands.
-  if (rc)
-    revcomp_inplace(read1);
-  else
-    revcomp_inplace(read2);
+  // if (rc)
+  //   revcomp_inplace(read1);
+  // else
+  //   revcomp_inplace(read2);
 
   const uint8_t mapq = res.mapq();
 
