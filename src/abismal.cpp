@@ -161,7 +161,6 @@ struct se_element {
     return !samflags::check(flags, bsflags::read_is_t_rich);
   }
   bool valid_hit() const {return diffs < invalid_hit_diffs;}
-  char strand() const {return rc() ? '-' : '+';}
   void reset() {diffs = invalid_hit_diffs; aln_score = 0;}
 
   bool is_equal_to(const se_element &rhs) const {
@@ -269,7 +268,6 @@ struct pe_element {
 
   bool rc() const { return r1.rc(); }
   bool elem_is_a_rich() const {return r1.elem_is_a_rich();}
-  char strand() const {return r1.strand();}
   score_t diffs() const { return r1.diffs + r2.diffs; }
   score_t score() const { return r1.aln_score + r2.aln_score; }
 
@@ -300,7 +298,8 @@ uint32_t pe_element::min_dist = 32;
 uint32_t pe_element::max_dist = 3000;
 
 struct pe_result { // assert(sizeof(pe_result) == 16);
-  pe_element best, second_best;
+  pe_element best;
+  pe_element second_best;
   pe_result() {}
   pe_result(const pe_element &a, const pe_element &b)
     : best(a), second_best(b) {}
@@ -336,14 +335,29 @@ struct pe_result { // assert(sizeof(pe_result) == 16);
   }
 };
 
+/* The results passed into format_pe should be on opposite strands
+ * already, as those are the only valid pairings. They also should
+ * have opposite "richness" for the same reason.
+ *
+ * On output, each read sequence is exactly as it appears in the input
+ * FASTQ files. The strand is opposite for each end, and the richness
+ * as well. Positions are incremented, since the SAM format is
+ * 1-based. CIGAR strings are written just as they were constructed:
+ * always starting with the first position on the reference,
+ * regardless of the strand indicated among the flags.
+ *
+ * Among optional tags, we include "CV" as conversion, and it is
+ * Alphanumeric with value 'A' or 'T' to show whether the C->T
+ * conversion was used or the G->A (for PBAT or 2nd end of PE reads).
+ */
 bool
 format_pe(const bool allow_ambig,
           const pe_result &res, const ChromLookup &cl,
-          string &read1, string &read2,
+          const string &read1, const string &read2,
           const string &name1, const string &name2,
-          string &cig1, string &cig2, ofstream &out) {
+          const string &cig1, const string &cig2, ofstream &out) {
 
-  uint32_t r_s1 = 0, r_e1 = 0, chr1 = 0; // positions in ref
+  uint32_t r_s1 = 0, r_e1 = 0, chr1 = 0; // positions in ref (0-based)
   uint32_t r_s2 = 0, r_e2 = 0, chr2 = 0;
   const pe_element p = res.best;
 
@@ -354,19 +368,14 @@ format_pe(const bool allow_ambig,
 
   const bool rc = p.rc();
 
-  // Ensure read orientation represented on forward genomic strand. At
-  // this stage, any pe_result includes elements that mapped to
-  // opposite strands.
-  // if (rc)
-  //   revcomp_inplace(read1);
-  // else
-  //   revcomp_inplace(read2);
-
-  const uint8_t mapq = res.mapq();
-
   // ADS: will this always evaluate correctly with unsigned
   // intermediate vals?
-  const int tlen = rc ? (r_s1 - r_e2) : (r_e2 - r_s1);
+  const int tlen = rc ?
+    (static_cast<int>(r_s1) - static_cast<int>(r_e2)) :
+    (static_cast<int>(r_e2) - static_cast<int>(r_s1));
+
+  // ADS: does it make sense to use this? And for both ends?
+  const uint8_t mapq = res.mapq();
 
   // ADS: +1 to POS & PNEXT; "=" for RNEXT; "*" for QUAL
   sam_rec sr1(name1, 0, cl.names[chr1], r_s1 + 1, mapq,
@@ -671,10 +680,14 @@ process_seeds(const uint32_t max_candidates,
 
   const auto index_st(begin(abismal_index.index));
   const auto counter_st(begin(abismal_index.counter));
+
+  // ADS: there is something wrong with this code if so many
+  // conditions are needed
   const size_t shift_lim =
     readlen > (seed::n_seed_positions + 1) ?
     (readlen - seed::n_seed_positions - 1) : 0;
-  const size_t shift = std::max(1ul, shift_lim/(seed::n_shifts - 1));
+  const size_t shift = (seed::n_shifts == 1) ? shift_lim :
+    std::max(1ul, shift_lim/(seed::n_shifts - 1));
 
   bool found_good_seed = false;
 
