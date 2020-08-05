@@ -605,14 +605,17 @@ check_hits(vector<uint32_t>::const_iterator start_idx,
            result_type &res) {
   for (auto i(start_idx); i != end_idx && !res.sure_ambig(offset != 0); ++i) {
     const uint32_t pos = (*i) - offset;
+    // ADS: (reminder) the adjustment below is because 2 bases are
+    // stored in each byte
+    const uint32_t pos_adjusted = (pos >> 1);
     const score_t diffs =
       ((pos & 1) ?
        full_compare<pos_odd>(res.get_cutoff(),
                              odd_read_st, odd_read_mid, odd_read_end,
-                             genome_st + (pos >> 1)) :
+                             genome_st + pos_adjusted) :
        full_compare<pos_even>(res.get_cutoff(),
                               even_read_st, even_read_mid, even_read_end,
-                              genome_st + (pos >> 1)));
+                              genome_st + pos_adjusted));
     res.update_by_mismatch(pos, diffs, strand_code);
   }
 }
