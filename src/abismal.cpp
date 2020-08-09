@@ -357,7 +357,7 @@ format_pe(const bool allow_ambig,
           const string &name1, const string &name2,
           const string &cig1, const string &cig2, ofstream &out) {
 
-  uint32_t r_s1 = 0, r_e1 = 0, chr1 = 0; // positions in ref (0-based)
+  uint32_t r_s1 = 0, r_e1 = 0, chr1 = 0; // positions in chroms (0-based)
   uint32_t r_s2 = 0, r_e2 = 0, chr2 = 0;
   const pe_element p = res.best;
 
@@ -747,7 +747,8 @@ prep_read(const string &r, Read &pread) {
                                    (r[i] == 'T' ? 'Y' : r[i]));
 }
 
-// creates reads meant for comparison on a compressed genome
+// Creates reads meant for comparison on a compressed genome. ADS:
+// This needs to be documented here with a longer comment.
 static void
 prep_for_seeds(const Read &pread_seed, Read &pread_even, Read &pread_odd) {
   const size_t sz = pread_seed.size();
@@ -762,6 +763,8 @@ prep_for_seeds(const Read &pread_seed, Read &pread_even, Read &pread_odd) {
   for (i = 1; i < sz; i += 2) pread_odd[j++] = pread_seed[i];
 }
 
+// ADS: this local_aln stuff needs to be moved into the AbismalAlign
+// because it's never changing and only makes noise in this source.
 namespace local_aln {
   static const score_t match = 1;
   static const score_t mismatch = -1;
@@ -933,7 +936,6 @@ map_single_ended_rand(const bool VERBOSE,
   ProgressBar progress(get_filesize(reads_file), "mapping reads");
   if (VERBOSE)
     progress.report(cerr, 0);
-
 
   double total_mapping_time = 0;
   while (rl.good()) {
@@ -1198,10 +1200,8 @@ map_paired_ended(const bool VERBOSE,
 
 #pragma omp for
       for (size_t i = 0 ; i < n_reads; ++i)
-        select_maps<false>(reads1[i], reads2[i],
-                           cigar1[i], cigar2[i],
-                           res1[i], res2[i],
-                           res_se1[i], res_se2[i],
+        select_maps<false>(reads1[i], reads2[i], cigar1[i], cigar2[i],
+                           res1[i], res2[i], res_se1[i], res_se2[i],
                            aln, bests[i]);
     }
 
@@ -1217,10 +1217,9 @@ map_paired_ended(const bool VERBOSE,
 
 #pragma omp for
       for (size_t i = 0 ; i < n_reads; ++i)
-        select_maps<true>(reads2[i], reads1[i],
-                          cigar2[i], cigar1[i],
-                          res2[i], res1[i],
-                          res_se2[i], res_se1[i],
+        // ADS: note res2 and res1 are swapped below
+        select_maps<true>(reads2[i], reads1[i], cigar2[i], cigar1[i],
+                          res2[i], res1[i], res_se2[i], res_se1[i],
                           aln, bests[i]);
     }
 
@@ -1453,26 +1452,37 @@ map_paired_ended_rand(const bool VERBOSE,
 
 void
 write_sam_header(const ChromLookup &cl,
-                 const int argc,
-                 const char **argv,
+                 const int argc, const char **argv,
                  ofstream &out) {
-  out <<"@HD\tVN:1.0\n"; // sam version
-  const size_t sz = cl.names.size();
-  size_t prev = cl.starts[0];
+
+  static const size_t ABISMAL_VERSION = 0.1;
+
+  out <<"@HD" << '\t'
+      << "VN:1.0" << endl; // sam version
 
   // sequence lengths
-  for (size_t i = 1; i < sz; ++i) {
-    out << "@SQ\tSN:" << cl.names[i] << "\tLN:" << cl.starts[i] - prev << '\n';
+  // ADS: should the logic here be somehow hidden in ChromLookup?
+  size_t prev = cl.starts[1];
+  // ADS: subtracting below because of padding sequences
+  const size_t n_chroms = cl.names.size() - 1;
+  for (size_t i = 1; i < n_chroms; ++i) {
+    out << "@SQ" << '\t'
+        << "SN:" << cl.names[i] << '\t'
+        << "LN:" << cl.starts[i+1] - prev << '\n';
     prev = cl.starts[i];
   }
 
-  // function call
-  out << "@PG\tID:ABISMAL\tVN:1.0.0\tCL:\"";
-  out << string(*(argv));
-  for (int i = 1; i < argc; ++i)
-    out << " " << string(*(argv + i));
-  out << "\"\n";
+  // write how the abismal program was run
+  out << "@PG" << '\t'
+      << "ID:"
+      << "ABISMAL" << '\t'
+      << "VN:" << ABISMAL_VERSION << '\t'
+      << "CL:";
 
+  out << "\"" << argv[0];
+  for (int i = 1; i < argc; ++i)
+    out << " " << argv[i];
+  out << "\"" << endl;
 }
 
 int main(int argc, const char **argv) {
