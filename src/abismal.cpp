@@ -1118,7 +1118,7 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
 }
 
 template <const bool swap_ends>
-void
+static void
 select_maps(const string &read1, const string &read2,
             string &cig1, string &cig2,
             pe_candidates &res1, pe_candidates &res2,
@@ -1272,7 +1272,7 @@ map_paired_ended(const bool VERBOSE,
   }
 }
 
-void
+static void
 map_paired_ended_rand(const bool VERBOSE,
                       const bool allow_ambig,
                       const string &reads_file1,
@@ -1450,7 +1450,7 @@ map_paired_ended_rand(const bool VERBOSE,
   }
 }
 
-void
+static void
 write_sam_header(const ChromLookup &cl,
                  const int argc, const char **argv,
                  ofstream &out) {
@@ -1498,7 +1498,7 @@ int main(int argc, const char **argv) {
     bool random_pbat = false;
     uint32_t max_candidates = 2000;
     size_t batch_size = 100000;
-    size_t n_threads = omp_get_max_threads();
+    size_t n_threads = 1;
 
     /****************** COMMAND LINE OPTIONS ********************/
     OptionParser opt_parse(strip_path(argv[0]),
