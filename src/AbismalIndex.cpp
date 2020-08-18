@@ -103,7 +103,6 @@ AbismalIndex::get_bucket_sizes() {
       progress.report(cerr, i);
     shift_hash_key(*gi++, hash_key);
     invalid_count += invalid_base(*end_invalid_counter++);
-    // if (i & 1) // only odd positiosn are stored in the index
     if (invalid_count <= max_invalid_bases_per_seed)
       counter[hash_key]++;
     invalid_count -= invalid_base(*start_invalid_counter++);
@@ -147,7 +146,6 @@ AbismalIndex::hash_genome() {
       progress.report(cerr, i);
     invalid_count += invalid_base(*end_invalid_counter++);
     shift_hash_key(*gi++, hash_key);
-    // if (i & 1)
     if (invalid_count <= max_invalid_bases_per_seed)
       index[--counter[hash_key]] = i;
 
