@@ -159,19 +159,13 @@ struct AbismalIndex {
 
   /* Sort each bucket, if the seed length is more than 26, then use
    * binary search for the rest part of the seed */
-  void sort_buckets(const sort_type st);
-
-  void remove_big_buckets(const sort_type st,
-                          const uint32_t max_candidates);
+  void sort_buckets();
 
   // convert the genome to 4-bit encoding
   void encode_genome();
 
-  void write(const std::string &index_file,
-             const uint32_t n_solid,
-             const uint32_t max_candidates) const;
-  void read(const std::string &index_file,
-            uint32_t &n_solid, uint32_t &max_candidates);
+  void write(const std::string &index_file) const;
+  void read(const std::string &index_file);
 
   static std::string internal_identifier;
 };

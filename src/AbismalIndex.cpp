@@ -41,7 +41,7 @@ using std::min;
 
 uint32_t seed::n_shifts = 3;
 uint32_t seed::n_seed_positions = 32;
-uint32_t seed::n_sorting_positions = 1000;
+uint32_t seed::n_sorting_positions = 128;
 
 
 bool AbismalIndex::VERBOSE = false;
@@ -155,25 +155,8 @@ AbismalIndex::hash_genome() {
     progress.report(cerr, lim);
 }
 
-struct BucketLessFour {
-  BucketLessFour(const Genome &g, const uint32_t off) :
-    g_start(begin(g)), offset(off) {}
-  bool operator()(const uint32_t a, const uint32_t b) const {
-    auto idx1(g_start + a);
-    auto lim1(g_start + a + offset);
-    auto idx2(g_start + b);
-    while (idx1 != lim1) {
-      if (*idx1 != *idx2) return *idx1 < *idx2;
-      ++idx1, ++idx2;
-    }
-    return false;
-  }
-  const genome_iterator g_start;
-  const uint32_t offset;
-};
-
-struct BucketLessTwo {
-  BucketLessTwo(const Genome &g) : g_start(begin(g)) {}
+struct BucketLess {
+  BucketLess(const Genome &g) : g_start(begin(g)) {}
   bool operator()(const uint32_t a, const uint32_t b) const {
     auto idx1(g_start + a + seed::key_weight);
     auto lim1(g_start + a + seed::n_sorting_positions);
@@ -189,130 +172,16 @@ struct BucketLessTwo {
 };
 
 void
-AbismalIndex::sort_buckets(const sort_type st) {
+AbismalIndex::sort_buckets() {
+  if (VERBOSE)
+    cerr << "[sorting buckets]" << endl;
   const vector<uint32_t>::iterator b(begin(index));
-  if (VERBOSE)
-    cerr << "[sorting buckets by " << ((st == four_letter) ? "4":"2")
-         << " letters]" << endl;
-
-  if (st == four_letter) {
-    const BucketLessFour bucket_less(genome, seed::n_sorting_positions);
+  const BucketLess bucket_less(genome);
 #pragma omp parallel for
-    for (size_t i = 0; i < counter_size; ++i)
-      if (counter[i + 1] > counter[i] + 1)
-        sort(b + counter[i], b + counter[i + 1], bucket_less);
-  }
-
-  else {
-    const BucketLessTwo bucket_less(genome);
-#pragma omp parallel for
-    for (size_t i = 0; i < counter_size; ++i)
-      if (counter[i + 1] > counter[i] + 1)
-        sort(b + counter[i], b + counter[i + 1], bucket_less);
-  }
+  for (size_t i = 0; i < counter_size; ++i)
+    if (counter[i + 1] > counter[i] + 1)
+      sort(b + counter[i], b + counter[i + 1], bucket_less);
 }
-
-// GS TODO: add this to option parser and pass as parameter, or make it
-// part of the AbismalIndex class
-struct BucketEqualFour {
-  BucketEqualFour(const Genome &g, const uint32_t off) :
-    g_start(begin(g)), offset(off) {}
-  bool operator()(const uint32_t a, const uint32_t b) const {
-    auto idx1(g_start + a + offset);
-    const auto lim1(g_start + a);
-    auto idx2(g_start + b + offset);
-    while (idx1 != lim1)
-      if (*(--idx1) != *(--idx2))
-        return false;
-    return true;
-  }
-  const genome_iterator g_start;
-  const uint32_t offset;
-};
-
-struct BucketEqualTwo {
-  BucketEqualTwo(const Genome &g, const uint32_t off) :
-    g_start(begin(g)), offset(off) {}
-  bool operator()(const uint32_t a, const uint32_t b) const {
-    auto idx1(g_start + a + offset);
-    const auto lim1(g_start + a);
-    auto idx2(g_start + b + offset);
-    while (idx1 != lim1)
-      if (get_bit(*(--idx1)) != get_bit(*(--idx2)))
-        return false;
-    return true;
-  }
-  const genome_iterator g_start;
-  const uint32_t offset;
-};
-
-void
-AbismalIndex::remove_big_buckets(const sort_type st,
-                                 const uint32_t max_candidates) {
-  if (VERBOSE)
-    cerr << "[finding big buckets on "
-         << (st == four_letter ? "four":"two") << " letters with max = "
-         << max_candidates << "]" << endl;
-  vector<bool> keep(index_size, true);
-  const auto b(begin(index));
-
-  if (st == four_letter) {
-    const BucketEqualFour bucket_equal(genome, seed::n_sorting_positions);
-#pragma omp parallel for
-    for (size_t i = 0; i < counter_size; ++i) {
-      uint32_t j = counter[i];
-      while (j < counter[i+1]) {
-        uint32_t k = j + 1;
-        const uint32_t first_idx = *(b + j);
-        while (k < counter[i+1] && bucket_equal(first_idx, *(b + k))) ++k;
-        if (k - j > max_candidates)
-          fill(begin(keep) + j, begin(keep) + k, false);
-        j = k;
-      }
-    }
-  }
-  else {
-    const BucketEqualTwo bucket_equal(genome, seed::n_sorting_positions);
-#pragma omp parallel for
-    for (size_t i = 0; i < counter_size; ++i) {
-      uint32_t j = counter[i];
-      while (j < counter[i+1]) {
-        uint32_t k = j + 1;
-        const uint32_t first_idx = *(b + j);
-        while (k < counter[i+1] && bucket_equal(first_idx, *(b + k))) ++k;
-        if (k - j > max_candidates)
-          fill(begin(keep) + j, begin(keep) + k, false);
-        j = k;
-      }
-    }
-  }
-
-  // remove the indices that correspond to large buckets
-  size_t num_removed = 0;
-  if (VERBOSE)
-    cerr << "[removing big buckets]" << endl;
-  size_t j = 0;
-  for (size_t i = 0; i < index_size; ++i) {
-    if (keep[i])
-      index[j++] = index[i];
-    num_removed += !keep[i];
-  }
-  if (VERBOSE)
-    cerr << "[removed " << num_removed << " positions from the index]" << endl;
-  index.resize(j);
-  index_size = j;
-
-  // update the hash table to the positions of retained indices
-  uint32_t total = 0;
-  auto k_beg(begin(keep));
-  uint32_t prev_counter = 0;
-  for (size_t i = 1; i < counter.size(); ++i) {
-    total += count(k_beg + prev_counter, k_beg + counter[i], false);
-    prev_counter = counter[i];
-    counter[i] -= total;
-  }
-}
-
 
 /* ADS: original io functions using streams didn't work on mac os, so
    removed. Using the C file I/O rather than the streams...
@@ -327,20 +196,16 @@ write_internal_identifier(FILE *out) {
 }
 
 void
-AbismalIndex::write(const string &index_file,
-                    const uint32_t n_solid,
-                    const uint32_t max_cand) const {
+AbismalIndex::write(const string &index_file) const {
 
   FILE *out = fopen(index_file.c_str(), "wb");
   if (!out)
     throw runtime_error("cannot open output file " + index_file);
 
   write_internal_identifier(out);
-  if (fwrite((char*) &n_solid, sizeof(uint32_t), 1, out) != 1 ||
-      fwrite((char*) &max_cand, sizeof(uint32_t), 1, out) != 1)
-    throw runtime_error("failed writng index");
 
   cl.write(out);
+
   if (fwrite((char*)&genome[0], 1, genome.size(), out) != genome.size() ||
       fwrite((char*)&counter_size, sizeof(uint32_t), 1, out) != 1 ||
       fwrite((char*)&index_size, sizeof(uint32_t), 1, out) != 1 ||
@@ -366,9 +231,7 @@ check_internal_identifier(FILE *in) {
 
 
 void
-AbismalIndex::read(const string &index_file,
-                   uint32_t &n_solid,
-                   uint32_t &max_cand) {
+AbismalIndex::read(const string &index_file) {
 
   static const string error_msg("failed loading index file");
 
@@ -377,10 +240,6 @@ AbismalIndex::read(const string &index_file,
     throw runtime_error("cannot open input file " + index_file);
 
   if (!check_internal_identifier(in))
-    throw runtime_error("index file format problem: " + index_file);
-
-  if (fread((char*) &n_solid, sizeof(uint32_t), 1, in) != 1 ||
-      fread((char*) &max_cand, sizeof(uint32_t), 1, in) != 1)
     throw runtime_error("index file format problem: " + index_file);
 
   cl.read(in);

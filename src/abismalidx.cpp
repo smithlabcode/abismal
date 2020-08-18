@@ -39,10 +39,7 @@ using std::endl;
 using std::unordered_set;
 
 static void
-BuildIndex(const bool VERBOSE,
-           const uint32_t max_candidates,
-           const uint32_t deadzone_freq,
-           const string &genome_file,
+BuildIndex(const bool VERBOSE, const string &genome_file,
            AbismalIndex &ai) {
 
   std::ifstream in(genome_file);
@@ -56,13 +53,7 @@ BuildIndex(const bool VERBOSE,
   ai.encode_genome();
   ai.get_bucket_sizes();
   ai.hash_genome();
-
-  ai.sort_buckets(four_letter);
-  ai.remove_big_buckets(four_letter, deadzone_freq);
-  ai.sort_buckets(two_letter);
-  if (max_candidates != std::numeric_limits<uint32_t>::max())
-    ai.remove_big_buckets(two_letter, max_candidates);
-
+  ai.sort_buckets();
 }
 
 int main(int argc, const char **argv) {
@@ -71,18 +62,12 @@ int main(int argc, const char **argv) {
 
     bool VERBOSE = false;
     size_t n_threads = 1;
-    uint32_t max_candidates = std::numeric_limits<uint32_t>::max();
-    uint32_t deadzone_freq = 200;
 
     /****************** COMMAND LINE OPTIONS ********************/
     OptionParser opt_parse(strip_path(argv[0]), "build abismal index",
                            "<genome-fasta> <abismal-index-file>", 2);
     opt_parse.set_show_defaults();
     opt_parse.add_opt("threads", 't', "number of threads", false, n_threads);
-    opt_parse.add_opt("deadzone", 'd', "number of times a " +
-                      std::to_string(seed::n_sorting_positions) +
-                      "-mer should appear to be excluded from the genome",
-                      false, deadzone_freq);
     opt_parse.add_opt("verbose", 'v', "print more run info", false, VERBOSE);
     vector<string> leftover_args;
     opt_parse.parse(argc, argv, leftover_args);
@@ -111,13 +96,12 @@ int main(int argc, const char **argv) {
     AbismalIndex::VERBOSE = VERBOSE;
 
     AbismalIndex abismal_index;
-    BuildIndex(VERBOSE, max_candidates, deadzone_freq, genome_file,
-               abismal_index);
+    BuildIndex(VERBOSE, genome_file, abismal_index);
 
     if (VERBOSE)
       cerr << "[writing abismal index to: " << outfile << "]" << endl;
 
-    abismal_index.write(outfile, seed::n_sorting_positions, max_candidates);
+    abismal_index.write(outfile);
 
   }
   catch (const std::runtime_error &e) {
