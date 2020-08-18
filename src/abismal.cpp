@@ -1565,15 +1565,7 @@ int main(int argc, const char **argv) {
       cerr << "[loading abismal index]" << endl;
     AbismalIndex abismal_index;
     const double start_time = omp_get_wtime();
-    uint32_t index_max_cand = 0;
-    abismal_index.read(index_file, seed::n_sorting_positions, index_max_cand);
-    if (VERBOSE)
-      // ADS: this should be removed soon; not helpful to a user
-      cerr << "[index: n_sorting_positions = "
-           << seed::n_sorting_positions << "]" << endl
-           << "[index: max_candidates = "
-           << seed::n_sorting_positions << "]" << endl;
-
+    abismal_index.read(index_file);
     const double end_time = omp_get_wtime();
     if (VERBOSE)
       cerr << "[loading time: " << (end_time - start_time) << "]" << endl;
@@ -1583,8 +1575,8 @@ int main(int argc, const char **argv) {
 
     if (VERBOSE) {
       if (paired_end)
-        cerr << "[mapping paired end: " << reads_file << " "
-             << reads_file2 << "]\n";
+        cerr << "[mapping paired end: "
+             << reads_file << " " << reads_file2 << "]\n";
       else
         cerr << "[mapping single end: " << reads_file << "]\n";
     }
