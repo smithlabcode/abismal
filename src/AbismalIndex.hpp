@@ -24,7 +24,31 @@
 #include <fstream>
 #include <unordered_set>
 #include <algorithm>
-#include "AbismalSeed.hpp"
+
+
+namespace seed {
+  // the number of shifts is not related to the seed pattern, but is a
+  // choice we can make for any seed pattern.
+  extern uint32_t n_shifts;
+
+  // number of positions in searching with the seed, and cannot be
+  // longer than n_solid_positions below. ADS: this is allowed to
+  // change for debug purposes, but not sure if should be adjustable
+  // by the end user.
+  extern uint32_t n_seed_positions;
+
+  // number of positions in the hashed portion of the seed
+  const uint32_t key_weight = 26;
+
+  const size_t hash_mask = (1 << seed::key_weight) - 1;
+
+  // number of positions used to sort positions based on
+  // sequence. This is used in building the index. ADS: this is
+  // allowed to change for debug purposes, but not sure if should be
+  // adjustable by the end user.
+  extern uint32_t n_sorting_positions;
+};
+
 
 typedef std::vector<uint8_t> Genome;
 enum sort_type {four_letter, two_letter};
@@ -118,8 +142,6 @@ operator<<(std::ostream &out, const ChromLookup &cl);
 struct AbismalIndex {
 
   static bool VERBOSE;
-  static uint32_t max_invalid_per_seed;
-  static uint32_t deadzone_kmer_length;
 
   uint32_t counter_size; // number of kmers indexed
   uint32_t index_size; // size of the index
@@ -137,23 +159,34 @@ struct AbismalIndex {
 
   /* Sort each bucket, if the seed length is more than 26, then use
    * binary search for the rest part of the seed */
-  void sort_buckets(const sort_type st);
-
-  void remove_big_buckets(const sort_type st,
-                          const uint32_t max_candidates);
+  void sort_buckets();
 
   // convert the genome to 4-bit encoding
   void encode_genome();
 
-  void write(const std::string &index_file,
-             const uint32_t n_solid,
-             const uint32_t max_candidates) const;
-  void read(const std::string &index_file,
-            uint32_t &n_solid, uint32_t &max_candidates);
+  void write(const std::string &index_file) const;
+  void read(const std::string &index_file);
 
   static std::string internal_identifier;
 };
 
 
+// A/T nucleotide to 1-bit value (0100 | 0001 = 5) is for A or G.
+inline uint32_t
+get_bit(const uint8_t nt) {return (nt & 5) == 0;}
+
+
+// get the hash value for a k-mer (specified as some iterator/pointer)
+// and the encoding for the function above
+template <class T>
+inline void
+get_1bit_hash(T r, uint32_t &k) {
+  const auto lim = r + seed::key_weight;
+  while (r != lim) {
+    k <<= 1;
+    k += get_bit(*r);
+    ++r;
+  }
+}
 
 #endif

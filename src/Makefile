@@ -22,7 +22,7 @@ $(error src/smithlab_cpp does not have a Makefile. \
 	      Did you use --recursive when running git clone?)
 endif
 
-PROGS = abismal abismalidx simreads seedtool
+PROGS = abismal abismalidx simreads
 
 CXX = g++
 CXXFLAGS = -Wall -std=c++11 -fopenmp
@@ -45,7 +45,7 @@ install: $(PROGS)
 %.o: %.cpp %.hpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $< $(CPPFLAGS)
 
-$(PROGS): AbismalIndex.o AbismalSeed.o \
+$(PROGS): AbismalIndex.o \
 	$(addprefix $(SMITHLAB_CPP)/, libsmithlab_cpp.a)
 
 %: %.cpp
