@@ -1459,17 +1459,13 @@ write_sam_header(const ChromLookup &cl,
 
   out <<"@HD" << '\t'
       << "VN:1.0" << endl; // sam version
-
-  // sequence lengths
   // ADS: should the logic here be somehow hidden in ChromLookup?
-  size_t prev = cl.starts[1];
   // ADS: subtracting below because of padding sequences
   const size_t n_chroms = cl.names.size() - 1;
   for (size_t i = 1; i < n_chroms; ++i) {
     out << "@SQ" << '\t'
         << "SN:" << cl.names[i] << '\t'
-        << "LN:" << cl.starts[i+1] - prev << '\n';
-    prev = cl.starts[i];
+        << "LN:" << cl.starts[i+1] - cl.starts[i] << '\n';
   }
 
   // write how the abismal program was run
