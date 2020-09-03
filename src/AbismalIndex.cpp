@@ -1,4 +1,4 @@
-/* Cmpyright (C) 2018 Andrew D. Smith
+/* Copyright (C) 2018 Andrew D. Smith
  *
  * Authors: Andrew D. Smith
  *
