@@ -219,6 +219,7 @@ struct se_result {
   }
 
   void reset() {best.reset(); second_best.reset();}
+
   uint32_t get_cutoff() const {return second_best.diffs;}
 
   static uint8_t max_mapq_score;
@@ -472,9 +473,10 @@ struct se_map_stats {
 
     oss << t     << "total_reads: " << tot_rds << endl
         << t     << "mapped: " << endl
+        << t+tab << "num_mapped: " << uniq_rds+ambig_rds << endl
         << t+tab << "percent_mapped: "
         << pct(uniq_rds+ambig_rds, tot_rds == 0 ? 1 : tot_rds) << endl
-        << t+tab << "unique: " << uniq_rds << endl
+        << t+tab << "num_unique: " << uniq_rds << endl
         << t+tab << "percent_unique: "
         << pct(uniq_rds, tot_rds == 0 ? 1 : tot_rds) << endl
         << t+tab << "ambiguous: " << ambig_rds << endl
@@ -512,9 +514,10 @@ struct pe_map_stats {
     oss << "pairs:" << endl
         << t   << "total_read_pairs: " << tot_pairs << endl
         << t   << "mapped:" << endl
+        << t+t << "num_mapped: " << uniq_pairs + ambig_pairs << endl
         << t+t << "percent_mapped: "
         << pct(uniq_pairs + ambig_pairs, tot_pairs) << endl
-        << t+t << "unique: " << uniq_pairs << endl
+        << t+t << "num_unique: " << uniq_pairs << endl
         << t+t << "percent_unique: " << pct(uniq_pairs, tot_pairs) << endl
         << t+t << "ambiguous: " << ambig_pairs << endl
         << t   << "unmapped: " << unmapped_pairs << endl
@@ -705,7 +708,6 @@ process_seeds(const uint32_t max_candidates,
     if (s_idx < e_idx) {
       find_candidates(read_start + offset, gi, readlen - offset,
                       seed::n_seed_positions, s_idx, e_idx);
-
       if (e_idx - s_idx < max_candidates) {
         found_good_seed = true;
         check_hits<strand_code>(s_idx, e_idx,
@@ -727,7 +729,9 @@ process_seeds(const uint32_t max_candidates,
       // ADS: is above "min" needed, given check inside find_candidates?
       find_candidates(read_start, gi, readlen, posns_to_compare, s_idx, e_idx);
 
-      if (e_idx - s_idx < max_candidates)
+      // GS: seed::n_shifts * max candidates is the max acceptable
+      // number of searches for a read under no good seed condition
+      if (e_idx - s_idx < seed::n_shifts * max_candidates)
         check_hits<strand_code>(s_idx, e_idx,
                                 even_read_start, even_read_mid, even_read_end,
                                 odd_read_start, odd_read_mid, odd_read_end,
@@ -762,7 +766,6 @@ prep_for_seeds(const Read &pread_seed, Read &pread_even, Read &pread_odd) {
   for (i = 0; i < sz; i += 2) pread_odd[j++] = (pread_seed[i] << 4);
   for (i = 1; i < sz; i += 2) pread_odd[j++] = pread_seed[i];
 }
-
 // ADS: this local_aln stuff needs to be moved into the AbismalAlign
 // because it's never changing and only makes noise in this source.
 namespace local_aln {
@@ -1487,6 +1490,7 @@ int main(int argc, const char **argv) {
 
     string index_file;
     string outfile;
+    string stats_outfile = "";
     bool VERBOSE = false;
     bool GA_conversion = false;
     bool allow_ambig = false;
@@ -1503,6 +1507,10 @@ int main(int argc, const char **argv) {
     opt_parse.set_show_defaults();
     opt_parse.add_opt("index", 'i', "index file", true, index_file);
     opt_parse.add_opt("outfile", 'o', "output file", true, outfile);
+    opt_parse.add_opt("mapstats", 'm',
+                      "mapstats output file. If not provided, it "
+                      "will be generated as .mapstats suffix to the "
+                      "output file name", false, stats_outfile);
     opt_parse.add_opt("threads", 't', "number of threads", false, n_threads);
     opt_parse.add_opt("shifts", 's', "number of seed shifts",
                       false, seed::n_shifts);
@@ -1615,7 +1623,8 @@ int main(int argc, const char **argv) {
                                  abismal_index, pe_stats, out);
     }
 
-    std::ofstream stat_out(outfile + ".mapstats");
+    std::ofstream stat_out(stats_outfile.empty() ?
+                           (outfile + ".mapstats") : stats_outfile);
     stat_out << (reads_file2.empty() ?
                  se_stats.tostring() : pe_stats.tostring());
   }
