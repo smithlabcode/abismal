@@ -168,7 +168,7 @@ struct se_element {
 
 // GS: must have a valid rationale for these numbers
 score_t se_element::invalid_hit_diffs = 40;
-score_t se_element::max_diffs = 6;
+score_t se_element::max_diffs = 10;
 uint16_t se_element::min_aligned_length = 32;
 
 struct se_result {
@@ -626,16 +626,14 @@ struct compare_bases {
   const genome_iterator g;
 };
 
-
 void
 find_candidates(const Read::const_iterator read_start,
                 const genome_iterator gi,
                 const uint32_t read_lim, // not necessarily read len
-                const uint32_t n_sorting_positions,
                 vector<uint32_t>::const_iterator &low,
                 vector<uint32_t>::const_iterator &high) {
   size_t p = seed::key_weight;
-  const size_t lim = std::min(read_lim, n_sorting_positions);
+  const size_t lim = std::min(read_lim, seed::n_sorting_positions);
   while (p != lim) {
     auto first_1 = lower_bound(low, high, 1, compare_bases(gi + p));
     if (get_bit(*(read_start + p)) == 0) {
@@ -700,8 +698,7 @@ process_seeds(const uint32_t max_candidates,
     auto e_idx(index_st + *(counter_st + k + 1));
 
     if (s_idx < e_idx) {
-      find_candidates(read_start + offset, gi, readlen - offset,
-                      seed::n_seed_positions, s_idx, e_idx);
+      find_candidates(read_start + offset, gi, readlen - offset, s_idx, e_idx);
       if (e_idx - s_idx < max_candidates) {
         found_good_seed = true;
         check_hits<strand_code>(s_idx, e_idx,
@@ -719,9 +716,7 @@ process_seeds(const uint32_t max_candidates,
     auto s_idx(index_st + *(counter_st + k));
     auto e_idx(index_st + *(counter_st + k + 1));
     if (s_idx < e_idx) {
-      const uint32_t posns_to_compare = min(readlen, seed::n_sorting_positions);
-      // ADS: is above "min" needed, given check inside find_candidates?
-      find_candidates(read_start, gi, readlen, posns_to_compare, s_idx, e_idx);
+      find_candidates(read_start, gi, readlen, s_idx, e_idx);
 
       // GS: seed::n_shifts * max candidates is the max acceptable
       // number of searches for a read under no good seed condition
@@ -1582,6 +1577,12 @@ int main(int argc, const char **argv) {
     }
     if (leftover_args.size() < 1) {
       cerr << opt_parse.help_message() << endl;
+      return EXIT_SUCCESS;
+    }
+    if (outfile.empty() && stats_outfile.empty()) {
+      cerr << "please provide a file name for either the .sam"
+           << "output (-o flag) or the stats file (-m flag)" << endl;
+
       return EXIT_SUCCESS;
     }
     const string reads_file = leftover_args.front();
