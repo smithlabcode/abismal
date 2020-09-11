@@ -236,4 +236,14 @@ AbismalAlign<scr_fun, indel_pen>::align(const std::vector<uint8_t> &qseq,
   return r;
 }
 
+// A specific namespace for simple match/mismatch scoring system and a
+// 1 -1 -1 scoring scheme for edit distance.
+namespace simple_local_alignment {
+  static const score_t match = 1;
+  static const score_t mismatch = -1;
+  static const score_t indel = -1;
+  static const std::vector<score_t> score_lookup = {match, mismatch};
+};
+
+
 #endif
