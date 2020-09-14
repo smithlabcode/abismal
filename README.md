@@ -39,7 +39,7 @@ $ git clone git@github.com:smithlabcode/abismal.git
 
 (3) Build the `abismal` and `abismalidx` programs:
 ```
-$ ./configure
+$ ./configure --enable-hts --prefix=/where/you/want/the/binaries
 $ make all
 $ make install
 ```
