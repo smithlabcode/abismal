@@ -96,8 +96,9 @@ struct ReadLoader {
     string line;
     line.reserve(reserve_size);
     while (line_count < num_lines_to_read && bool(getline(*in, line))) {
-      if (line_count % 4 == 0)
-        names.push_back(line.substr(1, line.find_first_of(" \t")));
+      if (line_count % 4 == 0) {
+        names.push_back(line.substr(1, line.find_first_of(" \t") - 1));
+      }
       else if (line_count % 4 == 1) {
         if (count_if(begin(line), end(line),
                      [](const char c) {return c != 'N';}) < min_read_length)
@@ -1475,7 +1476,7 @@ map_paired_ended_rand(const bool VERBOSE,
 
   if (VERBOSE) {
     progress.report(cerr, get_filesize(reads_file1));
-    cerr << "[total mapping time: " << total_mapping_time << endl;
+    cerr << "[total mapping time: " << total_mapping_time << "]" << endl;
   }
 }
 
