@@ -1602,7 +1602,7 @@ int main(int argc, const char **argv) {
     bool allow_ambig = false;
     bool pbat_mode = false;
     bool random_pbat = false;
-    uint32_t max_candidates = 2000;
+    uint32_t max_candidates = 10000;
     size_t batch_size = 100000;
     size_t n_threads = 1;
 
