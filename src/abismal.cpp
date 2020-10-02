@@ -158,21 +158,23 @@ struct se_element {
     return !samflags::check(flags, bsflags::read_is_t_rich);
   }
   bool valid_hit() const {return diffs < invalid_hit_diffs;}
-  bool valid() const {return diffs <= max_diffs;}
+  bool valid(const size_t read_length) const {
+    return diffs <= static_cast<score_t>(read_len_frac * read_length);
+  }
   void reset() { diffs = invalid_hit_diffs; }
 
   bool is_equal_to(const se_element &rhs) const {
     return (diffs == rhs.diffs) && (pos != rhs.pos);
   }
   static score_t invalid_hit_diffs;
-  static score_t max_diffs;
   static uint16_t min_aligned_length;
+  static double read_len_frac;
 };
 
 // GS: must have a valid rationale for these numbers
 score_t se_element::invalid_hit_diffs = 40;
-score_t se_element::max_diffs = 10;
 uint16_t se_element::min_aligned_length = 32;
+double se_element::read_len_frac = 0.1;
 
 struct se_result {
   se_element best;
@@ -200,7 +202,7 @@ struct se_result {
     }
     return false;
   }
-
+  bool valid(const size_t readlen) const { return best.valid(readlen); }
   bool ambig() const {
     return best.diffs == second_best.diffs;
   }
@@ -210,8 +212,8 @@ struct se_result {
       (best.diffs == 0 || (best.diffs == 1 && seed_number > 0));
   }
 
-  bool should_report() const {
-    return best.valid() && !ambig();
+  bool should_report(const string &read) const {
+    return best.valid(read.size()) && !ambig();
   }
 
   void reset() {best.reset(); second_best.reset();}
@@ -237,7 +239,7 @@ format_se(const bool allow_ambig, se_result res, const ChromLookup &cl,
 
   // GS: not the same as "should_report" because we need to account
   // for the allow_ambig flag
-  if (!s.valid() || (!allow_ambig && res.ambig()))
+  if (!s.valid(read.size()) || (!allow_ambig && res.ambig()))
     return false;
 
   uint32_t ref_s = 0, ref_e = 0, chrom_idx = 0;
@@ -246,6 +248,11 @@ format_se(const bool allow_ambig, se_result res, const ChromLookup &cl,
                255, cigar, "*", 0, 0, read, "*");
     if (s.rc())
       set_flag(sr, samflags::read_rc);
+
+    // GS checking allow_ambig to avoid the costly s.ambig()
+    // when user has not requested it
+    if (allow_ambig && res.ambig())
+      set_flag(sr, samflags::secondary_aln);
 
     sr.add_tag("NM:i:" + to_string(s.diffs));
     sr.add_tag(s.elem_is_a_rich() ? "CV:A:A" : "CV:A:T");
@@ -272,8 +279,10 @@ struct pe_element {
     return r1.valid_hit() && r2.valid_hit();
   }
 
-  bool valid() const {
-    return r1.diffs + r2.diffs <= 2*se_element::max_diffs;
+  // read_len = r1.size() + r2.size()
+  bool valid(const size_t read_len) const {
+    return r1.diffs + r2.diffs <=
+           static_cast<score_t>(se_element::read_len_frac*read_len);
   }
 
   bool is_equal_to(const pe_element &rhs) const {
@@ -323,8 +332,8 @@ struct pe_result { // assert(sizeof(pe_result) == 16);
     return best.diffs() == second_best.diffs();
   }
 
-  bool should_report() const {
-    return (best.valid() && !ambig());
+  bool should_report(const string &read1, const string &read2) const {
+    return (best.valid(read1.size() + read2.size()) && !ambig());
   }
 };
 
@@ -355,9 +364,8 @@ format_pe(const bool allow_ambig,
   uint32_t r_s2 = 0, r_e2 = 0, chr2 = 0;
   const pe_element p = res.best;
 
-  // score too low or ambiguous not required (we do not report a
-  // random mate for paired-end reads
-  if (!p.valid() || res.ambig())
+  // does not depend on allow_ambig
+  if (!res.should_report(read1, read2))
     return false;
 
   // PE chromosomes differ or couldn't be found, treat read as unmapped
@@ -411,6 +419,7 @@ format_pe(const bool allow_ambig,
 struct pe_candidates {
   pe_candidates() : v(vector<se_element>(max_size)), sz(1) {}
   bool full() const {return sz == max_size;}
+  bool valid(const size_t readlen) const { return v[0].valid(readlen); }
   void reset() {v.front().reset(); sz = 1;}
   score_t get_cutoff() const {return v.front().diffs;}
   void update(const uint32_t p, const score_t d, const flags_t s) {
@@ -455,8 +464,8 @@ struct se_map_stats {
   void update(const string &read, const se_result &res,
               const bool se_reported) {
     ++tot_rds;
-    if (res.best.valid()) {
-      uniq_rds += se_reported;
+    if (res.best.valid(read.size())) {
+      uniq_rds += se_reported && !res.ambig();
       ambig_rds += res.ambig();
     }
     else ++unmapped_rds;
@@ -497,9 +506,11 @@ struct pe_map_stats {
   se_map_stats end2_stats;
 
   void update_pair(const pe_result &res,
+                   const string &read1,
+                   const string &read2,
                    const bool pe_reported) {
     ++tot_pairs;
-    if (res.best.valid()) {
+    if (res.best.valid(read1.size() + read2.size())) {
       ambig_pairs += res.ambig();
       uniq_pairs += pe_reported;
     }
@@ -533,7 +544,7 @@ update_pe_stats(const pe_result &best,
                 const bool se1_reported,
                 const bool se2_reported,
                 pe_map_stats &pe_stats) {
-  pe_stats.update_pair(best, pe_reported);
+  pe_stats.update_pair(best, read1, read2, pe_reported);
   if (!pe_reported) {
     pe_stats.end1_stats.update(read1, se1, se1_reported);
     pe_stats.end2_stats.update(read2, se2, se2_reported);
@@ -1574,6 +1585,8 @@ int main(int argc, const char **argv) {
                       false, pe_element::min_dist);
     opt_parse.add_opt("max-frag", 'L', "max fragment size (pe mode)",
                       false, pe_element::max_dist);
+    opt_parse.add_opt("max-frag", 'M', "max fractional edit distance",
+                      false, se_element::read_len_frac);
     opt_parse.add_opt("ambig", 'a', "report a posn for ambiguous mappers",
                       false, allow_ambig);
     opt_parse.add_opt("pbat", 'P', "input data follow the PBAT protocol",
