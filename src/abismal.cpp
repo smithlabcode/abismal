@@ -1181,8 +1181,8 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
       uint32_t lim_s2 = 0;
 
       const uint32_t lim = j2->pos + read2.length();
-      while (j1 != j1_end && j1->pos + pe_element::max_dist < lim)
-        ++j1;
+      for (j1 = begin(res1.v); j1 != j1_end &&
+           j1->pos + pe_element::max_dist < lim; ++j1);
 
       while (j1 != j1_end && j1->pos + pe_element::min_dist <= lim) {
         s1 = *j1;
@@ -1207,7 +1207,7 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
         }
         ++j1;
       }
-    }
+   }
   }
 }
 
