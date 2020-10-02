@@ -83,8 +83,7 @@ struct ReadLoader {
   }
   ~ReadLoader() {delete in;}
   bool good() const {return bool(*in);}
-  size_t get_current_byte() const {return gztell(in->fileobj);}
-
+  size_t get_current_byte() const {return gzoffset(in->fileobj);}
   void load_reads(vector<string> &names, vector<string> &reads) {
     static const size_t reserve_size = 250;
 
