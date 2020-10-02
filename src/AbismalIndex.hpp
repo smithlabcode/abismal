@@ -38,9 +38,12 @@ namespace seed {
   extern uint32_t n_seed_positions;
 
   // number of positions in the hashed portion of the seed
-  const uint32_t key_weight = 26;
+  static const uint32_t key_weight = 26;
 
-  const size_t hash_mask = (1 << seed::key_weight) - 1;
+  // index interval
+  static const uint32_t index_interval = 2;
+
+  static const size_t hash_mask = (1 << seed::key_weight) - 1;
 
   // number of positions used to sort positions based on
   // sequence. This is used in building the index. ADS: this is
@@ -91,7 +94,7 @@ load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
   // concatenated genome is so that later we can avoid having to check
   // the (unlikely) case that a read maps partly off either end of the
   // genome.
-  static const size_t padding_size = 1024;
+  static const size_t padding_size = 1;
 
   std::ifstream in(genome_file);
   if (!in)
@@ -154,6 +157,9 @@ struct AbismalIndex {
   /* count how many positions must be stored for each hash value */
   void get_bucket_sizes();
 
+  /* select genome positions to store */
+  void compress_index();
+
   /* put genome positions in the appropriate buckets */
   void hash_genome();
 
@@ -184,7 +190,7 @@ get_1bit_hash(T r, uint32_t &k) {
   const auto lim = r + seed::key_weight;
   while (r != lim) {
     k <<= 1;
-    k += get_bit(*r);
+    k |= get_bit(*r);
     ++r;
   }
 }
