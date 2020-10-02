@@ -20,6 +20,7 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <array>
 #include <stdexcept>
 
 #include "smithlab_os.hpp"
@@ -27,16 +28,19 @@
 #include "OptionParser.hpp"
 #include "zlib_wrapper.hpp"
 #include "GenomicRegion.hpp"
-#include "dna_four_bit.hpp"
 #include "sam_record.hpp"
 #include "bisulfite_utils.hpp"
 
+#include "dna_four_bit_bisulfite.hpp"
 #include "AbismalIndex.hpp"
 #include "AbismalAlign.hpp"
 
 #include <omp.h>
 
+#define PREFETCH_LOOP 10U
+
 using std::vector;
+using std::array;
 using std::runtime_error;
 using std::string;
 using std::cerr;
@@ -97,12 +101,11 @@ struct ReadLoader {
     while (line_count < num_lines_to_read && bool(getline(*in, line))) {
       if (line_count % 4 == 0) {
         names.push_back(line.substr(1, line.find_first_of(" \t") - 1));
-      }
+    }
       else if (line_count % 4 == 1) {
         if (count_if(begin(line), end(line),
                      [](const char c) {return c != 'N';}) < min_read_length)
           line.clear();
-        std::replace(begin(line), end(line), 'N', 'Z');
         reads.push_back(line);
       }
       ++line_count;
@@ -600,22 +603,33 @@ check_hits(vector<uint32_t>::const_iterator start_idx,
            const Genome::const_iterator genome_st,
            const uint32_t offset,
            result_type &res) {
-  for (auto i(start_idx); i != end_idx && !res.sure_ambig(offset != 0); ++i) {
-    const uint32_t pos = (*i) - offset;
+  for (; start_idx != end_idx /*&& !res.sure_ambig(offset != 0)*/; ++start_idx) {
+
+    /* GS: This prefetch adds the genome portion that will be compared
+     * 10 iterations ahead to the cache. *(start_idx + PREFETCH_LOOP)
+     * is this position. We then correct the read offset and divide by
+     * 2 for the same reason as described below, where we adjust to
+     * the fact that 2 bases are stored in each byte */
+    __builtin_prefetch(
+        &(*(genome_st + ((*(start_idx + PREFETCH_LOOP) - offset) >> 1))),
+      0, 0);
+
+    const uint32_t pos = (*start_idx) - offset;
+
     // ADS: (reminder) the adjustment below is because 2 bases are
     // stored in each byte
-    const uint32_t pos_adjusted = (pos >> 1);
     const score_t diffs =
       ((pos & 1) ?
        full_compare<pos_odd>(res.get_cutoff(),
                              odd_read_st, odd_read_mid, odd_read_end,
-                             genome_st + pos_adjusted) :
+                             genome_st + (pos >> 1)) :
        full_compare<pos_even>(res.get_cutoff(),
                               even_read_st, even_read_mid, even_read_end,
-                              genome_st + pos_adjusted));
+                              genome_st + (pos >> 1)));
     res.update(pos, diffs, strand_code);
   }
 }
+
 
 // ADS: probably should be a lambda function for brevity
 struct compare_bases {
@@ -675,99 +689,106 @@ process_seeds(const uint32_t max_candidates,
   const auto odd_read_mid(begin(read_odd) + ((readlen + 1)/2));
   const auto odd_read_end(end(read_odd));
 
-  const auto index_st(begin(abismal_index.index));
-  const auto counter_st(begin(abismal_index.counter));
-
   // ADS: there is something wrong with this code if so many
   // conditions are needed
-  const size_t shift_lim =
-    readlen > (seed::n_seed_positions + 1) ?
-    (readlen - seed::n_seed_positions - 1) : 0;
+  const uint32_t shift_lim =
+    readlen > (seed::n_seed_positions + seed::index_interval - 1) ?
+    (readlen - seed::n_seed_positions - seed::index_interval + 1) : 0;
 
-  const size_t shift = (seed::n_shifts == 1) ? shift_lim :
-    std::max(1ul, shift_lim/(seed::n_shifts - 1));
+  const uint32_t shift = (seed::n_shifts == 1u) ? (shift_lim + 1):
+    std::max(1u, shift_lim/(seed::n_shifts - 1));
 
   bool found_good_seed = false;
 
   // uniformly spaced seeds
   for (uint32_t i = 0; i <= shift_lim && !res.sure_ambig(i); i += shift) {
-    const uint32_t offset = i;
-    uint32_t k = 0;
-    get_1bit_hash(read_start + offset, k);
-    auto s_idx(index_st + *(counter_st + k));
-    auto e_idx(index_st + *(counter_st + k + 1));
+    std::array<uint32_t, seed::index_interval> k = {0};
+    get_1bit_hash_compressed(read_start + i, k);
+    for (uint32_t j = 0; j < seed::index_interval; ++j) {
+      const uint32_t offset = i + j;
+      auto s_idx(index_st + *(counter_st + k[j]));
+      auto e_idx(index_st + *(counter_st + k[j] + 1));
 
-    if (s_idx < e_idx) {
-      find_candidates(read_start + offset, gi, readlen - offset, s_idx, e_idx);
-      if (e_idx - s_idx < max_candidates) {
-        found_good_seed = true;
-        check_hits<strand_code>(s_idx, e_idx,
-                                even_read_start, even_read_mid, even_read_end,
-                                odd_read_start, odd_read_mid, odd_read_end,
-                                genome_st, offset, res);
+      if (s_idx < e_idx) {
+        find_candidates(read_start + offset, genome_st, readlen - offset, s_idx, e_idx);
+        if (e_idx - s_idx < max_candidates) {
+          found_good_seed = true;
+          check_hits<strand_code>(s_idx, e_idx,
+                                  even_read_start, even_read_mid, even_read_end,
+                                  odd_read_start, odd_read_mid, odd_read_end,
+                                  genome_st.itr, offset, res);
+        }
       }
     }
   }
 
   // if no good seeds found, use entire read as seed
   if (!found_good_seed) {
-    uint32_t k = 0;
-    get_1bit_hash(read_start, k);
-    auto s_idx(index_st + *(counter_st + k));
-    auto e_idx(index_st + *(counter_st + k + 1));
-    if (s_idx < e_idx) {
-      find_candidates(read_start, gi, readlen, s_idx, e_idx);
+    std::array<uint32_t, seed::index_interval> k = {0};
+    get_1bit_hash_compressed(read_start, k);
+    for (uint32_t j = 0; j < seed::index_interval; ++j) {
+      auto s_idx(index_st + *(counter_st + k[j]));
+      auto e_idx(index_st + *(counter_st + k[j] + 1));
+      if (s_idx < e_idx) {
+        find_candidates(read_start, genome_st,
+                        readlen - seed::index_interval + 1, s_idx, e_idx);
 
-      // GS: seed::n_shifts * max candidates is the max acceptable
-      // number of searches for a read under no good seed condition
-      if (e_idx - s_idx < seed::n_shifts * max_candidates)
-        check_hits<strand_code>(s_idx, e_idx,
-                                even_read_start, even_read_mid, even_read_end,
-                                odd_read_start, odd_read_mid, odd_read_end,
-                                genome_st, 0, res);
+        // GS: seed::n_shifts * max candidates is the max acceptable
+        // number of searches for a read under no good seed condition
+        if (e_idx - s_idx < 80000)
+          check_hits<strand_code>(s_idx, e_idx,
+                                  even_read_start, even_read_mid, even_read_end,
+                                  odd_read_start, odd_read_mid, odd_read_end,
+                                  genome_st.itr, j, res);
+      }
     }
   }
 }
 
-// GS: We can speed this up by using a look-up and avoid the ==
-// comparisons
 template <const bool convert_a_to_g>
 static void
 prep_read(const string &r, Read &pread) {
   pread.resize(r.size());
-  for (size_t i = 0; i < r.size(); ++i)
-    pread[i] = encode_dna_four_bit(convert_a_to_g ?
-                                   (r[i] == 'A' ? 'R' : r[i]) :
-                                   (r[i] == 'T' ? 'Y' : r[i]));
+  for (size_t i = 0; i != r.size(); ++i)
+    pread[i] = (convert_a_to_g ?
+                (encode_base_a_rich[static_cast<unsigned char>(r[i])]) :
+                (encode_base_t_rich[static_cast<unsigned char>(r[i])]));
 }
 
-// Creates reads meant for comparison on a compressed genome.
-// This function is used to accelerate comparison between reads and
-// genome positions using a reference genome encoded in four bits per
-// base, that is, two bases are present in each byte, with even
-// positions in lower bits and odd positions in higher bits.
-//
-// The function encodes the read in two ways. Every pread_* object
-// is a vector of characters, where each element of the vector has
-// only one active bit representing A, T, G or C.
-//
-// In pread_seed (input), we have encoded bases using the lower 4 bits
-// In pread_even, which is used to compare the read to even genome
-// positions, we put the bases in even positions as the first
-// elements, and the odd positions shifted by 4. This allows the &
-// operator to be used on four-bit comparisons.
-//
-// In pread_odd, used to compare to odd positions in the genome, we
-// first put the odd bases in the start, shifted by 4, then the even
-// bases.
-//
-// In both comparison cases, the number of mismatches can be obtained
-// by iterating from start to finish through the pread_even (resp
-// pread_odd) objects. The genome, however, has to be "rewinded" once
-// we reach half of the read. This logic is implemented in the
-// "full_compare" function above.
+/* Creates reads meant for comparison on a compressed genome.
+ * This function is used to accelerate comparison between reads and
+ * genome positions using a reference genome encoded in four bits
+ * per
+ * base, that is, two bases are present in each byte, with even
+ * positions in lower bits and odd positions in higher bits.
+ *
+ * The function encodes the read in two ways. Every pread_* object
+ * is a vector of characters, where each element of the vector has
+ * only one active bit representing A, T, G or C.
+ *
+ * In pread_seed (input), we have encoded bases using the lower 4
+ * bits
+ * In pread_even, which is used to compare the read to even genome
+ * positions, we put the bases in even positions as the first
+ * elements, and the odd positions shifted by 4. This allows the &
+ * operator to be used on four-bit comparisons.
+ *
+ * In pread_odd, used to compare to odd positions in the genome, we
+ * first put the odd bases in the start, shifted by 4, then the
+ * even
+ * bases.
+ *
+ * In both comparison cases, the number of mismatches can be
+ * obtained
+ * by iterating from start to finish through the pread_even (resp
+ * pread_odd) objects. The genome, however, has to be "rewinded"
+ * once
+ * we reach half of the read. This logic is implemented in the
+ * "full_compare" function above. */
+
 static void
-prep_for_seeds(const Read &pread_seed, Read &pread_even, Read &pread_odd) {
+prep_for_seeds(const Read &pread_seed, Read &pread_even,
+               Read &pread_odd) {
   const size_t sz = pread_seed.size();
   pread_even.resize(sz);
   pread_odd.resize(sz);
@@ -779,6 +800,7 @@ prep_for_seeds(const Read &pread_seed, Read &pread_even, Read &pread_odd) {
   for (i = 0; i < sz; i += 2) pread_odd[j++] = (pread_seed[i] << 4);
   for (i = 1; i < sz; i += 2) pread_odd[j++] = pread_seed[i];
 }
+
 
 // this lookup improves speed when running alignment because we do not
 // have to check if bases are equal or different
