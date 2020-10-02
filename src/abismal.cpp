@@ -841,15 +841,39 @@ mismatch_score(const char q_base, const uint8_t t_base) {
 using AbismalAlignSimple = AbismalAlign<mismatch_score,
                                         simple_local_alignment::indel>;
 
-// GS: does not consider soft-clipping into edit distance
-// but requires a minimum alignment length
 static score_t
-edit_distance(const score_t aln_score, const size_t len) {
+count_deletions(const string &cigar) {
+  score_t ans = 0, cur_op_count;
+  for (auto it(begin(cigar)); it != end(cigar);) {
+    cur_op_count = extract_op_count(it, end(cigar));
+    ans += (cur_op_count) * (*(it++) == 'D');
+  }
+  return ans;
+}
+
+// GS: does not consider soft-clipping into edit distance
+// but requires a minimum alignment length. The way to convert
+// from alignment to edit distance is as follows: Let
+//  - M be the number of matches
+//  - m be the number of mismatches
+//  - I be the number of insertions
+//  - D be the number of deletions
+//  - S be the score
+//  - L be the alignment length
+//  - E be the edit distance.
+//  Then, for a 1 -1 -1 scoring system we have:
+//  { S = M - m - I - D
+//  { L = M + m + I
+//  { E = m + I + D
+//  Which implies: E = (L - S + D) / 2
+//  So we have to count deletions in cigar
+static score_t
+edit_distance(const score_t aln_score, const size_t len, const string cigar) {
   if (len < se_element::min_aligned_length)
     return se_element::invalid_hit_diffs;
 
   // GS: this conversion only works for 1 -1 -1
-  return (static_cast<score_t>(len) - aln_score) / 2;
+  return (static_cast<score_t>(len) - aln_score + count_deletions(cigar)) / 2;
 }
 
 // This function alings the read and converts "diff" from Hamming
@@ -858,8 +882,15 @@ static void
 align_read(se_element &res, string &cigar, const string &read,
            Read &pread, AbismalAlignSimple &aln) {
   // ends early if mismatches are good enough
-  if (res.valid()) cigar = std::to_string(read.length()) + "M";
-  else {
+  if (res.valid(read.size()))
+    cigar = std::to_string(read.length()) + "M";
+
+  // This condition ensures the local alignment will not degenerate
+  // to an empty alignment because there is at least one match. If
+  // this is not the case the read is not valid, and we don't need
+  // to make a cigar for it because it will not be output as long
+  // as max_hits < min_read_length
+  else if (res.diffs < static_cast<score_t>(read.size())) {
     uint32_t len = 0; // the region of the read the alignment spans
     if (res.rc()) {
       const string read_rc(revcomp(read));
@@ -872,7 +903,7 @@ align_read(se_element &res, string &cigar, const string &read,
       else prep_read<false>(read, pread);
     }
     const score_t aln_score = aln.align(pread, res.pos, len, cigar);
-    res.diffs = edit_distance(aln_score, len);
+    res.diffs = edit_distance(aln_score, len, cigar);
   }
 }
 
