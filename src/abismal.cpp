@@ -651,6 +651,35 @@ struct compare_bases {
   const genome_iterator g;
 };
 
+// GS: this is an adaptation of the original std::lower_bound
+// implementation that predicts the future cache load of binary
+// search
+template<class ForwardIt, class T, class Compare>
+ForwardIt my_lower_bound(ForwardIt first, const ForwardIt last,
+                         const T& value, Compare comp) {
+  ForwardIt it;
+  typename std::iterator_traits<ForwardIt>::difference_type count, step;
+  count = std::distance(first, last);
+
+  while (count > 0) {
+    it = first;
+    step = (count >> 1);
+
+    // GS prefetches both future iterations of the binary search with
+    // moderate locality
+    __builtin_prefetch(&(*(first + ((count + step) >> 1))), 0, 1);
+    __builtin_prefetch(&(*(first + ((step - 1) >> 1))), 0, 1);
+    std::advance(it, step);
+    if (comp(*it, value)) {
+        first = ++it;
+        count -= step + 1;
+    }
+    else
+      count = step;
+  }
+  return first;
+}
+
 void
 find_candidates(const Read::const_iterator read_start,
                 const genome_iterator gi,
@@ -660,7 +689,7 @@ find_candidates(const Read::const_iterator read_start,
   size_t p = seed::key_weight;
   const size_t lim = std::min(read_lim, seed::n_sorting_positions);
   while (p != lim) {
-    auto first_1 = lower_bound(low, high, 1, compare_bases(gi + p));
+    auto first_1 = my_lower_bound(low, high, 1, compare_bases(gi + p));
     if (get_bit(*(read_start + p)) == 0) {
       if (first_1 == high) return; // need 0s; whole range is 0s
       high = first_1;
