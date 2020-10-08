@@ -58,7 +58,6 @@ using std::to_string;
 typedef uint16_t flags_t; // every bit is a flag
 typedef int16_t score_t; // alignment score
 typedef vector<uint8_t> Read; //4-bit encoding of reads
-typedef genome_four_bit_itr genome_iterator; // iterates over 4 bits per byte
 
 enum genome_pos_parity { pos_even = false, pos_odd = true };
 enum conversion_type { t_rich = false, a_rich = true };
@@ -581,22 +580,25 @@ the_comp(const char a, const char b) {
 template<const genome_pos_parity parity>
 score_t
 full_compare(const score_t cutoff,
+             const Read::const_iterator read_end_low,
+             const Read::const_iterator read_end_high,
              Read::const_iterator read_itr,
-             const Read::const_iterator &read_end_low,
-             const Read::const_iterator &read_end_high,
              Genome::const_iterator genome_itr) {
   score_t d = 0;
-  auto g_i = genome_itr;
+  const auto gi = genome_itr;
   while (d <= cutoff && read_itr != read_end_low) {
-    d += the_comp(*read_itr, *g_i);
-    ++read_itr, ++g_i;
+    d += the_comp(*read_itr, *genome_itr);
+    ++read_itr, ++genome_itr;
   }
 
-  g_i = genome_itr;
-  if (parity == pos_odd) ++g_i; // odd case: first pos does only 1 comp
+  // now compare odd bases
+  genome_itr = gi;
+
+  // odd case: first pos does only 1 comp
+  if (parity == pos_odd) ++genome_itr; 
   while (d <= cutoff && read_itr != read_end_high) {
-    d += the_comp(*read_itr, *g_i);
-    ++read_itr, ++g_i;
+    d += the_comp(*read_itr, *genome_itr);
+    ++read_itr, ++genome_itr;
   }
   return d;
 }
@@ -632,11 +634,11 @@ check_hits(vector<uint32_t>::const_iterator start_idx,
     const score_t diffs =
       ((pos & 1) ?
        full_compare<pos_odd>(res.get_cutoff(),
-                             odd_read_st, odd_read_mid, odd_read_end,
-                             genome_st + (pos >> 1)) :
+                             odd_read_mid, odd_read_end,
+                             odd_read_st, genome_st + (pos >> 1)) :
        full_compare<pos_even>(res.get_cutoff(),
-                              even_read_st, even_read_mid, even_read_end,
-                              genome_st + (pos >> 1)));
+                              even_read_mid, even_read_end,
+                              even_read_st, genome_st + (pos >> 1)));
     res.update(pos, diffs, strand_code);
   }
 }
