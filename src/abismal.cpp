@@ -795,7 +795,7 @@ process_seeds(const uint32_t max_candidates,
 
         // GS: seed::n_shifts * max candidates is the max acceptable
         // number of searches for a read under no good seed condition
-        if (e_idx - s_idx < 80000)
+        if (e_idx - s_idx < seed::n_shifts * max_candidates)
           check_hits<strand_code>(s_idx, e_idx,
                                   even_read_start, even_read_mid, even_read_end,
                                   odd_read_start, odd_read_mid, odd_read_end,
