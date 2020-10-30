@@ -34,24 +34,19 @@
 typedef int16_t score_t;
 typedef genome_four_bit_itr genome_iterator;
 
-using std::cerr;
-using std::endl;
-using std::max;
-
 template <score_t (*scr_fun)(const char, const uint8_t),
           score_t indel_pen = -1>
 struct AbismalAlign {
 
   AbismalAlign(const genome_iterator &target_start,
-               const uint32_t target_size, const size_t max_read_length);
-  score_t align(const std::vector<uint8_t> &query, uint32_t &t_pos, uint32_t &len,
-              std::string &cigar);
+               const size_t max_read_length);
+  score_t align(const std::vector<uint8_t> &query, uint32_t &t_pos,
+                uint32_t &len, std::string &cigar);
 
   std::vector<score_t> table;
   std::vector<uint8_t> traceback;
   std::vector<uint8_t> cigar_scratch;
   const genome_iterator target;
-  const size_t t_sz;
   const size_t q_sz_max;
   const size_t bw;
 
@@ -62,9 +57,8 @@ template <score_t (*scr_fun)(const char, const uint8_t),
           score_t indel_pen>
 AbismalAlign<scr_fun, indel_pen>::AbismalAlign(
     const genome_iterator &target_start,
-    const uint32_t target_size,
     const size_t max_read_length) :
-            target(target_start), t_sz(target_size),
+            target(target_start),
             q_sz_max(max_read_length), bw(2*max_off_diag + 1) {
   // size of alignment matrix and traceback matrix is maximum query
   // length times the width of the band around the diagonal
@@ -88,7 +82,6 @@ static inline bool
 is_insertion(const uint8_t c) {
   return c == left_symbol; // does not consume reference
 }
-
 
 static inline void
 get_traceback(const size_t n_col,
@@ -117,7 +110,7 @@ get_traceback(const size_t n_col,
 
 static score_t
 get_best_score(const std::vector<score_t> &table, const size_t n_col,
-               const size_t t_lim, const size_t t_shift,
+               const size_t t_shift,
                size_t &best_i, size_t &best_j) {
   auto best_cell_itr = std::max_element(begin(table), end(table));
   const size_t best_cell = std::distance(std::begin(table), best_cell_itr);
@@ -170,7 +163,6 @@ from_left(T left_itr, T target, const T target_end, U traceback) {
   }
 }
 
-
 template <score_t (*scr_fun)(const char, const uint8_t), score_t indel_pen>
 score_t
 AbismalAlign<scr_fun, indel_pen>::align(const std::vector<uint8_t> &qseq,
@@ -183,7 +175,6 @@ AbismalAlign<scr_fun, indel_pen>::align(const std::vector<uint8_t> &qseq,
   const size_t q_sz = qseq.size();
   const size_t t_beg = (t_pos > (bw - 1)/2 ? t_pos - (bw - 1)/2 : 0);
   const size_t t_shift = q_sz + bw;
-  const size_t t_lim = std::min(t_shift, t_sz - t_beg); // iterations in target
 
   // points to relevant reference sequence positions
   genome_iterator t_itr = target + t_beg;
@@ -193,7 +184,7 @@ AbismalAlign<scr_fun, indel_pen>::align(const std::vector<uint8_t> &qseq,
   // prev and cur point to rows in the alignment matrix
   auto prev(std::begin(table));
   auto cur(prev);
-  for (size_t i = 1; i < t_lim; ++i) {
+  for (size_t i = 1; i < t_shift; ++i) {
     const size_t left = (i < bw ? bw - i : 0);
     const size_t right = std::min(bw, t_shift - i);
 
@@ -210,7 +201,7 @@ AbismalAlign<scr_fun, indel_pen>::align(const std::vector<uint8_t> &qseq,
 
   // locate the end of the alignment as max score
   size_t the_row = 0, the_col = 0;
-  const score_t r = get_best_score(table, bw, t_lim, t_shift, the_row, the_col);
+  const score_t r = get_best_score(table, bw, t_shift, the_row, the_col);
 
   // soft clip "S" at the start of the (reverse) uncompressed cigar
   auto c_itr(std::begin(cigar_scratch));
@@ -242,7 +233,7 @@ namespace simple_local_alignment {
   static const score_t match = 1;
   static const score_t mismatch = -1;
   static const score_t indel = -1;
-  static const std::vector<score_t> score_lookup = {match, mismatch};
+  static const std::array<score_t, 2> score_lookup = {match, mismatch};
 };
 
 
