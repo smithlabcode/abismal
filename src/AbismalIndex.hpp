@@ -25,22 +25,22 @@
 #include <unordered_set>
 #include <algorithm>
 
+typedef std::vector<uint8_t> Genome;
 
 namespace seed {
   // the number of shifts is not related to the seed pattern, but is a
   // choice we can make for any seed pattern.
-  extern uint32_t n_shifts;
+  // extern uint32_t n_shifts;
 
   // number of positions in searching with the seed, and cannot be
   // longer than n_solid_positions below. ADS: this is allowed to
   // change for debug purposes, but not sure if should be adjustable
   // by the end user.
-  extern uint32_t n_seed_positions;
+  static const uint32_t n_seed_positions = 31;
 
   // number of positions in the hashed portion of the seed
   static const uint32_t key_weight = 26;
 
-  // index interval
   static const uint32_t index_interval = 2;
 
   static const size_t hash_mask = (1 << seed::key_weight) - 1;
@@ -49,12 +49,8 @@ namespace seed {
   // sequence. This is used in building the index. ADS: this is
   // allowed to change for debug purposes, but not sure if should be
   // adjustable by the end user.
-  extern uint32_t n_sorting_positions;
+  static const uint32_t n_sorting_positions = 128;
 };
-
-
-typedef std::vector<uint8_t> Genome;
-enum sort_type {four_letter, two_letter};
 
 struct ChromLookup {
   std::vector<std::string> names;
@@ -94,7 +90,7 @@ load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
   // concatenated genome is so that later we can avoid having to check
   // the (unlikely) case that a read maps partly off either end of the
   // genome.
-  static const size_t padding_size = 1;
+  static const size_t padding_size = 1024;
 
   std::ifstream in(genome_file);
   if (!in)
@@ -167,7 +163,7 @@ struct AbismalIndex {
    * binary search for the rest part of the seed */
   void sort_buckets();
 
-  // convert the genome to 4-bit encoding
+  /* convert the genome to 4-bit encoding */
   void encode_genome();
 
   void write(const std::string &index_file) const;
@@ -181,6 +177,10 @@ struct AbismalIndex {
 inline uint32_t
 get_bit(const uint8_t nt) {return (nt & 5) == 0;}
 
+inline void
+shift_hash_key(const uint8_t c, uint32_t &hash_key) {
+  hash_key = ((hash_key << 1) | get_bit(c)) & seed::hash_mask;
+}
 
 // get the hash value for a k-mer (specified as some iterator/pointer)
 // and the encoding for the function above
@@ -188,6 +188,7 @@ template <class T>
 inline void
 get_1bit_hash(T r, uint32_t &k) {
   const auto lim = r + seed::key_weight;
+  k = 0;
   while (r != lim) {
     k <<= 1;
     k |= get_bit(*r);

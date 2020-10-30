@@ -38,11 +38,6 @@ using std::sort;
 using std::cout;
 using std::min;
 
-uint32_t seed::n_shifts = 3;
-uint32_t seed::n_seed_positions = 32;
-uint32_t seed::n_sorting_positions = 128;
-
-
 bool AbismalIndex::VERBOSE = false;
 string AbismalIndex::internal_identifier = "AbismalIndex";
 
@@ -53,11 +48,6 @@ using genome_iterator = genome_four_bit_itr;
 template <typename nuc_type>
 bool
 invalid_base(const nuc_type &x) {return x == 0;/*Z*/}
-
-inline void
-shift_hash_key(const uint8_t c, size_t &hash_key) {
-  hash_key = ((hash_key << 1) | get_bit(c)) & seed::hash_mask;
-}
 
 void
 AbismalIndex::encode_genome() {
@@ -94,7 +84,7 @@ AbismalIndex::get_bucket_sizes() {
   // start building up the hash key
   genome_iterator gi(begin(genome));
   const auto gi_lim(gi + (seed::key_weight - seed::index_interval));
-  size_t hash_key = 0;
+  uint32_t hash_key = 0;
   while (gi != gi_lim)
     shift_hash_key(*gi++, hash_key);
 
@@ -145,7 +135,7 @@ AbismalIndex::hash_genome() {
   // start building up the hash key
   genome_iterator gi(begin(genome));
   const auto gi_lim(gi + (seed::key_weight - seed::index_interval));
-  size_t hash_key = 0;
+  uint32_t hash_key = 0;
   while (gi != gi_lim)
     shift_hash_key(*gi++, hash_key);
 
@@ -312,7 +302,6 @@ ChromLookup::write(FILE *out) const {
   return out;
 }
 
-
 void
 ChromLookup::write(const string &outfile) const {
   std::ofstream out(outfile, std::ios::binary);
@@ -320,7 +309,6 @@ ChromLookup::write(const string &outfile) const {
     throw runtime_error("cannot open output file " + outfile);
   write(out);
 }
-
 
 std::istream &
 ChromLookup::read(std::istream &in) {
@@ -348,7 +336,6 @@ ChromLookup::read(std::istream &in) {
 
   return in;
 }
-
 
 FILE *
 ChromLookup::read(FILE *in) {
@@ -385,7 +372,6 @@ ChromLookup::read(FILE *in) {
   return in;
 }
 
-
 void
 ChromLookup::read(const std::string &infile) {
   std::ifstream in(infile, std::ios::binary);
@@ -394,12 +380,10 @@ ChromLookup::read(const std::string &infile) {
   read(in);
 }
 
-
 std::ostream &
 operator<<(std::ostream &out, const ChromLookup &cl) {
   return out << cl.tostring();
 }
-
 
 string
 ChromLookup::tostring() const {
@@ -408,7 +392,6 @@ ChromLookup::tostring() const {
     iss << i << '\t' << names[i] << '\t' << starts[i + 1] << '\n';
   return iss.str();
 }
-
 
 void
 ChromLookup::get_chrom_idx_and_offset(const uint32_t pos,
@@ -452,3 +435,4 @@ ChromLookup::get_chrom_idx_and_offset(const uint32_t pos,
   offset = pos - starts[chrom_idx];
   return (pos + readlen <= starts[chrom_idx + 1]);
 }
+
