@@ -598,16 +598,6 @@ check_hits(vector<uint32_t>::const_iterator start_idx,
            const score_t shift_num,
            result_type &res) {
   for (; start_idx != end_idx && !res.sure_ambig(shift_num); ++start_idx) {
-
-    /* GS: This prefetch adds the genome portion that will be compared
-     * 10 iterations ahead to the cache. *(start_idx + PREFETCH_LOOP)
-     * is this position. We then correct the read offset and divide by
-     * 2 for the same reason as described below, where we adjust to
-     * the fact that 2 bases are stored in each byte */
-    __builtin_prefetch(
-        &(*(genome_st + ((*(start_idx + PREFETCH_LOOP) - offset) >> 1))),
-      0, 0);
-
     const uint32_t pos = (*start_idx) - offset;
     // ADS: (reminder) the adjustment below is because
     // 2 bases are stored in each byte
@@ -632,33 +622,6 @@ struct compare_bases {
   const genome_iterator g;
 };
 
-/* GS: this is an adaptation of the original std::lower_bound
- * implementation that predicts the future cache load of binary
- * search */
-template<class ForwardIt, class T, class Compare>
-ForwardIt cache_lower_bound(ForwardIt first, const ForwardIt last,
-                         const T& value, Compare comp) {
-  ForwardIt it;
-  typename std::iterator_traits<ForwardIt>::difference_type count, step;
-  count = std::distance(first, last);
-
-  while (count > 0) {
-    it = first;
-    step = (count >> 1);
-
-    // GS: this is the only difference to the standard prefetch
-    __builtin_prefetch(&(*(first + ((count + step) >> 1))), 0, 1);
-    __builtin_prefetch(&(*(first + ((step - 1) >> 1))), 0, 1);
-    std::advance(it, step);
-    if (comp(*it, value)) {
-      first = ++it;
-      count -= step + 1;
-    }
-    else count = step;
-  }
-  return first;
-}
-
 template<const uint32_t max_seed_size>
 void
 find_candidates(const Read::const_iterator read_start,
@@ -668,7 +631,7 @@ find_candidates(const Read::const_iterator read_start,
                 vector<uint32_t>::const_iterator &high) {
   const uint32_t lim = min(read_lim, max_seed_size);
   for (uint32_t p = seed::key_weight; p != lim; ++p) {
-    auto first_1 = cache_lower_bound(low, high, 1, compare_bases(gi + p));
+    auto first_1 = lower_bound(low, high, 1, compare_bases(gi + p));
     if (get_bit(*(read_start + p)) == 0) {
       if (first_1 == high) return; // need 0s; whole range is 0s
       high = first_1;
@@ -676,46 +639,6 @@ find_candidates(const Read::const_iterator read_start,
     else {
       if (first_1 == low) return; // need 1s; whole range is 1s
       low = first_1;
-    }
-  }
-}
-
-inline void
-select_offset(const uint32_t readlen,
-              const vector<uint32_t>::const_iterator counter_st,
-              const Read::const_iterator read_st, uint32_t &offset) {
-  static const uint32_t seed_step =
-    (seed::n_seed_positions + seed::index_interval - 1);
-
-  const uint32_t start_mod = (readlen + 1) % seed_step;
-  // GS: only one possible offset
-  if (start_mod == 1) return;
-
-  const uint32_t num_starts = (start_mod == 0) ? seed_step : start_mod;
-
-  uint32_t hit_count;
-  uint32_t min_counts = numeric_limits<uint32_t>::max();
-  uint32_t k = 0;
-  const uint32_t lim = readlen - seed_step;
-  for (uint32_t start = 0; start != num_starts; ++start) {
-    hit_count = 1;
-    for (uint32_t i = start; i <= lim && hit_count != 0;
-         i += seed::n_seed_positions) {
-      get_1bit_hash(read_st + i, k);
-      for (uint32_t j = 0; j != seed::index_interval && hit_count != 0; ++j) {
-        const uint32_t v = *(counter_st + k + 1) - *(counter_st + k);
-
-        // GS: we ignore steps in which some seeds have no candidates
-        if (v == 0) hit_count = 0;
-        hit_count += v;
-        shift_hash_key(*(read_st + seed::key_weight + i), k);
-        ++i;
-      }
-      --i;
-    }
-    if (hit_count > 0 && hit_count < min_counts) {
-      min_counts = hit_count;
-      offset = start;
     }
   }
 }
@@ -736,8 +659,6 @@ process_seeds(const uint32_t max_candidates,
    * of full matches is advantageous as we can stop early in cases with many
    * candidates, but I still need to figure out how to set the max candidates
    * values with a better rationale. */
-  static const uint32_t max_full_length_candidates = 40000;
-
   const uint32_t readlen = read_seed.size();
 
   // used to get positions in the genome
@@ -755,46 +676,14 @@ process_seeds(const uint32_t max_candidates,
   const auto odd_read_end(end(read_odd));
 
   score_t shift = 0;
-
   uint32_t k = 0;
-  get_1bit_hash(read_start, k);
-  // GS: first, welook for exact matches using the entire read as seed
-  for (size_t j = 0; j != seed::index_interval && 
-       !res.sure_ambig(0); ++j) {
-
-    auto s_idx(index_st + *(counter_st + k));
-    auto e_idx(index_st + *(counter_st + k + 1));
-    if (s_idx < e_idx) {
-      find_candidates<seed::n_sorting_positions>(
-        read_start + j, genome_st, readlen - seed::index_interval, s_idx, e_idx
-      );
-
-      if (e_idx - s_idx <= max_full_length_candidates) {
-        check_hits<strand_code>(s_idx, e_idx,
-                                even_read_start, even_read_mid, even_read_end,
-                                odd_read_start, odd_read_mid, odd_read_end,
-                                genome_st.itr, j, shift, res);
-      }
-    }
-    // GS: optimization, avoid recalculating key for adjacent shifts
-    shift_hash_key(*(read_start + seed::key_weight + j), k);
-  }
-
-  // if we found enough matches, we can stop because we are not
-  // finding any other one if we keep searching
-  if (res.sure_ambig(0)) return;
-
-  // this is the effective seed length considering we do two
-  // adjacent shifts
   static const uint32_t seed_step =
     (seed::n_seed_positions + seed::index_interval - 1);
 
   const uint32_t shift_lim = readlen - seed_step;
 
-  uint32_t offset = 0;
-  select_offset(readlen, counter_st, read_start, offset);
-  for (; offset <= shift_lim; offset += seed::n_seed_positions) {
-    bool searched_seed = true;
+  for (uint32_t offset = 0; offset <= shift_lim;
+       offset += seed::n_seed_positions) {
     get_1bit_hash(read_start + offset, k);
     for (uint32_t j = 0; j != seed::index_interval &&
          !res.sure_ambig(shift); ++j) {
@@ -811,27 +700,11 @@ process_seeds(const uint32_t max_candidates,
                                   odd_read_start, odd_read_mid, odd_read_end,
                                   genome_st.itr, offset, shift, res);
         }
-        else searched_seed = false;
         shift_hash_key(*(read_start + seed::key_weight + offset), k);
         ++offset;
       }
-      else searched_seed = false;
     }
     --offset;
-
-    /* GS: after finishing shift i = 0,...n and having searched all
-     * candidates, we can stop if we have a hit with i mismatches
-     * or two hits with i + 1 mismatches.
-     * This is because, from pidgeonhole principle, if the best
-     * candidate(s) have i mismatches, there must be a seed in 0...i
-     * that is an exact match, and therefore we would have found all
-     * of them, and if we already found two, we don't need to search
-     * seed i because it will only find seeds with at least i
-     * mismatches, so the read is surely ambiguous. However, we can
-     * only make such assumption if both adjacent seeds were searched */
-    if (searched_seed) {
-      if (res.sure_ambig(++shift)) return;
-    } else if (res.sure_ambig(shift)) return;
   }
 }
 
