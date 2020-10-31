@@ -33,8 +33,6 @@
 #include "AbismalIndex.hpp"
 #include "AbismalAlign.hpp"
 
-#define PREFETCH_LOOP 10U
-
 #include <omp.h>
 
 using std::vector;
@@ -622,14 +620,13 @@ struct compare_bases {
   const genome_iterator g;
 };
 
-template<const uint32_t max_seed_size>
-void
+static void
 find_candidates(const Read::const_iterator read_start,
                 const genome_iterator gi,
                 const uint32_t read_lim, // not necessarily read len
                 vector<uint32_t>::const_iterator &low,
                 vector<uint32_t>::const_iterator &high) {
-  const uint32_t lim = min(read_lim, max_seed_size);
+  const uint32_t lim = min(read_lim, seed::n_seed_positions);
   for (uint32_t p = seed::key_weight; p != lim; ++p) {
     auto first_1 = lower_bound(low, high, 1, compare_bases(gi + p));
     if (get_bit(*(read_start + p)) == 0) {
@@ -653,12 +650,6 @@ process_seeds(const uint32_t max_candidates,
               const Read &read_even,
               const Read &read_odd,
               result_type &res) {
-  /* GS: THIS WILL HAVE TO BE ADJUSTED
-   * We absolutely need a rationale for the cap on the number of max candidates
-   * we need to check. Empirically, the accuracy gain in checking a larger number
-   * of full matches is advantageous as we can stop early in cases with many
-   * candidates, but I still need to figure out how to set the max candidates
-   * values with a better rationale. */
   const uint32_t readlen = read_seed.size();
 
   // used to get positions in the genome
@@ -691,9 +682,7 @@ process_seeds(const uint32_t max_candidates,
       auto e_idx(index_st + *(counter_st + k + 1));
 
       if (s_idx < e_idx) {
-        find_candidates<seed::n_seed_positions>(
-            read_start + offset, genome_st, readlen, s_idx, e_idx
-        );
+        find_candidates(read_start + offset, genome_st, readlen, s_idx, e_idx);
         if (e_idx - s_idx <= max_candidates) {
           check_hits<strand_code>(s_idx, e_idx,
                                   even_read_start, even_read_mid, even_read_end,
@@ -761,7 +750,6 @@ prep_for_seeds(const Read &pread_seed, Read &pread_even,
   for (i = 0; i < sz; i += 2) pread_odd[j++] = (pread_seed[i] << 4);
   for (i = 1; i < sz; i += 2) pread_odd[j++] = pread_seed[i];
 }
-
 
 /* this lookup improves speed when running alignment because we do not
    have to check if bases are equal or different */
