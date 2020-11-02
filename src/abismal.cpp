@@ -654,7 +654,6 @@ process_seeds(const uint32_t max_candidates,
 
   // used to get positions in the genome
   const auto read_start(begin(read_seed));
-  const auto read_end(end(read_seed));
 
   // used to compare even positions in the genome
   const auto even_read_start(begin(read_even));
@@ -918,7 +917,7 @@ map_single_ended(const bool VERBOSE,
       AbismalAlignSimple aln(genome_st, max_batch_read_length);
 
 #pragma omp for
-      for (size_t i = 0; i != n_reads; ++i) {
+      for (size_t i = 0; i < n_reads; ++i) {
         res[i].reset(reads[i].size());
         if (!reads[i].empty()) {
           prep_read<conv>(reads[i], pread);
@@ -1007,7 +1006,7 @@ map_single_ended_rand(const bool VERBOSE,
       AbismalAlignSimple aln(genome_st, max_batch_read_length);
 
 #pragma omp for
-      for (size_t i = 0; i != n_reads; ++i) {
+      for (size_t i = 0; i < n_reads; ++i) {
         res[i].reset(reads[i].size());
         if (!reads[i].empty()) {
           prep_read<t_rich>(reads[i], pread);
@@ -1225,7 +1224,7 @@ map_paired_ended(const bool VERBOSE,
       AbismalAlignSimple aln(genome_st, max_batch_read_length);
 
 #pragma omp for
-      for (size_t i = 0 ; i != n_reads; ++i) {
+      for (size_t i = 0 ; i < n_reads; ++i) {
         res_se1[i].reset(reads1[i].size());
         res_se2[i].reset(reads2[i].size());
         bests[i].reset(reads1[i].size(), reads2[i].size());
@@ -1333,7 +1332,7 @@ map_paired_ended_rand(const bool VERBOSE,
       AbismalAlignSimple aln(genome_st, max_batch_read_length);
 
 #pragma omp for
-      for (size_t i = 0 ; i != n_reads; ++i) {
+      for (size_t i = 0 ; i < n_reads; ++i) {
         res_se1[i].reset(reads1[i].size());
         res_se2[i].reset(reads2[i].size());
         bests[i].reset(reads1[i].size(), reads2[i].size());

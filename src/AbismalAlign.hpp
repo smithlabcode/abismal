@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <cassert>
 #include <iostream>
+#include <array>
 
 #include "cigar_utils.hpp"
 #include "dna_four_bit.hpp"
