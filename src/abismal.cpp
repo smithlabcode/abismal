@@ -110,8 +110,7 @@ struct ReadLoader {
   static uint32_t min_read_length;
 };
 
-uint32_t ReadLoader::min_read_length =
-  seed::n_seed_positions + seed::index_interval - 1;
+uint32_t ReadLoader::min_read_length = seed::effective_seed_size;
 
 inline void
 update_max_read_length(size_t &max_length, const vector<string> &reads) {
@@ -666,18 +665,13 @@ process_seeds(const uint32_t max_candidates,
 
   uint32_t k = 0;
 
-  static const uint32_t effective_seed_size =
-    (seed::n_seed_positions + seed::index_interval - 1);
-
-  const uint32_t shift_lim = readlen - effective_seed_size;
-  const uint32_t shift = shift_lim / seed::n_shifts;
-
+  const uint32_t shift_lim = readlen - seed::effective_seed_size;
+  const uint32_t shift = max(shift_lim / (seed::n_shifts - 1), 1u);
   for (uint32_t offset = 0; offset <= shift_lim; offset += shift) {
     get_1bit_hash(read_start + offset, k);
-    for (uint32_t j = 0; j != seed::index_interval && !res.sure_ambig(shift); ++j) {
+    for (uint32_t j = 0; j != seed::index_interval; ++j, ++offset) {
       auto s_idx(index_st + *(counter_st + k));
       auto e_idx(index_st + *(counter_st + k + 1));
-
       if (s_idx < e_idx) {
         find_candidates(read_start + offset, genome_st, readlen, s_idx, e_idx);
         if (e_idx - s_idx <= max_candidates) {
@@ -687,7 +681,6 @@ process_seeds(const uint32_t max_candidates,
                                   genome_st.itr, offset, res);
         }
         shift_hash_key(*(read_start + seed::key_weight + offset), k);
-        ++offset;
       }
     }
     --offset;
