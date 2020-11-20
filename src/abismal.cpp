@@ -593,9 +593,8 @@ check_hits(vector<uint32_t>::const_iterator start_idx,
            const Read::const_iterator odd_read_end,
            const Genome::const_iterator genome_st,
            const uint32_t offset,
-           const score_t shift_num,
            result_type &res) {
-  for (; start_idx != end_idx && !res.sure_ambig(shift_num); ++start_idx) {
+  for (; start_idx != end_idx && !res.sure_ambig(0); ++start_idx) {
     const uint32_t pos = (*start_idx) - offset;
     // ADS: (reminder) the adjustment below is because
     // 2 bases are stored in each byte
@@ -665,18 +664,17 @@ process_seeds(const uint32_t max_candidates,
   const auto odd_read_mid(begin(read_odd) + ((readlen + 1)/2));
   const auto odd_read_end(end(read_odd));
 
-  score_t shift = 0;
   uint32_t k = 0;
-  static const uint32_t seed_step =
+
+  static const uint32_t effective_seed_size =
     (seed::n_seed_positions + seed::index_interval - 1);
 
-  const uint32_t shift_lim = readlen - seed_step;
+  const uint32_t shift_lim = readlen - effective_seed_size;
+  const uint32_t shift = shift_lim / seed::n_shifts;
 
-  for (uint32_t offset = 0; offset <= shift_lim;
-       offset += seed::n_seed_positions) {
+  for (uint32_t offset = 0; offset <= shift_lim; offset += shift) {
     get_1bit_hash(read_start + offset, k);
-    for (uint32_t j = 0; j != seed::index_interval &&
-         !res.sure_ambig(shift); ++j) {
+    for (uint32_t j = 0; j != seed::index_interval && !res.sure_ambig(shift); ++j) {
       auto s_idx(index_st + *(counter_st + k));
       auto e_idx(index_st + *(counter_st + k + 1));
 
@@ -686,7 +684,7 @@ process_seeds(const uint32_t max_candidates,
           check_hits<strand_code>(s_idx, e_idx,
                                   even_read_start, even_read_mid, even_read_end,
                                   odd_read_start, odd_read_mid, odd_read_end,
-                                  genome_st.itr, offset, shift, res);
+                                  genome_st.itr, offset, res);
         }
         shift_hash_key(*(read_start + seed::key_weight + offset), k);
         ++offset;
