@@ -883,13 +883,9 @@ map_single_ended(const bool VERBOSE,
   const genome_iterator genome_st(begin(abismal_index.genome));
 
   size_t max_batch_read_length;
-  vector<string> names, reads, cigar, sam_line;
-  vector<se_result> res;
-  reads.reserve(batch_size);
-  names.reserve(batch_size);
-  cigar.reserve(batch_size);
-  sam_line.reserve(batch_size);
-  res.reserve(batch_size);
+  vector<string> names(batch_size), reads(batch_size), cigar(batch_size),
+                 sam_line(batch_size);
+  vector<se_result> res(batch_size);
 
   ReadLoader rl(reads_file, batch_size);
 
@@ -972,13 +968,9 @@ map_single_ended_rand(const bool VERBOSE,
   const genome_iterator genome_st(begin(abismal_index.genome));
 
   size_t max_batch_read_length;
-  vector<string> names, reads, cigar, sam_line;
-  vector<se_result> res;
-  reads.reserve(batch_size);
-  names.reserve(batch_size);
-  cigar.reserve(batch_size);
-  sam_line.reserve(batch_size);
-  res.reserve(batch_size);
+  vector<string> names(batch_size), reads(batch_size), cigar(batch_size),
+                 sam_line(batch_size);
+  vector<se_result> res(batch_size);
 
   ReadLoader rl(reads_file, batch_size);
 
