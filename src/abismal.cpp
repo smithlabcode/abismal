@@ -112,7 +112,7 @@ struct ReadLoader {
   static uint32_t min_read_length;
 };
 
-uint32_t ReadLoader::min_read_length = seed::effective_seed_size;
+uint32_t ReadLoader::min_read_length = seed::effective_seed_size + 1;
 
 inline void
 update_max_read_length(size_t &max_length, const vector<string> &reads) {
@@ -560,20 +560,19 @@ the_comp(const char a, const char b) {
 
 enum genome_parity { even = false, odd = true };
 template<const genome_parity parity>
-inline score_t
+score_t
 full_compare(const score_t cutoff,
              const Read::const_iterator read_end_low,
              const Read::const_iterator read_end_high,
              Read::const_iterator read_itr,
              Genome::const_iterator genome_itr) {
-  score_t d = 0;
   const auto gi = genome_itr;
+  score_t d = 0;
   while (d != cutoff && read_itr != read_end_low) {
     d += the_comp(*read_itr, *genome_itr);
     ++read_itr, ++genome_itr;
   }
 
-  // now compare odd bases
   genome_itr = gi + (parity == odd);
   while (d != cutoff && read_itr != read_end_high) {
     d += the_comp(*read_itr, *genome_itr);
@@ -583,7 +582,7 @@ full_compare(const score_t cutoff,
 }
 
 template <const uint16_t strand_code, class result_type>
-void
+inline void
 check_hits(vector<uint32_t>::const_iterator start_idx,
            const vector<uint32_t>::const_iterator end_idx,
            const Read::const_iterator even_read_st,
@@ -595,16 +594,21 @@ check_hits(vector<uint32_t>::const_iterator start_idx,
            const Genome::const_iterator genome_st,
            result_type &res) {
   for (; start_idx != end_idx && !res.sure_ambig(0); ++start_idx) {
+    // GS: adds the next candidate to cache while current is being
+    // compared
+    __builtin_prefetch(
+        &(*(genome_st + (*(start_idx + 1) >> 1)))
+    );
     // ADS: (reminder) the adjustment below is because
     // 2 bases are stored in each byte
     const score_t diffs =
-       ((*start_idx & 1) ?
+    (*start_idx & 1) ?
        full_compare<odd>(res.get_cutoff(),
                          odd_read_mid, odd_read_end, odd_read_st,
-                         genome_st + (*start_idx >> 1)) :
+                         genome_st + (*start_idx >> 1)):
        full_compare<even>(res.get_cutoff(),
                          even_read_mid, even_read_end, even_read_st,
-                         genome_st + (*start_idx >> 1)));
+                         genome_st + (*start_idx >> 1));
     res.update(*start_idx, diffs, strand_code);
   }
 }
@@ -665,13 +669,9 @@ process_seeds(const uint32_t max_candidates,
   const auto odd_read_mid(begin(read_odd) + ((readlen + 1)/2));
   const auto odd_read_end(end(read_odd));
 
-  uint32_t k = 0;
-
-  const uint32_t shift_lim = readlen - seed::effective_seed_size;
-  const uint32_t shift = max(shift_lim / (seed::n_shifts - 1), 1u);
-
   // specific step
   hits.clear();
+  uint32_t k = 0;
   get_1bit_hash(read_start, k);
   for (uint32_t j = 0; j != seed::index_interval; ++j) {
     auto s_idx(index_st + *(counter_st + k));
@@ -681,9 +681,13 @@ process_seeds(const uint32_t max_candidates,
         read_start + j, genome_st, readlen, s_idx, e_idx
       );
       if (hits.size() + (e_idx - s_idx) <= max_candidates){
-        for(auto it(s_idx); it != e_idx; ++it)
-          hits.push_back(*it - j);
-      } else return;
+        for(; s_idx != e_idx; ++s_idx)
+          hits.push_back(*s_idx - j);
+      }
+
+      // GS: if we have too many candidates in the specific step, we will
+      // also have too many candidates in the sensitive step
+      else return;
     }
     shift_hash_key(*(read_start + seed::key_weight + j), k);
   }
@@ -696,6 +700,14 @@ process_seeds(const uint32_t max_candidates,
 
   // sensitive step
   hits.clear();
+
+  const uint32_t shift_lim = readlen - seed::effective_seed_size;
+
+  // GS: minimum number of shifts to cover the whole read
+  const uint32_t num_shifts = readlen/seed::effective_seed_size +
+                              (readlen % seed::effective_seed_size != 0);
+  const uint32_t shift = max(shift_lim / (num_shifts - 1), 1u);
+
   for (uint32_t offset = 0; offset <= shift_lim; offset += shift) {
     get_1bit_hash(read_start + offset, k);
     for (uint32_t j = 0; j != seed::index_interval; ++j, ++offset) {
@@ -706,9 +718,12 @@ process_seeds(const uint32_t max_candidates,
           read_start + offset, genome_st, readlen, s_idx, e_idx
         );
         if (hits.size() + (e_idx - s_idx) <= max_candidates){
-          for(auto it(s_idx); it != e_idx; ++it)
-            hits.push_back(*it - offset);
-        } else return;
+          for(; s_idx != e_idx; ++s_idx)
+            hits.push_back(*s_idx - offset);
+        }
+
+        // GS: seed candidates go over max candidates
+        else return;
         shift_hash_key(*(read_start + seed::key_weight + offset), k);
       }
     }
@@ -1559,7 +1574,7 @@ int main(int argc, const char **argv) {
 
     if (VERBOSE) {
       if (paired_end)
-        cerr << "[mapping paired end: " << reads_file << " " 
+        cerr << "[mapping paired end: " << reads_file << " "
              << reads_file2 << "]\n";
       else
         cerr << "[mapping single end: " << reads_file << "]\n";

@@ -37,7 +37,6 @@ namespace seed {
   // change for debug purposes, but not sure if should be adjustable
   // by the end user.
   static const uint32_t n_seed_positions = 31;
-  static const uint32_t n_shifts = 3;
 
   // number of positions in the hashed portion of the seed
   static const uint32_t key_weight = 26;
