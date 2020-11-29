@@ -558,24 +558,14 @@ the_comp(const char a, const char b) {
   return (a & b) == 0;
 }
 
-enum genome_parity { even = false, odd = true };
-template<const genome_parity parity>
 score_t
 full_compare(const score_t cutoff,
-             const Read::const_iterator read_end_low,
-             const Read::const_iterator read_end_high,
              Read::const_iterator read_itr,
+             const Read::const_iterator read_end,
              Genome::const_iterator genome_itr) {
-  const auto gi = genome_itr;
   score_t d = 0;
-  while (d != cutoff && read_itr != read_end_low) {
-    d += the_comp(*read_itr, *genome_itr);
-    ++read_itr, ++genome_itr;
-  }
-
-  genome_itr = gi + (parity == odd);
-  while (d != cutoff && read_itr != read_end_high) {
-    d += the_comp(*read_itr, *genome_itr);
+  while (d != cutoff && read_itr != read_end) {
+    d += mismatch_lookup[*read_itr & *genome_itr];
     ++read_itr, ++genome_itr;
   }
   return d;
@@ -586,16 +576,13 @@ inline void
 check_hits(vector<uint32_t>::const_iterator start_idx,
            const vector<uint32_t>::const_iterator end_idx,
            const Read::const_iterator even_read_st,
-           const Read::const_iterator even_read_mid,
            const Read::const_iterator even_read_end,
            const Read::const_iterator odd_read_st,
-           const Read::const_iterator odd_read_mid,
            const Read::const_iterator odd_read_end,
            const Genome::const_iterator genome_st,
            result_type &res) {
   for (; start_idx != end_idx && !res.sure_ambig(0); ++start_idx) {
-    // GS: adds the next candidate to cache while current is being
-    // compared
+    // GS: adds the next candidate to cache while current is compared
     __builtin_prefetch(
         &(*(genome_st + (*(start_idx + 1) >> 1)))
     );
@@ -603,12 +590,10 @@ check_hits(vector<uint32_t>::const_iterator start_idx,
     // 2 bases are stored in each byte
     const score_t diffs =
     (*start_idx & 1) ?
-       full_compare<odd>(res.get_cutoff(),
-                         odd_read_mid, odd_read_end, odd_read_st,
-                         genome_st + (*start_idx >> 1)):
-       full_compare<even>(res.get_cutoff(),
-                         even_read_mid, even_read_end, even_read_st,
-                         genome_st + (*start_idx >> 1));
+       full_compare(res.get_cutoff(), odd_read_st, odd_read_end,
+                    genome_st + (*start_idx >> 1)):
+       full_compare(res.get_cutoff(), even_read_st, even_read_end,
+                    genome_st + (*start_idx >> 1));
     res.update(*start_idx, diffs, strand_code);
   }
 }
@@ -661,12 +646,10 @@ process_seeds(const uint32_t max_candidates,
 
   // used to compare even positions in the genome
   const auto even_read_start(begin(read_even));
-  const auto even_read_mid(begin(read_even) + ((readlen + 1)/2));
   const auto even_read_end(end(read_even));
 
   // used to compare odd positions in the genome
   const auto odd_read_start(begin(read_odd));
-  const auto odd_read_mid(begin(read_odd) + ((readlen + 1)/2));
   const auto odd_read_end(end(read_odd));
 
   // specific step
@@ -692,8 +675,8 @@ process_seeds(const uint32_t max_candidates,
     shift_hash_key(*(read_start + seed::key_weight + j), k);
   }
   check_hits<strand_code>(begin(hits), end(hits),
-                          even_read_start, even_read_mid, even_read_end,
-                          odd_read_start, odd_read_mid, odd_read_end,
+                          even_read_start, even_read_end,
+                          odd_read_start, odd_read_end,
                           genome_st.itr, res);
 
   if (res.sure_ambig(0)) return;
@@ -731,8 +714,8 @@ process_seeds(const uint32_t max_candidates,
     --offset;
   }
   check_hits<strand_code>(begin(hits), end(hits),
-                          even_read_start, even_read_mid, even_read_end,
-                          odd_read_start, odd_read_mid, odd_read_end,
+                          even_read_start, even_read_end,
+                          odd_read_start, odd_read_end,
                           genome_st.itr, res);
 }
 
@@ -774,20 +757,34 @@ prep_read(const string &r, Read &pread) {
  * pread_odd) objects. The genome, however, has to be "rewinded"
  * once
  * we reach half of the read. This logic is implemented in the
- * "" function above. */
+ * full_compare function above. */
 static void
 prep_for_seeds(const Read &pread_seed, Read &pread_even,
                Read &pread_odd) {
+  static const uint8_t first_base_match_any = 0x0F;
+  static const uint8_t last_base_match_any = 0xF0;
   const size_t sz = pread_seed.size();
-  pread_even.resize(sz);
-  pread_odd.resize(sz);
-  size_t i, j = 0;
-  for (i = 0; i < sz; i += 2) pread_even[j++] = pread_seed[i];
-  for (i = 1; i < sz; i += 2) pread_even[j++] = (pread_seed[i] << 4);
+  pread_even.resize((sz + 1)/2);
+  pread_odd.resize(sz/2 + 1);
 
-  j = 0;
-  for (i = 0; i < sz; i += 2) pread_odd[j++] = (pread_seed[i] << 4);
-  for (i = 1; i < sz; i += 2) pread_odd[j++] = pread_seed[i];
+  // even encoding
+  const auto s_idx(begin(pread_seed));
+  const auto e_idx(end(pread_seed));
+  size_t i = 0;
+  for (auto it(s_idx); i != pread_even.size(); ++it, ++i) {
+    pread_even[i] = *it;
+    if (++it != e_idx) pread_even[i] |= ((*it) << 4);
+    else pread_even[i] |= last_base_match_any;
+  }
+
+  // odd encoding
+  pread_odd[0] = first_base_match_any |  ((*s_idx) << 4);
+  i = 1;
+  for (auto it(s_idx + 1); i != pread_odd.size(); ++it, ++i) {
+    pread_odd[i] = *it;
+    if (++it != e_idx) pread_odd[i] |= ((*it) << 4);
+    else pread_odd[i] |= last_base_match_any;
+  }
 }
 
 /* this lookup improves speed when running alignment because we do not
@@ -935,7 +932,6 @@ map_single_ended(const bool VERBOSE,
     progress.report(cerr, 0);
 
   double total_mapping_time = 0;
-  double total_run_time = 0;
   while (rl.good()) {
     if (VERBOSE && progress.time_to_report(rl.get_current_byte()))
       progress.report(cerr, rl.get_current_byte());
@@ -949,9 +945,9 @@ map_single_ended(const bool VERBOSE,
 #pragma omp parallel
     {
       Read pread, pread_even, pread_odd;
+      string cigar;
       AbismalAlignSimple aln(genome_st, max_batch_read_length);
       vector<uint32_t> hits;
-      string cigar;
       hits.reserve(max_candidates);
 #pragma omp for
       for (size_t i = 0; i < n_reads; ++i) {
@@ -981,18 +977,18 @@ map_single_ended(const bool VERBOSE,
           res[i].reset(reads[i].size());
       }
     }
-    total_mapping_time += (omp_get_wtime() - start_time);
 
-    for (size_t i = 0; i != n_reads; ++i) {
+    for (size_t i = 0; i < n_reads; ++i) {
       out.write(sam_line[i].c_str(), sam_line[i].size());
       se_stats.update(res[i], reads[i]);
     }
-    total_run_time += (omp_get_wtime() - start_time);
+
+    total_mapping_time += (omp_get_wtime() - start_time);
   }
 
   if (VERBOSE) {
     progress.report(cerr, get_filesize(reads_file));
-    cerr << "[total mapping time: " << total_run_time << "]" << endl;
+    cerr << "[total mapping time: " << total_mapping_time << "]" << endl;
   }
 }
 
@@ -1011,7 +1007,7 @@ map_single_ended_rand(const bool VERBOSE,
 
   size_t max_batch_read_length;
   vector<string> names(batch_size), reads(batch_size), sam_line(batch_size);
-  vector<se_result> res(batch_size);
+  vector<se_result> res;
 
   ReadLoader rl(reads_file, batch_size);
 
@@ -1079,15 +1075,13 @@ map_single_ended_rand(const bool VERBOSE,
         if (format_se(allow_ambig, res[i], abismal_index.cl, reads[i],
                        names[i], cigar, sam_line[i]) == map_unmapped)
           res[i].reset(reads[i].size());
-
       }
     }
-    total_mapping_time += (omp_get_wtime() - start_time);
-
-    for (size_t i = 0 ; i != n_reads; ++i) {
+    for (size_t i = 0; i < n_reads; ++i) {
       out.write(sam_line[i].c_str(), sam_line[i].size());
       se_stats.update(res[i], reads[i]);
     }
+    total_mapping_time += (omp_get_wtime() - start_time);
   }
   if (VERBOSE) {
     progress.report(cerr, get_filesize(reads_file));
@@ -1219,7 +1213,6 @@ map_paired_ended(const bool VERBOSE,
                  pe_map_stats &pe_stats,
                  ostream &out) {
   double total_mapping_time = 0;
-  double total_run_time = 0;
 
   ReadLoader rl1(reads_file1, batch_size);
   ReadLoader rl2(reads_file2, batch_size);
@@ -1299,23 +1292,22 @@ map_paired_ended(const bool VERBOSE,
                       cigar1, cigar2,
                       sam_line1[i], sam_line2[i]);
 
+
       }
     }
     total_mapping_time += (omp_get_wtime() - start_time);
-
-    for (size_t i = 0; i != n_reads; ++i) {
+    for (size_t i = 0; i < n_reads; ++i) {
       out.write(sam_line1[i].c_str(), sam_line1[i].size());
       out.write(sam_line2[i].c_str(), sam_line2[i].size());
       pe_stats.update(allow_ambig, bests[i], res_se1[i], res_se2[i],
                       reads1[i], reads2[i]);
     }
 
-    total_run_time += (omp_get_wtime() - start_time);
   }
 
   if (VERBOSE) {
     progress.report(cerr, get_filesize(reads_file1));
-    cerr << "[total mapping time: " << total_run_time << "]" << endl;
+    cerr << "[total mapping time: " << total_mapping_time << "]" << endl;
   }
 }
 
@@ -1330,7 +1322,6 @@ map_paired_ended_rand(const bool VERBOSE,
                       pe_map_stats &pe_stats,
                       ostream &out) {
   double total_mapping_time = 0;
-  double total_run_time = 0;
 
   ReadLoader rl1(reads_file1, batch_size);
   ReadLoader rl2(reads_file2, batch_size);
@@ -1428,24 +1419,20 @@ map_paired_ended_rand(const bool VERBOSE,
                       reads2[i], names2[i],
                       cigar1, cigar2,
                       sam_line1[i], sam_line2[i]);
+        out.write(sam_line1[i].c_str(), sam_line1[i].size());
+        out.write(sam_line2[i].c_str(), sam_line2[i].size());
+
+        pe_stats.update(allow_ambig, bests[i], res_se1[i], res_se2[i], reads1[i],
+                        reads2[i]);
 
       }
     }
     total_mapping_time += (omp_get_wtime() - start_time);
-
-    for (size_t i = 0; i != n_reads; ++i) {
-      out.write(sam_line1[i].c_str(), sam_line1[i].size());
-      out.write(sam_line2[i].c_str(), sam_line2[i].size());
-      pe_stats.update(allow_ambig, bests[i], res_se1[i], res_se2[i], reads1[i],
-                      reads2[i]);
-    }
-
-    total_run_time += (omp_get_wtime() - start_time);
   }
 
   if (VERBOSE) {
     progress.report(cerr, get_filesize(reads_file1));
-    cerr << "[total mapping time: " << total_run_time << "]" << endl;
+    cerr << "[total mapping time: " << total_mapping_time << "]" << endl;
   }
 }
 
