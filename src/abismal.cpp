@@ -1602,8 +1602,14 @@ int main(int argc, const char **argv) {
 
     write_sam_header(abismal_index.cl, argc, argv, out);
 
-    if (max_candidates == 0)
-      max_candidates = max(abismal_index.cl.get_genome_size() / 100000, 100u);
+    if (max_candidates == 0) {
+      static const double max_fraction_of_genome = 1e-5;
+      static const size_t min_max_candidates = 100u;
+      max_candidates = max(
+          static_cast<size_t>(
+            abismal_index.cl.get_genome_size() * max_fraction_of_genome
+          ), min_max_candidates);
+    }
 
     cerr << "[max candidates: " << max_candidates << "]\n";
     if (reads_file2.empty()) {
