@@ -915,7 +915,8 @@ map_single_ended(const bool VERBOSE,
                  omp_lock_t &read_lock,
                  omp_lock_t &write_lock,
                  se_map_stats &se_stats,
-                 ostream &out) {
+                 ostream &out,
+                 ProgressBar &progress) {
   vector<string> names;
   vector<string> reads;
 
@@ -935,8 +936,12 @@ map_single_ended(const bool VERBOSE,
   hits.reserve(max_candidates);
 
   while (rl.good()) {
+
     batch_output.clear();
     omp_set_lock(&read_lock);
+    if (VERBOSE && progress.time_to_report(rl.get_current_byte()))
+      progress.report(cerr, rl.get_current_byte());
+
     rl.load_reads(names, reads);
     omp_unset_lock(&read_lock);
 
@@ -993,7 +998,8 @@ map_single_ended_rand(const bool VERBOSE,
                       omp_lock_t &read_lock,
                       omp_lock_t &write_lock,
                       se_map_stats &se_stats,
-                      ostream &out) {
+                      ostream &out,
+                      ProgressBar &progress) {
   vector<string> names;
   vector<string> reads;
   string cigar;
@@ -1013,6 +1019,8 @@ map_single_ended_rand(const bool VERBOSE,
   while (rl.good()) {
     batch_output.clear();
     omp_set_lock(&read_lock);
+    if (VERBOSE && progress.time_to_report(rl.get_current_byte()))
+      progress.report(cerr, rl.get_current_byte());
     rl.load_reads(names, reads);
     omp_unset_lock(&read_lock);
 
@@ -1106,11 +1114,11 @@ run_single_ended(const bool VERBOSE,
     if (random_pbat)
       map_single_ended_rand(VERBOSE, allow_ambig, batch_size,
           max_candidates, counter_st, index_st, genome_st, abismal_index.cl,
-          rl, read_lock, write_lock, se_stats, out);
+          rl, read_lock, write_lock, se_stats, out, progress);
     else
       map_single_ended<conv>(VERBOSE, allow_ambig, batch_size,
           max_candidates, counter_st, index_st, genome_st, abismal_index.cl,
-          rl, read_lock, write_lock, se_stats, out);
+          rl, read_lock, write_lock, se_stats, out, progress);
 
   }
 
@@ -1246,7 +1254,8 @@ map_paired_ended(const bool VERBOSE,
                  const ChromLookup &cl,
                  ReadLoader &rl1, ReadLoader &rl2,
                  omp_lock_t &read_lock, omp_lock_t &write_lock,
-                 pe_map_stats &pe_stats, ostream &out) {
+                 pe_map_stats &pe_stats, ostream &out,
+                 ProgressBar &progress) {
   vector<string> names1, reads1;
   vector<string> names2, reads2;
 
@@ -1282,6 +1291,10 @@ map_paired_ended(const bool VERBOSE,
     batch_output.clear();
 
     omp_set_lock(&read_lock);
+
+    if (VERBOSE && progress.time_to_report(rl1.get_current_byte()))
+      progress.report(cerr, rl1.get_current_byte());
+
     rl1.load_reads(names1, reads1);
     rl2.load_reads(names2, reads2);
     omp_unset_lock(&read_lock);
@@ -1347,7 +1360,8 @@ map_paired_ended_rand(const bool VERBOSE,
                  const ChromLookup &cl,
                  ReadLoader &rl1, ReadLoader &rl2,
                  omp_lock_t &read_lock, omp_lock_t &write_lock,
-                 pe_map_stats &pe_stats, ostream &out) {
+                 pe_map_stats &pe_stats, ostream &out,
+                 ProgressBar &progress) {
   vector<string> names1, reads1;
   vector<string> names2, reads2;
 
@@ -1383,6 +1397,10 @@ map_paired_ended_rand(const bool VERBOSE,
     batch_output.clear();
 
     omp_set_lock(&read_lock);
+
+    if (VERBOSE && progress.time_to_report(rl1.get_current_byte()))
+      progress.report(cerr, rl1.get_current_byte());
+
     rl1.load_reads(names1, reads1);
     rl2.load_reads(names2, reads2);
     omp_unset_lock(&read_lock);
@@ -1493,11 +1511,11 @@ run_paired_ended(const bool VERBOSE,
     if (random_pbat)
       map_paired_ended_rand(VERBOSE, allow_ambig, batch_size,
           max_candidates, counter_st, index_st, genome_st, abismal_index.cl,
-          rl1, rl2, read_lock, write_lock, pe_stats, out);
+          rl1, rl2, read_lock, write_lock, pe_stats, out, progress);
     else
       map_paired_ended<conv>(VERBOSE, allow_ambig, batch_size,
           max_candidates, counter_st, index_st, genome_st, abismal_index.cl,
-          rl1, rl2, read_lock, write_lock, pe_stats, out);
+          rl1, rl2, read_lock, write_lock, pe_stats, out, progress);
   }
 
   if (VERBOSE) {
@@ -1549,7 +1567,7 @@ int main(int argc, const char **argv) {
     bool pbat_mode = false;
     bool random_pbat = false;
     uint32_t max_candidates = 0;
-    size_t batch_size = 100000;
+    size_t batch_size = 20000;
     int n_threads = 1;
 
     /****************** COMMAND LINE OPTIONS ********************/
