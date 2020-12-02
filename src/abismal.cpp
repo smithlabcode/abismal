@@ -223,7 +223,7 @@ enum map_type { map_unmapped, map_unique, map_ambig };
 static map_type
 format_se(const bool allow_ambig, se_result res, const ChromLookup &cl,
           const string &read, const string &read_name, const string &cigar,
-          string &line) {
+          ostream &out) {
   const bool ambig = res.ambig();
   if (!allow_ambig && ambig)
     return map_ambig;
@@ -246,7 +246,7 @@ format_se(const bool allow_ambig, se_result res, const ChromLookup &cl,
   sr.add_tag("NM:i:" + to_string(s.diffs));
   sr.add_tag(s.elem_is_a_rich() ? "CV:A:A" : "CV:A:T");
 
-  line.append(sr.tostring());
+  out << sr.tostring();
   return ambig ? map_ambig : map_unique;
 }
 
@@ -334,7 +334,7 @@ format_pe(const bool allow_ambig,
           const string &read1, const string &read2,
           const string &name1, const string &name2,
           const string &cig1,  const string &cig2,
-          string &batch_output) {
+          ostream &out) {
   const bool ambig = res.ambig();
   if (!allow_ambig && ambig)
     return map_ambig;
@@ -386,8 +386,8 @@ format_pe(const bool allow_ambig,
     set_flag(sr2, samflags::read_rc);
   }
 
-  batch_output.append(sr1.tostring());
-  batch_output.append(sr2.tostring());
+  out << sr1.tostring() << sr2.tostring();
+
   return ambig ? map_ambig : map_unique;
 }
 
@@ -530,20 +530,19 @@ select_output(const bool allow_ambig, const ChromLookup &cl,
               const string &read1, const string &name1,
               const string &read2, const string &name2,
               const string &cig1, const string &cig2,
-              string &batch_output) {
+              ostream &out) {
 
   const map_type pe_map_type = format_pe(allow_ambig, best, cl,
                                          read1, read2, name1,
-                                         name2, cig1, cig2,
-                                         batch_output);
+                                         name2, cig1, cig2, out);
   if (pe_map_type == map_unmapped ||
       (!allow_ambig && pe_map_type == map_ambig)) {
     if (pe_map_type == map_unmapped)
       best.reset(read1.size(), read2.size());
-    if (format_se(allow_ambig, se1, cl, read1, name1, cig1, batch_output) ==
+    if (format_se(allow_ambig, se1, cl, read1, name1, cig1, out) ==
         map_unmapped)
       se1.reset(read1.size());
-    if (format_se(allow_ambig, se2, cl, read2, name2, cig2, batch_output) ==
+    if (format_se(allow_ambig, se2, cl, read2, name2, cig2, out) ==
         map_unmapped)
       se2.reset(read2.size());
   }
@@ -860,7 +859,7 @@ align_read(se_element &res, string &cigar, const string &read,
            Read &pread, AbismalAlignSimple &aln) {
   // ends early if mismatches are good enough
   if (res.valid(read.size()))
-    cigar = to_string(read.length()) + "M";
+    cigar = to_string(read.size()) + "M";
 
   else if (res.diffs < static_cast<score_t>(read.size())) {
     uint32_t len = 0; // the region of the read the alignment spans
@@ -919,25 +918,21 @@ map_single_ended(const bool VERBOSE,
                  ProgressBar &progress) {
   vector<string> names;
   vector<string> reads;
-
-  string cigar;
+  vector<string> cigar;
 
   vector<se_result> res;
 
   names.reserve(batch_size);
   reads.reserve(batch_size);
-  res.resize(batch_size);
 
-  string batch_output;
-  batch_output.reserve(batch_size * 400);
+  cigar.resize(batch_size);
+  res.resize(batch_size);
 
   Read pread, pread_even, pread_odd;
   vector<uint32_t> hits;
   hits.reserve(max_candidates);
 
   while (rl.good()) {
-
-    batch_output.clear();
     omp_set_lock(&read_lock);
     if (VERBOSE && progress.time_to_report(rl.get_current_byte()))
       progress.report(cerr, rl.get_current_byte());
@@ -970,17 +965,17 @@ map_single_ended(const bool VERBOSE,
                                                   genome_st, pread,
                                                   pread_even, pread_odd,
                                                   hits, res[i]);
-        align_se_candidates(res[i], cigar, reads[i], pread, aln);
+        align_se_candidates(res[i], cigar[i], reads[i], pread, aln);
       }
-      // GS: if the read maps in between chroms
-      if (format_se(allow_ambig, res[i], cl, reads[i], names[i], cigar,
-            batch_output) == map_unmapped)
-        res[i].reset(reads[i].size());
     }
+
     omp_set_lock(&write_lock);
-    out.write(batch_output.c_str(), batch_output.size());
-    for (size_t i = 0; i < reads.size(); ++i)
+    for (size_t i = 0; i < n_reads; ++i) {
+      if (format_se(allow_ambig, res[i], cl, reads[i], names[i], cigar[i], out)
+          == map_unmapped)
+        res[i].reset(reads[i].size());
       se_stats.update(res[i], reads[i]);
+    }
     omp_unset_lock(&write_lock);
   }
 }
@@ -1002,22 +997,19 @@ map_single_ended_rand(const bool VERBOSE,
                       ProgressBar &progress) {
   vector<string> names;
   vector<string> reads;
-  string cigar;
+  vector<string> cigar;
   vector<se_result> res;
 
   names.reserve(batch_size);
   reads.reserve(batch_size);
+  cigar.resize(batch_size);
   res.resize(batch_size);
-
-  string batch_output;
-  batch_output.reserve(batch_size * 400);
 
   Read pread, pread_even, pread_odd;
   vector<uint32_t> hits;
   hits.reserve(max_candidates);
 
   while (rl.good()) {
-    batch_output.clear();
     omp_set_lock(&read_lock);
     if (VERBOSE && progress.time_to_report(rl.get_current_byte()))
       progress.report(cerr, rl.get_current_byte());
@@ -1063,18 +1055,18 @@ map_single_ended_rand(const bool VERBOSE,
                                                     genome_st, pread,
                                                     pread_even, pread_odd,
                                                     hits, res[i]);
-        align_se_candidates(res[i], cigar, reads[i], pread, aln);
+        align_se_candidates(res[i], cigar[i], reads[i], pread, aln);
       }
       // GS: if the read maps in between chroms
-      if (format_se(allow_ambig, res[i], cl, reads[i], names[i], cigar,
-            batch_output) == map_unmapped)
-        res[i].reset(reads[i].size());
     }
 
     omp_set_lock(&write_lock);
-    out.write(batch_output.c_str(), batch_output.size());
-    for (size_t i = 0; i < reads.size(); ++i)
+    for (size_t i = 0; i < n_reads; ++i) {
+      if (format_se(allow_ambig, res[i], cl, reads[i], names[i], cigar[i], out)
+          == map_unmapped)
+        res[i].reset(reads[i].size());
       se_stats.update(res[i], reads[i]);
+    }
     omp_unset_lock(&write_lock);
   }
 }
@@ -1124,7 +1116,8 @@ run_single_ended(const bool VERBOSE,
 
   if (VERBOSE) {
     progress.report(cerr, get_filesize(reads_file));
-    cerr << "[total mapping time: " << omp_get_wtime() - start_time << "]" << endl;
+    cerr << "[total mapping time: " << omp_get_wtime() - start_time << "]"
+         << endl;
   }
 }
 
@@ -1256,10 +1249,8 @@ map_paired_ended(const bool VERBOSE,
                  omp_lock_t &read_lock, omp_lock_t &write_lock,
                  pe_map_stats &pe_stats, ostream &out,
                  ProgressBar &progress) {
-  vector<string> names1, reads1;
-  vector<string> names2, reads2;
-
-  string cigar1, cigar2;
+  vector<string> names1, reads1, cigar1;
+  vector<string> names2, reads2, cigar2;
 
   vector<pe_result> bests;
   vector<pe_candidates> res1, res2;
@@ -1267,9 +1258,11 @@ map_paired_ended(const bool VERBOSE,
 
   names1.reserve(batch_size);
   reads1.reserve(batch_size);
+  cigar1.resize(batch_size);
 
   names2.reserve(batch_size);
   reads2.reserve(batch_size);
+  cigar2.resize(batch_size);
 
   bests.resize(batch_size);
 
@@ -1279,17 +1272,12 @@ map_paired_ended(const bool VERBOSE,
   res_se1.resize(batch_size);
   res_se2.resize(batch_size);
 
-  string batch_output;
-  batch_output.reserve(batch_size * 1024);
-
   vector<uint32_t> hits;
   hits.reserve(max_candidates);
 
   Read pread1, pread2, pread_even, pread_odd;
 
   while (rl1.good() && rl2.good()) {
-    batch_output.clear();
-
     omp_set_lock(&read_lock);
 
     if (VERBOSE && progress.time_to_report(rl1.get_current_byte()))
@@ -1307,7 +1295,6 @@ map_paired_ended(const bool VERBOSE,
 
     const size_t n_reads = reads1.size();
     for (size_t i = 0 ; i < n_reads; ++i) {
-
       res_se1[i].reset(reads1[i].size());
       res_se2[i].reset(reads2[i].size());
       bests[i].reset(reads1[i].size(), reads2[i].size());
@@ -1316,7 +1303,7 @@ map_paired_ended(const bool VERBOSE,
                    get_strand_code('+',conv),
                    get_strand_code('-', flip_conv(conv))>(
          reads1[i], reads2[i], pread1, pread2, pread_even, pread_odd,
-         cigar1, cigar2, max_candidates, counter_st, index_st, genome_st,
+         cigar1[i], cigar2[i], max_candidates, counter_st, index_st, genome_st,
          aln, hits, res1[i], res2[i], res_se1[i], res_se2[i], bests[i]
       );
 
@@ -1324,28 +1311,26 @@ map_paired_ended(const bool VERBOSE,
                    get_strand_code('+', flip_conv(conv)),
                    get_strand_code('-', conv)>(
          reads2[i], reads1[i], pread1, pread2, pread_even, pread_odd,
-         cigar2, cigar1, max_candidates, counter_st, index_st, genome_st,
+         cigar2[i], cigar1[i], max_candidates, counter_st, index_st, genome_st,
          aln, hits, res2[i], res1[i], res_se2[i], res_se1[i], bests[i]
       );
 
       if (!bests[i].valid(reads1[i].size(), reads2[i].size()) ||
           bests[i].ambig()) {
-        align_se_candidates(res_se1[i], cigar1, reads1[i], pread1, aln);
-        align_se_candidates(res_se2[i], cigar2, reads2[i], pread2, aln);
+        align_se_candidates(res_se1[i], cigar1[i], reads1[i], pread1, aln);
+        align_se_candidates(res_se2[i], cigar2[i], reads2[i], pread2, aln);
       }
-
-      select_output(allow_ambig, cl, bests[i], res_se1[i], res_se2[i],
-                    reads1[i], names1[i], reads2[i], names2[i],
-                    cigar1, cigar2, batch_output);
     }
 
     omp_set_lock(&write_lock);
-    out.write(batch_output.c_str(), batch_output.size());
-    for (size_t i = 0; i < reads1.size(); ++i)
+    for (size_t i = 0; i < n_reads; ++i) {
+      select_output(allow_ambig, cl, bests[i], res_se1[i], res_se2[i],
+                    reads1[i], names1[i], reads2[i], names2[i],
+                    cigar1[i], cigar2[i], out);
       pe_stats.update(allow_ambig, bests[i], res_se1[i], res_se2[i],
-                      reads1[i], reads2[i]);
+                    reads1[i], reads2[i]);
+    }
     omp_unset_lock(&write_lock);
-
   }
 }
 
@@ -1362,10 +1347,8 @@ map_paired_ended_rand(const bool VERBOSE,
                  omp_lock_t &read_lock, omp_lock_t &write_lock,
                  pe_map_stats &pe_stats, ostream &out,
                  ProgressBar &progress) {
-  vector<string> names1, reads1;
-  vector<string> names2, reads2;
-
-  string cigar1, cigar2;
+  vector<string> names1, reads1, cigar1;
+  vector<string> names2, reads2, cigar2;
 
   vector<pe_result> bests;
   vector<pe_candidates> res1, res2;
@@ -1373,9 +1356,11 @@ map_paired_ended_rand(const bool VERBOSE,
 
   names1.reserve(batch_size);
   reads1.reserve(batch_size);
+  cigar1.resize(batch_size);
 
   names2.reserve(batch_size);
   reads2.reserve(batch_size);
+  cigar2.resize(batch_size);
 
   bests.resize(batch_size);
 
@@ -1385,17 +1370,12 @@ map_paired_ended_rand(const bool VERBOSE,
   res_se1.resize(batch_size);
   res_se2.resize(batch_size);
 
-  string batch_output;
-  batch_output.reserve(batch_size * 1024);
-
   vector<uint32_t> hits;
   hits.reserve(max_candidates);
 
   Read pread1, pread2, pread_even, pread_odd;
 
   while (rl1.good() && rl2.good()) {
-    batch_output.clear();
-
     omp_set_lock(&read_lock);
 
     if (VERBOSE && progress.time_to_report(rl1.get_current_byte()))
@@ -1422,7 +1402,7 @@ map_paired_ended_rand(const bool VERBOSE,
                    get_strand_code('+', t_rich),
                    get_strand_code('-', a_rich)>(
          reads1[i], reads2[i], pread1, pread2, pread_even, pread_odd,
-         cigar1, cigar2, max_candidates, counter_st, index_st, genome_st,
+         cigar1[i], cigar2[i], max_candidates, counter_st, index_st, genome_st,
          aln, hits, res1[i], res2[i], res_se1[i], res_se2[i], bests[i]
       );
 
@@ -1431,7 +1411,7 @@ map_paired_ended_rand(const bool VERBOSE,
                    get_strand_code('+', a_rich),
                    get_strand_code('-', t_rich)>(
          reads2[i], reads1[i], pread2, pread1, pread_even, pread_odd,
-         cigar2, cigar1, max_candidates, counter_st, index_st, genome_st,
+         cigar2[i], cigar1[i], max_candidates, counter_st, index_st, genome_st,
          aln, hits, res2[i], res1[i], res_se2[i], res_se1[i], bests[i]
       );
 
@@ -1440,7 +1420,7 @@ map_paired_ended_rand(const bool VERBOSE,
                    get_strand_code('+', a_rich),
                    get_strand_code('-', t_rich)>(
          reads1[i], reads2[i], pread1, pread2, pread_even, pread_odd,
-         cigar1, cigar2, max_candidates, counter_st, index_st, genome_st,
+         cigar1[i], cigar2[i], max_candidates, counter_st, index_st, genome_st,
          aln, hits, res1[i], res2[i], res_se1[i], res_se2[i], bests[i]
       );
 
@@ -1449,28 +1429,27 @@ map_paired_ended_rand(const bool VERBOSE,
                    get_strand_code('+', t_rich),
                    get_strand_code('-', a_rich)>(
          reads2[i], reads1[i], pread2, pread1, pread_even, pread_odd,
-         cigar2, cigar1, max_candidates, counter_st, index_st, genome_st,
+         cigar2[i], cigar1[i], max_candidates, counter_st, index_st, genome_st,
          aln, hits, res2[i], res1[i], res_se2[i], res_se1[i], bests[i]
       );
 
       // GS: align best SE candidates if no concordant pairs found
       if (!bests[i].valid(reads1[i].size(), reads2[i].size()) ||
            bests[i].ambig()) {
-        align_se_candidates(res_se1[i], cigar1, reads1[i], pread1, aln);
-        align_se_candidates(res_se2[i], cigar2, reads2[i], pread2, aln);
+        align_se_candidates(res_se1[i], cigar1[i], reads1[i], pread1, aln);
+        align_se_candidates(res_se2[i], cigar2[i], reads2[i], pread2, aln);
       }
-
-      // GS: write the sam lines
-      select_output(allow_ambig, cl, bests[i], res_se1[i], res_se2[i],
-                    reads1[i], names1[i], reads2[i], names2[i],
-                    cigar1, cigar2, batch_output);
     }
 
     omp_set_lock(&write_lock);
-    out.write(batch_output.c_str(), batch_output.size());
-    for (size_t i = 0; i < reads1.size(); ++i)
+    for (size_t i = 0; i < n_reads; ++i) {
+      select_output(allow_ambig, cl, bests[i], res_se1[i], res_se2[i],
+                        reads1[i], names1[i], reads2[i], names2[i],
+                        cigar1[i], cigar2[i], out);
+
       pe_stats.update(allow_ambig, bests[i], res_se1[i], res_se2[i],
                       reads1[i], reads2[i]);
+    }
     omp_unset_lock(&write_lock);
 
   }
