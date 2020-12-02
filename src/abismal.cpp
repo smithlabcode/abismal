@@ -724,35 +724,20 @@ prep_read(const string &r, Read &pread) {
                 (encode_base_t_rich[static_cast<unsigned char>(r[i])]));
 }
 
-/* Creates reads meant for comparison on a compressed genome.
- * This function is used to accelerate comparison between reads and
- * genome positions using a reference genome encoded in four bits
- * per base, that is, two bases are present in each byte, with even
- * positions in lower bits and odd positions in higher bits.
- *
- * The function encodes the read in two ways. Every pread_* object
- * is a vector of characters, where each element of the vector has
- * only one active bit representing A, T, G or C.
- *
- * In pread_seed (input), we have encoded bases using the lower 4
- * bits
- * In pread_even, which is used to compare the read to even genome
- * positions, we put the bases in even positions as the first
- * elements, and the odd positions shifted by 4. This allows the &
- * operator to be used on four-bit comparisons.
- *
- * In pread_odd, used to compare to odd positions in the genome, we
- * first put the odd bases in the start, shifted by 4, then the
- * even
- * bases.
- *
- * In both comparison cases, the number of mismatches can be
- * obtained
- * by iterating from start to finish through the pread_even (resp
- * pread_odd) objects. The genome, however, has to be "rewinded"
- * once
- * we reach half of the read. This logic is implemented in the
- * full_compare function above. */
+/* GS: this function encodes an ASCII character string into
+ * two byte arrays, where each byte contains two bases, and
+ * each base is represented in four bits, with active bits
+ * representing the possible base matches to the genome. One
+ * of the arrays(pread_even) will be used to compare the read
+ * to even positions in the genome, while the other (pread_odd)
+ * is used to compare odd bases. When the number of bases is odd,
+ * or to account for the fact that pread_odd has a single base
+ * in the first byte, reads can have a 1111 as the first or last
+ * base. This will match with any base in the genome and will therefore
+ * be disregarded for mismatch counting except if it aligns with Ns
+ * in the genome (encoded as 0000 to mismatch with everything). These
+ * cases should be unlikely in practice
+ * */
 static void
 prep_for_seeds(const Read &pread_seed, Read &pread_even,
                Read &pread_odd) {
