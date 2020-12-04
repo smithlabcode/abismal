@@ -36,15 +36,11 @@ namespace seed {
   // longer than n_solid_positions below. ADS: this is allowed to
   // change for debug purposes, but not sure if should be adjustable
   // by the end user.
-  static const uint32_t n_seed_positions = 31;
+  static const uint32_t n_seed_positions = 32;
+  static const uint32_t index_interval = 2;
 
   // number of positions in the hashed portion of the seed
   static const uint32_t key_weight = 26;
-
-  static const uint32_t index_interval = 2;
-
-  static const uint32_t effective_seed_size = 
-                        n_seed_positions + index_interval - 1;
 
   static const size_t hash_mask = (1 << seed::key_weight) - 1;
 

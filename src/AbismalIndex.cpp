@@ -207,6 +207,8 @@ AbismalIndex::write(const string &index_file) const {
     throw runtime_error("cannot open output file " + index_file);
 
   write_internal_identifier(out);
+  if (fwrite((char*)&seed::index_interval, sizeof(uint32_t), 1, out) != 1)
+    throw runtime_error("failed writing index");
 
   cl.write(out);
 
@@ -245,6 +247,16 @@ AbismalIndex::read(const string &index_file) {
 
   if (!check_internal_identifier(in))
     throw runtime_error("index file format problem: " + index_file);
+
+  uint32_t index_interval;
+  if (fread((char*)&index_interval, sizeof(uint32_t), 1, in) != 1)
+    throw runtime_error(error_msg);
+
+  if (index_interval != seed::index_interval) {
+    throw runtime_error("bad index interval in provided index. Expected: " +
+                        std::to_string(seed::index_interval) + ", read: " +
+                        std::to_string(index_interval));
+  }
 
   cl.read(in);
 

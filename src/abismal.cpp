@@ -112,7 +112,7 @@ struct ReadLoader {
   static uint32_t min_read_length;
 };
 
-uint32_t ReadLoader::min_read_length = seed::effective_seed_size + 1;
+uint32_t ReadLoader::min_read_length = seed::n_seed_positions + 1;
 
 inline void
 update_max_read_length(size_t &max_length, const vector<string> &reads) {
@@ -202,6 +202,9 @@ struct se_result { //assert(sizeof(se_result) == 16)
   bool ambig() const { return best.is_equal_to(second_best); }
   bool sure_ambig(const score_t seed_number = 0) const {
     return ambig() && (second_best.diffs <= seed_number);
+  }
+  bool optimal() const {
+    return best.diffs == 0;
   }
   void reset(const uint32_t readlen)  {
     best.reset(readlen);
@@ -415,6 +418,9 @@ struct pe_candidates {
   }
   bool sure_ambig(const score_t seed_number = 0) const {
     return full() && v[0].diffs <= seed_number;
+  }
+  bool optimal() const {
+    return full() && v[0].diffs == 0;
   }
 
   void prepare_for_mating() {
@@ -647,6 +653,13 @@ process_seeds(const uint32_t max_candidates,
   const auto odd_read_start(begin(read_odd));
   const auto odd_read_end(end(read_odd));
 
+  // n seed positions corrected for index iterval
+  static const uint32_t n_specific_positions =
+                        seed::n_sorting_positions - seed::index_interval + 1;
+
+  static const uint32_t n_sensitive_positions =
+                        seed::n_seed_positions - seed::index_interval + 1;
+
   // specific step
   hits.clear();
   uint32_t k = 0;
@@ -655,7 +668,7 @@ process_seeds(const uint32_t max_candidates,
     auto s_idx(index_st + *(counter_st + k));
     auto e_idx(index_st + *(counter_st + k + 1));
     if (s_idx < e_idx) {
-      find_candidates<seed::n_sorting_positions>(
+      find_candidates<n_specific_positions>(
         read_start + j, genome_st, readlen, s_idx, e_idx
       );
       if (hits.size() + (e_idx - s_idx) <= max_candidates){
@@ -674,16 +687,17 @@ process_seeds(const uint32_t max_candidates,
                           odd_read_start, odd_read_end,
                           genome_st.itr, res);
 
-  if (res.sure_ambig(0)) return;
+  // GS: stop if we found enough exact matches (1 for SE, num_candidates for PE)
+  if (res.optimal()) return;
 
   // sensitive step
   hits.clear();
 
-  const uint32_t shift_lim = readlen - seed::effective_seed_size;
+  const uint32_t shift_lim = readlen - seed::n_seed_positions;
 
   // GS: minimum number of shifts to cover the whole read
-  const uint32_t num_shifts = readlen/seed::effective_seed_size +
-                              (readlen % seed::effective_seed_size != 0);
+  const uint32_t num_shifts = readlen/seed::n_seed_positions +
+                              (readlen % seed::n_seed_positions != 0);
 
   // assert(num_shifts > 1)
   const uint32_t shift = max(shift_lim / (num_shifts - 1), 1u);
@@ -693,7 +707,7 @@ process_seeds(const uint32_t max_candidates,
       auto s_idx(index_st + *(counter_st + k));
       auto e_idx(index_st + *(counter_st + k + 1));
       if (s_idx < e_idx) {
-        find_candidates<seed::n_seed_positions>(
+        find_candidates<n_sensitive_positions>(
           read_start + offset, genome_st, readlen, s_idx, e_idx
         );
         if (hits.size() + (e_idx - s_idx) <= max_candidates){
@@ -1042,7 +1056,6 @@ map_single_ended_rand(const bool VERBOSE,
                                                     hits, res[i]);
         align_se_candidates(res[i], cigar[i], reads[i], pread, aln);
       }
-      // GS: if the read maps in between chroms
     }
 
     omp_set_lock(&write_lock);
@@ -1488,40 +1501,11 @@ run_paired_ended(const bool VERBOSE,
   }
 }
 
-static void
-write_sam_header(const ChromLookup &cl,
-                 const int argc, const char **argv,
-                 ostream &out) {
-
-  static const string ABISMAL_VERSION = "0.1";
-
-  out <<"@HD" << '\t'
-      << "VN:1.0" << endl; // sam version
-  // ADS: should the logic here be somehow hidden in ChromLookup?
-  // ADS: subtracting below because of padding sequences
-  const size_t n_chroms = cl.names.size() - 1;
-  for (size_t i = 1; i < n_chroms; ++i) {
-    out << "@SQ" << '\t'
-        << "SN:" << cl.names[i] << '\t'
-        << "LN:" << cl.starts[i+1] - cl.starts[i] << '\n';
-  }
-
-  // write how the abismal program was run
-  out << "@PG" << '\t'
-      << "ID:"
-      << "ABISMAL" << '\t'
-      << "VN:" << ABISMAL_VERSION << '\t'
-      << "CL:";
-
-  out << "\"" << argv[0];
-  for (int i = 1; i < argc; ++i)
-    out << " " << argv[i];
-  out << "\"" << endl;
-}
 
 int main(int argc, const char **argv) {
 
   try {
+    static const string ABISMAL_VERSION = "0.1";
     string index_file;
     string outfile;
     string stats_outfile = "";
@@ -1612,21 +1596,17 @@ int main(int argc, const char **argv) {
     AbismalIndex abismal_index;
     const double start_time = omp_get_wtime();
     abismal_index.read(index_file);
-    if (VERBOSE)
-      cerr << "[loading time: " << (omp_get_wtime() - start_time) << "]" << endl;
-
-    if (VERBOSE)
-      cerr << "[using " << n_threads << " threads for mapping]\n";
 
     if (VERBOSE) {
+      cerr << "[loading time: " << (omp_get_wtime() - start_time) << "]" << endl;
+      cerr << "[using " << n_threads << " threads for mapping]\n";
       if (paired_end)
         cerr << "[mapping paired end: " << reads_file << " "
              << reads_file2 << "]\n";
       else
         cerr << "[mapping single end: " << reads_file << "]\n";
-    }
-    if (VERBOSE)
       cerr << "[output file: " << outfile << "]" << endl;
+    }
 
     // avoiding opening the stats output file until mapping is done
     se_map_stats se_stats;
@@ -1639,7 +1619,8 @@ int main(int argc, const char **argv) {
     if (!out)
       throw runtime_error("failed to open output file: " + outfile);
 
-    write_sam_header(abismal_index.cl, argc, argv, out);
+    write_sam_header(abismal_index.cl.names, abismal_index.cl.starts,
+                     "ABISMAL", ABISMAL_VERSION, argc, argv, out);
 
     if (max_candidates == 0) {
       static const double max_fraction_of_genome = 1e-5;
