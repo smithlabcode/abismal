@@ -249,7 +249,7 @@ format_se(const bool allow_ambig, se_result res, const ChromLookup &cl,
   sr.add_tag("NM:i:" + to_string(s.diffs));
   sr.add_tag(s.elem_is_a_rich() ? "CV:A:A" : "CV:A:T");
 
-  out << sr.tostring();
+  out << sr << "\n";
   return ambig ? map_ambig : map_unique;
 }
 
@@ -389,7 +389,7 @@ format_pe(const bool allow_ambig,
     set_flag(sr2, samflags::read_rc);
   }
 
-  out << sr1.tostring() << sr2.tostring();
+  out << sr1.tostring() << "\n" << sr2.tostring() << "\n";
 
   return ambig ? map_ambig : map_unique;
 }
