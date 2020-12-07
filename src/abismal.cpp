@@ -1501,6 +1501,24 @@ run_paired_ended(const bool VERBOSE,
   }
 }
 
+static void
+select_max_candidates(const bool sensitive_mode,
+                      const uint32_t genome_size,
+                      uint32_t &max_candidates) {
+  static const double max_frac_default = 1e-5;
+  static const double max_frac_sensitive = 1.0;
+  const double genome_frac =
+    sensitive_mode ? max_frac_sensitive : max_frac_default;
+
+  // GS: the max_max_candidates avoids super large reserves
+  // on the hits() vector
+  static const uint32_t min_max_candidates = 100u;
+  static const uint32_t max_max_candidates = 1e6;
+
+  const uint32_t c = static_cast<uint32_t>(genome_size * genome_frac);
+  max_candidates = max(c, min_max_candidates);
+  max_candidates = min(c, max_max_candidates);
+}
 
 int main(int argc, const char **argv) {
 
@@ -1514,6 +1532,7 @@ int main(int argc, const char **argv) {
     bool allow_ambig = false;
     bool pbat_mode = false;
     bool random_pbat = false;
+    bool sensitive_mode = false;
     uint32_t max_candidates = 0;
     size_t batch_size = 20000;
     int n_threads = 1;
@@ -1534,6 +1553,8 @@ int main(int argc, const char **argv) {
                       false, batch_size);
     opt_parse.add_opt("candidates", 'c', "max candidates for full comparison",
                       false, max_candidates);
+    opt_parse.add_opt("sensitive", 's', "run abismal on max sensitivity mode",
+                      false, sensitive_mode);
     opt_parse.add_opt("max-mates", 'p', "max candidates as mates (pe mode)",
                       false, pe_candidates::max_size);
     opt_parse.add_opt("min-frag", 'l', "min fragment size (pe mode)",
@@ -1606,6 +1627,8 @@ int main(int argc, const char **argv) {
       else
         cerr << "[mapping single end: " << reads_file << "]\n";
       cerr << "[output file: " << outfile << "]" << endl;
+      if (sensitive_mode)
+        cerr << "[running abismal on sensitive mode]\n";
     }
 
     // avoiding opening the stats output file until mapping is done
@@ -1622,14 +1645,9 @@ int main(int argc, const char **argv) {
     write_sam_header(abismal_index.cl.names, abismal_index.cl.starts,
                      "ABISMAL", ABISMAL_VERSION, argc, argv, out);
 
-    if (max_candidates == 0) {
-      static const double max_fraction_of_genome = 1e-5;
-      static const size_t min_max_candidates = 100u;
-      max_candidates = max(
-          static_cast<size_t>(
-            abismal_index.cl.get_genome_size() * max_fraction_of_genome
-          ), min_max_candidates);
-    }
+    if (max_candidates == 0)
+      select_max_candidates(sensitive_mode, abismal_index.cl.get_genome_size(),
+                            max_candidates);
 
     if (reads_file2.empty()) {
       if (GA_conversion || pbat_mode)
