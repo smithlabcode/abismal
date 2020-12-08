@@ -1523,7 +1523,7 @@ select_max_candidates(const bool sensitive_mode,
 int main(int argc, const char **argv) {
 
   try {
-    static const string ABISMAL_VERSION = "0.1";
+    static const string ABISMAL_VERSION = "0.1.2";
     string index_file;
     string outfile;
     string stats_outfile = "";

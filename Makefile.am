@@ -30,12 +30,17 @@ bin_PROGRAMS = abismal abismalidx simreads
 
 abismal_SOURCES = \
 	src/abismal.cpp \
-	src/AbismalIndex.cpp
+	src/AbismalIndex.cpp \
+	src/AbismalAlign.hpp \
+	src/AbismalIndex.hpp \
+	src/dna_four_bit_bisulfite.hpp
 
 abismalidx_SOURCES = \
 	src/abismalidx.cpp \
-	src/AbismalIndex.cpp
+	src/AbismalIndex.cpp \
+	src/AbismalIndex.hpp
 
 simreads_SOURCES = \
 	src/simreads.cpp \
-	src/AbismalIndex.cpp
+	src/AbismalIndex.cpp \
+	src/AbismalIndex.hpp
