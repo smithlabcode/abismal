@@ -18,10 +18,11 @@ EXTRA_DIST = README.md
 ACLOCAL_AMFLAGS = -I m4
 
 SUBDIRS := src/smithlab_cpp
+
 install installdirs: SUBDIRS := $(filter-out src/smithlab_cpp, $(SUBDIRS))
 AM_CPPFLAGS = -I $(top_srcdir)/src/smithlab_cpp
 
-CXXFLAGS = -O3 -funroll-loops # default has optimization on
+CXXFLAGS = -O3 -funroll-loops  # default has optimization on
 AM_CXXFLAGS = $(OPENMP_CXXFLAGS)
 
 LDADD = src/smithlab_cpp/libsmithlab_cpp.a

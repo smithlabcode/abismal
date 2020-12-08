@@ -16,6 +16,7 @@ dnl General Public License for more details.
 
 AC_INIT([abismal], [0.1.2], [andrewds@usc.edu],
         [abismal], [https://github.com/smithlabcode/abismal])
+
 dnl the config.h is not currently #included in the source, and only
 dnl used to keep command lines short.
 AC_CONFIG_HEADERS([config.h])
@@ -36,7 +37,7 @@ dnl check for the Zlib library
 AC_CHECK_LIB([z], [zlibVersion], [],
   [AC_MSG_FAILURE([Zlib must be installed to build abismal])], [])
 
-dnl recursively configure smithlab_cpp
+dnl recursively configure htslib
 AC_CONFIG_SUBDIRS([src/smithlab_cpp])
 
 AC_CONFIG_FILES([Makefile])
