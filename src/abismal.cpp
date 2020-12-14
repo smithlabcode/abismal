@@ -389,6 +389,11 @@ format_pe(const bool allow_ambig,
     set_flag(sr2, samflags::read_rc);
   }
 
+  if (allow_ambig && ambig) {
+    set_flag(sr1, samflags::secondary_aln);
+    set_flag(sr2, samflags::secondary_aln);
+  }
+
   out << sr1.tostring() << "\n" << sr2.tostring() << "\n";
 
   return ambig ? map_ambig : map_unique;
