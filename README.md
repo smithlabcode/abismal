@@ -26,7 +26,7 @@ clones the `smithlab_cpp` subdirectory
 
 ```
 $ cd /where/you_want/the_code
-$ git clone --recursive git@github.com:smithlabcode/smithlab_cpp.git
+$ git clone --recursive git@github.com:smithlabcode/abismal.git
 ```
 
 (2) Build the `abismal` and `abismalidx` programs:
