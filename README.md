@@ -72,7 +72,6 @@ $ abismal [options] -i <index-file> -o <output-file> <read_1.fq> <read_2.fq>
 
 |option|long version |arg type |default|description                                        |
 |:-----|:------------|:--------|------:|:--------------------------------------------------|
-| -i   | -index      | string  |                   | index files from abismal [required]   |
 | -i   | -index      | string  |                   | genome index file [required]          |
 | -o   | -outfile    | string  | stdout            | output SAM file                       |
 | -m   | -mapstats   | string  | [output].mapstats | mapping statistics output file        |
