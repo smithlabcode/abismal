@@ -1522,7 +1522,7 @@ select_max_candidates(const bool sensitive_mode,
 
   const uint32_t c = static_cast<uint32_t>(genome_size * genome_frac);
   max_candidates = max(c, min_max_candidates);
-  max_candidates = min(c, max_max_candidates);
+  max_candidates = min(max_candidates, max_max_candidates);
 }
 
 int main(int argc, const char **argv) {
