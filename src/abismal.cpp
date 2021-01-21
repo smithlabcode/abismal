@@ -1566,7 +1566,7 @@ int main(int argc, const char **argv) {
                       false, pe_element::min_dist);
     opt_parse.add_opt("max-frag", 'L', "max fragment size (pe mode)",
                       false, pe_element::max_dist);
-    opt_parse.add_opt("max-frag", 'M', "max fractional edit distance",
+    opt_parse.add_opt("max-error", 'M', "max fractional edit distance",
                       false, se_element::valid_frac);
     opt_parse.add_opt("ambig", 'a', "report a posn for ambiguous mappers",
                       false, allow_ambig);

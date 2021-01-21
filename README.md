@@ -21,28 +21,33 @@ described below, please contact me.
 
 ### Installation from a clone of the repo ###
 
-(1) Make sure `smithlab_cpp` source is installed from a clone of that
-repo:
+(1) make sure you clone with the ``--recursive`` flag, which also
+clones the `smithlab_cpp` subdirectory
+
 ```
 $ cd /where/you_want/the_code
-$ git clone git@github.com:smithlabcode/smithlab_cpp.git
-$ export SMITHLAB_CPP=`pwd`/smithlab_cpp
-```
-If you are using this method, then you do not need to build any of the
-`smithlab_cpp` code.
-
-(2) Clone the `abismal` source code repo from Github:
-```
-$ cd /where/you_want/the_code
-$ git clone git@github.com:smithlabcode/abismal.git
+$ git clone --recursive git@github.com:smithlabcode/abismal.git
 ```
 
-(3) Build the `abismal` and `abismalidx` programs:
+(2) Build the `abismal` and `abismalidx` programs:
 ```
-$ ./configure --enable-hts --prefix=/where/you/want/the/binaries
 $ make all
 $ make install
 ```
+
+### Installation from a release download
+
+(1) Extract the compressed file to a directory (e.g.
+`/path/to/abismal`). Once in the directory, run
+
+```
+$ ./configure --prefix=/where/you/want/abismal
+$ make all
+$ make install
+```
+
+This will install `abismal` and `abismalidx` inside the `bin`
+directory in the output location.
 
 ### Indexing the genome ###
 
@@ -65,22 +70,24 @@ $ abismal [options] -i <index-file> -o <output-file> <read_1.fq> <read_2.fq>
 
 ### ABISMAL Options ###
 
-|option|long version |arg type |default|description                           |
-|:-----|:------------|:--------|------:|:-------------------------------------|
-| -i   | -index      | string  |       | index files from abismal [reqd]      |
-| -o   | -outfile    | string  |       | output file name [reqd]              |
-| -t   | -threads    | integer | 1     | number of threads to use             |
-| -m   | -mismatches | integer | 6     | max allowed mismatches               |
-| -s   | -shifts     | integer | 3     | number of seed shifts                |
-| -b   | -batch      | integer | 1M    | reads to load in RAM at once         |
-| -c   | -candidates | integer | 3000  | max candidates for full comparison   |
-| -p   | -max-mates  | integer | 20    | max candidates as mates (pe mode)    |
-| -l   | -min-frag   | integer | 32    | min fragment size (pe mode)          |
-| -L   | -max-frag   | integer | 3000  | max fragment size (pe mode)          |
-| -a   | -ambig      |         |       | report a posn for ambiguous mappers  |
-| -P   | -pbat       |         |       | input data follow the PBAT protocol  |
-| -A   | -a-rich     |         |       | indicates reads are a-rich (se mode) |
-| -v   | -verbose    |         |       | print more run info                  |
+|option|long version |arg type |default|description                                        |
+|:-----|:------------|:--------|------:|:--------------------------------------------------|
+| -i   | -index      | string  |                   | genome index file [required]          |
+| -o   | -outfile    | string  | stdout            | output SAM file                       |
+| -m   | -mapstats   | string  | [outfile].mapstats| mapping statistics output file        |
+| -t   | -threads    | integer | 1                 | number of mapping threads             |
+| -b   | -batch      | integer | 20,000            | number of reads to load at once       |
+| -c   | -candidates | integer | 0                 | maximum candidates for comparison     |
+| -p   | -max-mates  | integer | 20                | max number of candidates for mating   |
+| -l   | -min-frag   | integer | 32                | minimum fragment length (PE mode)     |
+| -L   | -max-frag   | integer | 3,000             | maximum fragment length (PE mode)     |
+| -M   | -max-error  | double  | 0.1               | max relative number of errors         |
+| -s   | -sensitive  |         |                   | run abismal on max sensitivity mode   |
+| -a   | -ambig      |         |                   | report a position for ambiguous reads |
+| -P   | -pbat       |         |                   | input follows the PBAT protocol       |
+| -R   | -random-pbat|         |                   | input follows the random PBAT protocol|
+| -A   | -a-rich     |         |                   | reads are A-rich (SE mode)            |
+| -V   | -verbose    |         |                   | print more run info                   |
 
 ### Examples ###
 
@@ -99,31 +106,18 @@ To map reads to human genome hg38:
 ```
 $ abismal -i hg38.abismalidx -o reads.mr reads.fq
 ```
-### Output Format ###
 
-**The Mapped Read (MR) Format**
-
-This format retains less total information than is typically in a BAM
-file, but has all the information required for typical downstream DNA
-methylation analysis.
-* RNAME (chromosome name)
-* SPOS (start position, 0-based)
-* EPOS (end position, 0-based)
-* QNAME (read name)
-* MISMATCH (number of mismatches)
-* STRAND (forward or reverse strand)
-* QSEQ (the original input read)
-
-If paired-end reads are mapped in proper pair, the QNAME is added
-"FRAG:" in the beginning of the read name, the STRAND is the strand of
-the first mate mapped and QSEQ is merged according to their mapping
-positions. The overlap segment of QSEQ is from the mate R1 or mate R2
-and it is the one with less number of 'N' in the read
-sequence. MISMATCH is the sum of mismatches in the mate R1 and
-mismatches in the mate R2. If paired-end reads are not mapped in
-proper pair, they are treated as single-end reads. If the `-a` option
-is set, currently there is no indication about which reads map
-ambiguously.
+Mapping results are reported in SAM format. Some choices in the output
+are explicitly highlighted below:
+ * Reads are output identically to how they were read, regardless of
+   mapped strand
+ * the `NM` tag reports the edit distance between the read and the
+   output, specifically the sum of mismatches, insertions and
+   deletions to the best mapping position.
+ * The `CV` tag reports the assumed bisulfite base used to map the
+   read. Reads mapped as A-rich will be reported with `CV:A:A`, and
+   reads mapped as T-rich will be reported with `CV:A:T`. This tag is
+   independent of the strand the read was mapped to.
 
 ### Contacts ###
 
@@ -131,9 +125,9 @@ ambiguously.
 
 ### Copyright ###
 
-Copyright (C) 2018-2019 Andrew D. Smith
+Copyright (C) 2018-2020 Andrew D. Smith and Guilherme de Sena Brandine
 
-Authors: Andrew D. Smith
+Authors: Andrew D. Smith and Guilherme de Sena Brandine
 
 ABISMAL is free software: you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free
