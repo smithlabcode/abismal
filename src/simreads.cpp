@@ -47,7 +47,6 @@ using std::ostringstream;
 using std::istringstream;
 using std::to_string;
 
-char random_base() {return "ACGT"[rand() % 4];}
 double rand_double() { return ((double) rand() / (RAND_MAX)); }
 
 static string

@@ -38,28 +38,9 @@ using std::cerr;
 using std::endl;
 using std::unordered_set;
 
-static void
-BuildIndex(const bool VERBOSE, const string &genome_file,
-           AbismalIndex &ai) {
-
-  std::ifstream in(genome_file);
-  if (!in)
-    throw runtime_error("bad genome file: " + genome_file);
-
-  if (VERBOSE)
-    cerr << "[loading genome]" << endl;
-  load_genome(genome_file, ai.genome, ai.cl);
-
-  ai.encode_genome();
-  ai.get_bucket_sizes();
-  ai.hash_genome();
-  ai.sort_buckets();
-}
-
 int main(int argc, const char **argv) {
 
   try {
-
     bool VERBOSE = false;
     size_t n_threads = 1;
 
@@ -69,6 +50,7 @@ int main(int argc, const char **argv) {
     opt_parse.set_show_defaults();
     opt_parse.add_opt("threads", 't', "number of threads", false, n_threads);
     opt_parse.add_opt("verbose", 'v', "print more run info", false, VERBOSE);
+    
     vector<string> leftover_args;
     opt_parse.parse(argc, argv, leftover_args);
     if (argc == 1 || opt_parse.help_requested()) {
@@ -95,13 +77,22 @@ int main(int argc, const char **argv) {
 
     AbismalIndex::VERBOSE = VERBOSE;
 
+    /****************** START BUILDING INDEX *************/
     AbismalIndex abismal_index;
-    BuildIndex(VERBOSE, genome_file, abismal_index);
+    if (VERBOSE)
+          cerr << "[loading genome]" << endl;
+      load_genome(genome_file, abismal_index.genome, abismal_index.cl);
+
+    abismal_index.encode_genome();
+    abismal_index.compress_minimizers();
+    abismal_index.hash_genome();
+    abismal_index.sort_buckets();
 
     if (VERBOSE)
       cerr << "[writing abismal index to: " << outfile << "]" << endl;
 
     abismal_index.write(outfile);
+    /****************** END BUILDING INDEX *************/
 
   }
   catch (const std::runtime_error &e) {

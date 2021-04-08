@@ -35,7 +35,7 @@
 typedef int16_t score_t;
 typedef genome_four_bit_itr genome_iterator;
 
-template <score_t (*scr_fun)(const char, const uint8_t),
+template <score_t (*scr_fun)(const uint8_t, const uint8_t),
           score_t indel_pen = -1>
 struct AbismalAlign {
 
@@ -51,10 +51,10 @@ struct AbismalAlign {
   const size_t q_sz_max;
   const size_t bw;
 
-  static const uint16_t max_off_diag = 3;
+  static const uint16_t max_off_diag = 2;
 };
 
-template <score_t (*scr_fun)(const char, const uint8_t),
+template <score_t (*scr_fun)(const uint8_t, const uint8_t),
           score_t indel_pen>
 AbismalAlign<scr_fun, indel_pen>::AbismalAlign(
     const genome_iterator &target_start,
@@ -120,7 +120,7 @@ get_best_score(const std::vector<score_t> &table, const size_t n_col,
   return *best_cell_itr;
 }
 
-template <score_t (*scr_fun)(const char, const uint8_t),
+template <score_t (*scr_fun)(const uint8_t, const uint8_t),
           class T, class QueryConstItr, class U>
 void
 from_diag(T next_row, const T next_row_end, T cur_row,
@@ -164,7 +164,7 @@ from_left(T left_itr, T target, const T target_end, U traceback) {
   }
 }
 
-template <score_t (*scr_fun)(const char, const uint8_t), score_t indel_pen>
+template <score_t (*scr_fun)(const uint8_t, const uint8_t), score_t indel_pen>
 score_t
 AbismalAlign<scr_fun, indel_pen>::align(const std::vector<uint8_t> &qseq,
                                         uint32_t &t_pos, uint32_t &len,
@@ -174,7 +174,9 @@ AbismalAlign<scr_fun, indel_pen>::align(const std::vector<uint8_t> &qseq,
   std::fill(std::begin(traceback), std::end(traceback), ' ');
 
   const size_t q_sz = qseq.size();
-  const size_t t_beg = (t_pos > (bw - 1)/2 ? t_pos - (bw - 1)/2 : 0);
+
+  // GS: non-negative because of padding
+  const size_t t_beg = t_pos - ((bw - 1)/2);
   const size_t t_shift = q_sz + bw;
 
   // points to relevant reference sequence positions
@@ -228,14 +230,60 @@ AbismalAlign<scr_fun, indel_pen>::align(const std::vector<uint8_t> &qseq,
   return r;
 }
 
+
 // A specific namespace for simple match/mismatch scoring system and a
 // 1 -1 -1 scoring scheme for edit distance.
-namespace simple_local_alignment {
+namespace simple_aln {
   static const score_t match = 1;
-  static const score_t mismatch = -1;
-  static const score_t indel = -1;
+  static const score_t mismatch = -2;
+  static const score_t indel = -2;
   static const std::array<score_t, 2> score_lookup = {match, mismatch};
-};
+  static const score_t min_diffs_to_align = 4;
 
+  inline score_t default_score(const uint32_t len, const score_t diffs) {
+    return match*(len - diffs) + mismatch*diffs;
+  }
+  static score_t
+  count_deletions(const std::string &cigar) {
+    score_t ans = 0;
+    for (auto it(begin(cigar)); it != end(cigar);) {
+      ans += (extract_op_count(it, end(cigar))) * (*(it++) == 'D');
+    }
+    return ans;
+  }
+
+  static score_t
+  count_insertions(const std::string &cigar) {
+    score_t ans = 0;
+    for (auto it(begin(cigar)); it != end(cigar);) {
+      ans += (extract_op_count(it, end(cigar))) * (*(it++) == 'I');
+    }
+    return ans;
+  }
+
+  inline score_t
+  mismatch_score(const uint8_t q_base, const uint8_t t_base) {
+    return score_lookup[(q_base & t_base) == 0];
+  }
+
+  // edit distance as a function of aln_score and len
+  inline score_t edit_distance(const score_t scr, const uint32_t len,
+                               const std::string & cigar) {
+    if (scr == 0) return std::numeric_limits<score_t>::max();
+    const score_t ins = count_insertions(cigar);
+    const score_t del = count_deletions(cigar);
+
+    // A = S - (indel_pen) = match*M + mismatch*m
+    // B = len - ins = M + m
+    // m = (match*(len - ins) - A)/(match - mismatch)
+    const score_t A = scr - indel*(ins + del);
+    const score_t mism = (match*(len - ins) - A)/(match - mismatch);
+
+    return mism + ins + del;
+  }
+  inline void make_default_cigar(const uint32_t len, std::string &cigar) {
+    cigar = std::to_string(len) + 'M';
+  }
+};
 
 #endif

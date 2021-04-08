@@ -24,31 +24,31 @@
 #include <fstream>
 #include <unordered_set>
 #include <algorithm>
+#include <deque>
+#include <bitset>
 
 typedef std::vector<uint8_t> Genome;
+static inline char random_base() {return "ACGT"[rand() & 3];}
 
 namespace seed {
-  // the number of shifts is not related to the seed pattern, but is a
-  // choice we can make for any seed pattern.
-  // extern uint32_t n_shifts;
-
-  // number of positions in searching with the seed, and cannot be
-  // longer than n_solid_positions below. ADS: this is allowed to
-  // change for debug purposes, but not sure if should be adjustable
-  // by the end user.
-  static const uint32_t n_seed_positions = 32;
-  static const uint32_t index_interval = 2;
-
   // number of positions in the hashed portion of the seed
   static const uint32_t key_weight = 26;
 
-  static const size_t hash_mask = (1 << seed::key_weight) - 1;
+  // window in which we select the best k-mer
+  static const uint32_t minimizer_window_size = 17;
 
-  // number of positions used to sort positions based on
-  // sequence. This is used in building the index. ADS: this is
-  // allowed to change for debug purposes, but not sure if should be
-  // adjustable by the end user.
+  // number of positions to sort within buckets
   static const uint32_t n_sorting_positions = 128;
+
+  // seed size during mapping, or size of a two-letter exact match
+  static const uint32_t n_seed_positions = 32;
+
+  static const size_t hash_mask = (1ull << seed::key_weight) - 1;
+  // the purpose of padding the left and right ends of the
+  // concatenated genome is so that later we can avoid having to check
+  // the (unlikely) case that a read maps partly off either end of the
+  // genome.
+  static const size_t padding_size = 1024;
 };
 
 struct ChromLookup {
@@ -85,11 +85,6 @@ template <class G>
 void
 load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
 
-  // the purpose of padding the left and right ends of the
-  // concatenated genome is so that later we can avoid having to check
-  // the (unlikely) case that a read maps partly off either end of the
-  // genome.
-  static const size_t padding_size = 1024;
 
   std::ifstream in(genome_file);
   if (!in)
@@ -101,34 +96,33 @@ load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
   in.seekg(0, std::ios_base::beg);
 
   genome.clear();
-  genome.reserve(file_size + padding_size); // pad on at start; the
-                                            // space for padding at
-                                            // the end will be
-                                            // available because of
-                                            // the newlines and names
-                                            // within the file.
+  // pad on at start; the space for padding at the end will be
+  // available because of the newlines and chromosome names
+  genome.reserve(file_size + seed::padding_size);
 
   // pad the start of the concatenated sequence
   cl.names.push_back("pad_start");
-  for (size_t i = 0; i < padding_size; ++i)
+  for (size_t i = 0; i < seed::padding_size; ++i)
     genome.push_back('Z');
   cl.starts.push_back(genome.size());
 
   std::string line;
   while (getline(in, line))
     if (line[0] != '>') {
-      std::replace(begin(line), end(line), 'N', 'Z');
+      for (auto it(begin(line)); it != end(line); ++it)
+        if (*it == 'N') *it = random_base();
+
       copy(std::begin(line), std::end(line), std::back_inserter(genome));
     }
     else {
-      cl.names.push_back(line.substr(1, line.find_first_of(" \t") - 1));
+      cl.names.push_back(line.substr(1, line.find_first_of(" \t")));
       cl.starts.push_back(genome.size());
     }
 
   // now pad the end of the concatenated sequence
   cl.names.push_back("pad_end");
   cl.starts.push_back(genome.size());
-  for (size_t i = 0; i < padding_size; ++i)
+  for (size_t i = 0; i < seed::padding_size; ++i)
     genome.push_back('Z');
 
   cl.starts.push_back(genome.size());
@@ -141,19 +135,21 @@ struct AbismalIndex {
 
   static bool VERBOSE;
 
-  uint32_t counter_size; // number of kmers indexed
-  uint32_t index_size; // size of the index
+  size_t counter_size; // number of kmers indexed
+  size_t index_size; // size of the index
 
+  std::vector<bool> keep;
   std::vector<uint32_t> index; // genome positions for each k-mer
   std::vector<uint32_t> counter; // offset of each k-mer in "index"
   Genome genome; // the genome
   ChromLookup cl;
 
   /* count how many positions must be stored for each hash value */
+  template<const uint32_t key_weight>
   void get_bucket_sizes();
 
-  /* select genome positions to store */
-  void compress_index();
+  /* select genome positions using minimizers*/
+  void compress_minimizers();
 
   /* put genome positions in the appropriate buckets */
   void hash_genome();
@@ -169,30 +165,75 @@ struct AbismalIndex {
   void read(const std::string &index_file);
 
   static std::string internal_identifier;
-};
+  static const uint32_t index_interval = 1;
+  AbismalIndex() { }
 
+};
 
 // A/T nucleotide to 1-bit value (0100 | 0001 = 5) is for A or G.
 inline uint32_t
 get_bit(const uint8_t nt) {return (nt & 5) == 0;}
 
+template<const uint32_t key_weight>
 inline void
-shift_hash_key(const uint8_t c, uint32_t &hash_key) {
-  hash_key = ((hash_key << 1) | get_bit(c)) & seed::hash_mask;
+shift_hash_key(const uint8_t c, size_t &hash_key) {
+  static const size_t hash_mask = (1ull << key_weight) - 1;
+  hash_key = (((hash_key << 1) | get_bit(c)) & hash_mask);
 }
 
 // get the hash value for a k-mer (specified as some iterator/pointer)
 // and the encoding for the function above
-template <class T>
+template <const uint32_t kmer_len, class T>
 inline void
-get_1bit_hash(T r, uint32_t &k) {
-  const auto lim = r + seed::key_weight;
+get_1bit_hash(T r, size_t &k) {
+  const auto lim = r + kmer_len;
   k = 0;
   while (r != lim) {
-    k <<= 1;
-    k |= get_bit(*r);
+    k = ((k << 1) | get_bit(*r));
     ++r;
   }
 }
 
+/****** MINIMIZER FUNCTIONS ******/
+struct kmer_loc {
+  //uint32_t kmer;
+  uint32_t kmer;
+  uint32_t loc;
+
+  kmer_loc(const uint32_t k, const uint32_t l) : kmer(k), loc(l) {};
+
+  inline size_t cost() const {
+    return (kmer ^ random_mask);
+  }
+
+  bool operator < (const kmer_loc &rhs) const {
+    return cost() < rhs.cost();
+  };
+  bool operator > (const kmer_loc &rhs) const {
+    return cost() > rhs.cost();
+  };
+  bool operator == (const kmer_loc &rhs) const {
+    return cost() == rhs.cost();
+  };
+
+  static const uint32_t random_mask = 57491688u;
+};
+
+inline void
+add_kmer(std::deque<kmer_loc> &window_kmers, const kmer_loc new_pos) {
+  while(!window_kmers.empty() && window_kmers.back() > new_pos)
+    window_kmers.pop_back();
+
+  window_kmers.push_back(new_pos);
+
+  // removes k-mers outside of the sliding window
+  while (window_kmers.front().loc + seed::minimizer_window_size <= new_pos.loc)
+    window_kmers.pop_front();
+
+  // furtherPop(): Retain only the rightmost k-mer in case of ties
+  while (window_kmers.size() > 1 && window_kmers[0] == window_kmers[1])
+    window_kmers.pop_front();
+
+  //assert(is_sorted(begin(window_kmers), end(window_kmers)));
+}
 #endif
