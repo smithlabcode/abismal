@@ -1464,7 +1464,7 @@ select_max_candidates(const uint32_t genome_size,
 int main(int argc, const char **argv) {
 
   try {
-    static const string ABISMAL_VERSION = "0.1.2";
+    static const string ABISMAL_VERSION = "0.2.0";
     string index_file;
     string outfile;
     string stats_outfile = "";
