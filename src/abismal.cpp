@@ -674,7 +674,7 @@ process_seeds(const uint32_t max_candidates,
     auto e_idx(index_st + *(counter_st + k + 1));
     if (s_idx < e_idx) {
       find_candidates<seed::n_sorting_positions>(
-        read_start + j, genome_st, readlen, s_idx, e_idx
+        read_start + j, genome_st, readlen - j, s_idx, e_idx
       );
       if ((e_idx - s_idx) <= max_candidates){
         check_hits<strand_code>(s_idx, e_idx, even_read_start, even_read_end,
