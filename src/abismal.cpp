@@ -848,7 +848,6 @@ inline void
 map_single_ended(const bool VERBOSE, const bool allow_ambig,
                  const size_t batch_size, const size_t max_candidates,
                  const AbismalIndex &abismal_index, ReadLoader &rl,
-                 omp_lock_t &read_lock, omp_lock_t &write_lock,
                  se_map_stats &se_stats, ostream &out,
                  ProgressBar &progress) {
   const auto counter_st(begin(abismal_index.counter));
@@ -870,11 +869,13 @@ map_single_ended(const bool VERBOSE, const bool allow_ambig,
   Read pread, pread_even, pread_odd;
   vector<kmer_loc> kmers;
 
+  size_t the_byte;
   while (rl.good()) {
-    omp_set_lock(&read_lock);
-    rl.load_reads(names, reads);
-    const size_t the_byte = rl.get_current_byte();
-    omp_unset_lock(&read_lock);
+#pragma omp critical
+    {
+      rl.load_reads(names, reads);
+      the_byte = rl.get_current_byte();
+    }
 
     size_t max_batch_read_length = 0;
     update_max_read_length(max_batch_read_length, reads);
@@ -904,16 +905,20 @@ map_single_ended(const bool VERBOSE, const bool allow_ambig,
       }
     }
 
-    omp_set_lock(&write_lock);
-    for (size_t i = 0; i < n_reads; ++i) {
-      if (format_se(allow_ambig, res[i], abismal_index.cl, reads[i],
-            names[i], cigar[i], out) == map_unmapped)
-        res[i].reset(reads[i].size());
-      se_stats.update(res[i], reads[i].length() == 0);
+#pragma omp critical
+    {
+      for (size_t i = 0; i < n_reads; ++i) {
+        if (format_se(allow_ambig, res[i], abismal_index.cl, reads[i],
+              names[i], cigar[i], out) == map_unmapped)
+          res[i].reset(reads[i].size());
+        se_stats.update(res[i], reads[i].length() == 0);
+      }
     }
-    omp_unset_lock(&write_lock);
-    if (VERBOSE && progress.time_to_report(the_byte))
-      progress.report(cerr, the_byte);
+#pragma omp critical
+    {
+      if (VERBOSE && progress.time_to_report(the_byte))
+        progress.report(cerr, the_byte);
+    }
   }
 }
 
@@ -921,7 +926,6 @@ inline void
 map_single_ended_rand(const bool VERBOSE, const bool allow_ambig,
                       const size_t batch_size, const size_t max_candidates,
                       const AbismalIndex &abismal_index, ReadLoader &rl,
-                      omp_lock_t &read_lock, omp_lock_t &write_lock,
                       se_map_stats &se_stats, ostream &out,
                       ProgressBar &progress) {
   const auto counter_st(begin(abismal_index.counter));
@@ -941,11 +945,13 @@ map_single_ended_rand(const bool VERBOSE, const bool allow_ambig,
   Read pread, pread_even, pread_odd;
   vector<kmer_loc> kmers;
 
+  size_t the_byte;
   while (rl.good()) {
-    omp_set_lock(&read_lock);
-    rl.load_reads(names, reads);
-    const size_t the_byte = rl.get_current_byte();
-    omp_unset_lock(&read_lock);
+#pragma omp critical
+    {
+      rl.load_reads(names, reads);
+      the_byte = rl.get_current_byte();
+    }
 
     size_t max_batch_read_length = 0;
     update_max_read_length(max_batch_read_length, reads);
@@ -989,17 +995,20 @@ map_single_ended_rand(const bool VERBOSE, const bool allow_ambig,
         align_se_candidates(res[i], cigar[i], reads[i], pread, aln);
       }
     }
-
-    omp_set_lock(&write_lock);
-    for (size_t i = 0; i < n_reads; ++i) {
-      if (format_se(allow_ambig, res[i], abismal_index.cl, reads[i],
-            names[i], cigar[i], out) == map_unmapped)
-        res[i].reset(reads[i].size());
-      se_stats.update(res[i], reads[i].length() == 0);
+#pragma omp critical
+    {
+      for (size_t i = 0; i < n_reads; ++i) {
+        if (format_se(allow_ambig, res[i], abismal_index.cl, reads[i],
+              names[i], cigar[i], out) == map_unmapped)
+          res[i].reset(reads[i].size());
+        se_stats.update(res[i], reads[i].length() == 0);
+      }
     }
-    omp_unset_lock(&write_lock);
-    if (VERBOSE && progress.time_to_report(the_byte))
-      progress.report(cerr, the_byte);
+#pragma omp critical
+    {
+      if (VERBOSE && progress.time_to_report(the_byte))
+        progress.report(cerr, the_byte);
+    }
   }
 }
 
@@ -1016,12 +1025,6 @@ run_single_ended(const bool VERBOSE,
   ReadLoader rl(reads_file, batch_size);
   ProgressBar progress(get_filesize(reads_file), "mapping reads");
 
-  omp_lock_t read_lock;
-  omp_lock_t write_lock;
-
-  omp_init_lock(&read_lock);
-  omp_init_lock(&write_lock);
-
   if (VERBOSE)
     progress.report(cerr, 0);
 
@@ -1033,10 +1036,10 @@ run_single_ended(const bool VERBOSE,
   for (int i = 0; i < omp_get_num_threads(); ++i) {
     if (random_pbat)
       map_single_ended_rand(VERBOSE, allow_ambig, batch_size, max_candidates,
-        abismal_index, rl, read_lock, write_lock, se_stats, out, progress);
+        abismal_index, rl, se_stats, out, progress);
     else
       map_single_ended<conv>(VERBOSE, allow_ambig, batch_size, max_candidates,
-          abismal_index, rl, read_lock, write_lock, se_stats, out, progress);
+          abismal_index, rl, se_stats, out, progress);
   }
   if (VERBOSE) {
     //progress.report(cerr, get_filesize(reads_file));
@@ -1186,7 +1189,6 @@ map_paired_ended(const bool VERBOSE,
                  const bool allow_ambig, const size_t batch_size,
                  const size_t max_candidates, const AbismalIndex &abismal_index,
                  ReadLoader &rl1, ReadLoader &rl2,
-                 omp_lock_t &read_lock, omp_lock_t &write_lock,
                  pe_map_stats &pe_stats, ostream &out,
                  ProgressBar &progress) {
   const auto counter_st(begin(abismal_index.counter));
@@ -1220,13 +1222,14 @@ map_paired_ended(const bool VERBOSE,
 
   Read pread1, pread2, pread_even, pread_odd;
 
+  size_t the_byte;
   while (rl1.good() && rl2.good()) {
-    omp_set_lock(&read_lock);
-
-    rl1.load_reads(names1, reads1);
-    rl2.load_reads(names2, reads2);
-    const size_t the_byte = rl1.get_current_byte();
-    omp_unset_lock(&read_lock);
+#pragma omp critical
+    {
+      rl1.load_reads(names1, reads1);
+      rl2.load_reads(names2, reads2);
+      the_byte = rl1.get_current_byte();
+    }
 
     size_t max_batch_read_length = 0;
     update_max_read_length(max_batch_read_length, reads1);
@@ -1265,19 +1268,23 @@ map_paired_ended(const bool VERBOSE,
       }
     }
 
-    omp_set_lock(&write_lock);
-    for (size_t i = 0; i < n_reads; ++i) {
-      select_output(allow_ambig, abismal_index.cl, bests[i],
-        res_se1[i], res_se2[i], reads1[i], names1[i], reads2[i], names2[i],
-          cigar1[i], cigar2[i], out
-        );
-      pe_stats.update(allow_ambig, bests[i],
-                      res_se1[i], reads1[i].length() == 0,
-                      res_se2[i], reads2[i].length() == 0);
+#pragma omp critical
+    {
+      for (size_t i = 0; i < n_reads; ++i) {
+        select_output(allow_ambig, abismal_index.cl, bests[i],
+          res_se1[i], res_se2[i], reads1[i], names1[i], reads2[i], names2[i],
+            cigar1[i], cigar2[i], out
+          );
+        pe_stats.update(allow_ambig, bests[i],
+                        res_se1[i], reads1[i].length() == 0,
+                        res_se2[i], reads2[i].length() == 0);
+      }
     }
-    omp_unset_lock(&write_lock);
-    if (VERBOSE && progress.time_to_report(the_byte))
-      progress.report(cerr, the_byte);
+#pragma omp critical
+    {
+      if (VERBOSE && progress.time_to_report(the_byte))
+        progress.report(cerr, the_byte);
+    }
   }
 }
 
@@ -1286,7 +1293,6 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
                       const size_t batch_size, const size_t max_candidates,
                       const AbismalIndex &abismal_index,
                       ReadLoader &rl1, ReadLoader &rl2,
-                      omp_lock_t &read_lock, omp_lock_t &write_lock,
                       pe_map_stats &pe_stats, ostream &out,
                       ProgressBar &progress) {
   const auto counter_st(begin(abismal_index.counter));
@@ -1320,12 +1326,14 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
 
   Read pread1, pread2, pread_even, pread_odd;
 
+  size_t the_byte;
   while (rl1.good() && rl2.good()) {
-    omp_set_lock(&read_lock);
-    rl1.load_reads(names1, reads1);
-    rl2.load_reads(names2, reads2);
-    const size_t the_byte = rl1.get_current_byte();
-    omp_unset_lock(&read_lock);
+#pragma omp critical
+    {
+      rl1.load_reads(names1, reads1);
+      rl2.load_reads(names2, reads2);
+      the_byte = rl1.get_current_byte();
+    }
 
     size_t max_batch_read_length = 0;
     update_max_read_length(max_batch_read_length, reads1);
@@ -1387,20 +1395,24 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
       }
     }
 
-    omp_set_lock(&write_lock);
-    for (size_t i = 0; i < n_reads; ++i) {
-      select_output(allow_ambig, abismal_index.cl, bests[i],
-        res_se1[i], res_se2[i], reads1[i], names1[i], reads2[i], names2[i],
-        cigar1[i], cigar2[i], out
-      );
+#pragma omp critical
+    {
+      for (size_t i = 0; i < n_reads; ++i) {
+        select_output(allow_ambig, abismal_index.cl, bests[i],
+          res_se1[i], res_se2[i], reads1[i], names1[i], reads2[i], names2[i],
+          cigar1[i], cigar2[i], out
+        );
 
-      pe_stats.update(allow_ambig, bests[i],
-                      res_se1[i], reads1[i].length() == 0,
-                      res_se2[i], reads2[i].length() == 0);
+        pe_stats.update(allow_ambig, bests[i],
+                        res_se1[i], reads1[i].length() == 0,
+                        res_se2[i], reads2[i].length() == 0);
+      }
     }
-    omp_unset_lock(&write_lock);
-    if (VERBOSE && progress.time_to_report(the_byte))
-      progress.report(cerr, the_byte);
+#pragma omp critical
+    {
+      if (VERBOSE && progress.time_to_report(the_byte))
+        progress.report(cerr, the_byte);
+    }
   }
 }
 
@@ -1423,12 +1435,6 @@ run_paired_ended(const bool VERBOSE,
   ReadLoader rl2(reads_file2, batch_size);
   ProgressBar progress(get_filesize(reads_file1), "mapping reads");
 
-  omp_lock_t read_lock;
-  omp_lock_t write_lock;
-
-  omp_init_lock(&read_lock);
-  omp_init_lock(&write_lock);
-
   if (VERBOSE)
     progress.report(cerr, 0);
 
@@ -1438,11 +1444,11 @@ run_paired_ended(const bool VERBOSE,
   for (int i = 0; i < omp_get_num_threads(); ++i) {
     if (random_pbat)
       map_paired_ended_rand(VERBOSE, allow_ambig, batch_size, max_candidates,
-          abismal_index, rl1, rl2, read_lock, write_lock, pe_stats, out, progress);
+          abismal_index, rl1, rl2, pe_stats, out, progress);
 
     else
       map_paired_ended<conv>(VERBOSE, allow_ambig, batch_size, max_candidates,
-          abismal_index, rl1, rl2, read_lock, write_lock, pe_stats, out, progress);
+          abismal_index, rl1, rl2, pe_stats, out, progress);
   }
 
   if (VERBOSE) {
