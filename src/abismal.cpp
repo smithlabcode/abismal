@@ -96,7 +96,7 @@ struct ReadLoader {
         names.push_back(line.substr(1, line.find_first_of(" \t") - 1));
       }
       else if (line_count % 4 == 1) {
-        if (count_if(begin(line), end(line), 
+        if (count_if(begin(line), end(line),
                      [](const char c) {return c != 'N';}) < min_read_length)
           line.clear();
         reads.push_back(line);
@@ -404,7 +404,7 @@ struct pe_candidates {
   }
   void prepare_for_mating() {
     sort(begin(v), begin(v) + sz, // no sort_heap here as heapify used "diffs"
-         [](const se_element &a, const se_element &b){return a.pos < b.pos;});
+         [](const se_element &a, const se_element &b) {return a.pos < b.pos;});
     sz = unique(begin(v), begin(v) + sz) - begin(v);
   }
   vector<se_element> v;
@@ -556,7 +556,7 @@ check_hits(vector<uint32_t>::const_iterator start_idx,
   for (; start_idx != end_idx && !res.sure_ambig(); ++start_idx) {
     // GS: adds the next candidate to cache while current is compared
     __builtin_prefetch(
-        &(*(genome_st + ((*(start_idx + 1) - offset) >> 1)))
+      &(*(genome_st + ((*(start_idx + 1) - offset) >> 1)))
     );
 
     const uint32_t the_pos = (*start_idx - offset);
@@ -676,7 +676,7 @@ process_seeds(const uint32_t max_candidates,
       find_candidates<seed::n_sorting_positions>(
         read_start + j, genome_st, readlen - j, s_idx, e_idx
       );
-      if ((e_idx - s_idx) <= max_candidates){
+      if ((e_idx - s_idx) <= max_candidates) {
         check_hits<strand_code>(s_idx, e_idx, even_read_start, even_read_end,
           odd_read_start, odd_read_end, genome_st.itr, j, res
         );
@@ -1075,7 +1075,7 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
 
   for (auto j2(begin(res2.v)); j2 != j2_end; ++j2) {
     s2 = *j2;
-    if (valid_hit(s2.diffs, pread2.size())){
+    if (valid_hit(s2.diffs, pread2.size())) {
       const uint32_t unaligned_lim = s2.pos + pread2.size();
       for (j1 = begin(res1.v); j1 != j1_end &&
            j1->pos + pe_result::max_dist < unaligned_lim; ++j1);
@@ -1101,7 +1101,7 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
           // GS: only accept if length post alignment is still within limits
           if (valid(d1, len1) && valid(d2, len2) &&
               (s1.pos + pe_result::max_dist >= aligned_lim) &&
-              (s1.pos + pe_result::min_dist <= aligned_lim)){
+              (s1.pos + pe_result::min_dist <= aligned_lim)) {
             if (scr1 + scr2 > best.aln_score) {
               best.aln_score = scr1 + scr2;
               cig1 = cand_cig1; cig2 = cand_cig2;
@@ -1247,19 +1247,19 @@ map_paired_ended(const bool VERBOSE,
       map_fragments<conv, false,
                    get_strand_code('+',conv),
                    get_strand_code('-', flip_conv(conv))>(
-         reads1[i], reads2[i], pread1, pread2, pread_even, pread_odd,
-         cigar1[i], cigar2[i], max_candidates, counter_st,
-         index_st, genome_st, aln, kmers, res1[i], res2[i],
-         res_se1[i], res_se2[i], bests[i]
+        reads1[i], reads2[i], pread1, pread2, pread_even, pread_odd,
+        cigar1[i], cigar2[i], max_candidates, counter_st,
+        index_st, genome_st, aln, kmers, res1[i], res2[i],
+        res_se1[i], res_se2[i], bests[i]
       );
 
       map_fragments<!conv, true,
                    get_strand_code('+', flip_conv(conv)),
                    get_strand_code('-', conv)>(
-         reads2[i], reads1[i], pread1, pread2, pread_even, pread_odd,
-         cigar2[i], cigar1[i], max_candidates, counter_st,
-         index_st, genome_st, aln, kmers, res2[i], res1[i],
-         res_se2[i], res_se1[i], bests[i]
+        reads2[i], reads1[i], pread1, pread2, pread_even, pread_odd,
+        cigar2[i], cigar1[i], max_candidates, counter_st,
+        index_st, genome_st, aln, kmers, res2[i], res1[i],
+        res_se2[i], res_se1[i], bests[i]
       );
 
       if (!bests[i].valid || (!allow_ambig && bests[i].ambig)) {
@@ -1352,40 +1352,40 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
       map_fragments<t_rich, false,
                    get_strand_code('+', t_rich),
                    get_strand_code('-', a_rich)>(
-         reads1[i], reads2[i], pread1, pread2, pread_even, pread_odd,
-         cigar1[i], cigar2[i], max_candidates, counter_st,
-         index_st, genome_st, aln, kmers, res1[i], res2[i],
-         res_se1[i], res_se2[i], bests[i]
+        reads1[i], reads2[i], pread1, pread2, pread_even, pread_odd,
+        cigar1[i], cigar2[i], max_candidates, counter_st,
+        index_st, genome_st, aln, kmers, res1[i], res2[i],
+        res_se1[i], res_se2[i], bests[i]
       );
 
       // GS: (2) T/A-rich, -/+ strand
       map_fragments<a_rich, true,
                    get_strand_code('+', a_rich),
                    get_strand_code('-', t_rich)>(
-         reads2[i], reads1[i], pread2, pread1, pread_even, pread_odd,
-         cigar2[i], cigar1[i], max_candidates, counter_st,
-         index_st, genome_st, aln, kmers, res2[i], res1[i],
-         res_se2[i], res_se1[i], bests[i]
+        reads2[i], reads1[i], pread2, pread1, pread_even, pread_odd,
+        cigar2[i], cigar1[i], max_candidates, counter_st,
+        index_st, genome_st, aln, kmers, res2[i], res1[i],
+        res_se2[i], res_se1[i], bests[i]
       );
 
       // GS: (3) A/T-rich +/- strand
       map_fragments<a_rich, false,
                    get_strand_code('+', a_rich),
                    get_strand_code('-', t_rich)>(
-         reads1[i], reads2[i], pread1, pread2, pread_even, pread_odd,
-         cigar1[i], cigar2[i], max_candidates, counter_st, 
-         index_st, genome_st, aln, kmers, res1[i], res2[i],
-         res_se1[i], res_se2[i], bests[i]
+        reads1[i], reads2[i], pread1, pread2, pread_even, pread_odd,
+        cigar1[i], cigar2[i], max_candidates, counter_st,
+        index_st, genome_st, aln, kmers, res1[i], res2[i],
+        res_se1[i], res_se2[i], bests[i]
       );
 
       // GS: (4) A/T-rich, -/+ strand
       map_fragments<t_rich, true,
                    get_strand_code('+', t_rich),
                    get_strand_code('-', a_rich)>(
-         reads2[i], reads1[i], pread2, pread1, pread_even, pread_odd,
-         cigar2[i], cigar1[i], max_candidates, counter_st,
-         index_st, genome_st, aln, kmers, res2[i], res1[i],
-         res_se2[i], res_se1[i], bests[i]
+        reads2[i], reads1[i], pread2, pread1, pread_even, pread_odd,
+        cigar2[i], cigar1[i], max_candidates, counter_st,
+        index_st, genome_st, aln, kmers, res2[i], res1[i],
+        res_se2[i], res_se1[i], bests[i]
       );
 
       // GS: align best SE candidates if no concordant pairs found
