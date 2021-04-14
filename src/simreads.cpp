@@ -22,6 +22,7 @@
 
 #include "AbismalIndex.hpp"
 #include "cigar_utils.hpp"
+#include "sam_record.hpp"
 
 #include <iostream>
 #include <fstream>
@@ -64,7 +65,7 @@ struct FragInfo {
     name = "read" + to_string(frag_count++);
   }
   string
-  read1(const size_t read_length) const {
+  read1() const {
     assert(!name.empty());
     string read = seq.substr(0, read_length);
     for (size_t i = 0; i < read_length - read.length(); ++i)
@@ -72,7 +73,7 @@ struct FragInfo {
     return format_fastq_record(name + "_1", read);
   }
   string
-  read2(const size_t read_length) const {
+  read2() const {
     assert(!name.empty());
     string read(seq);
     revcomp_inplace(read);
@@ -82,7 +83,7 @@ struct FragInfo {
     return format_fastq_record(name + "_2", read);
   }
   void
-  erase_info_through_insert(const size_t read_length) {
+  erase_info_through_insert() {
     const size_t orig_ref_len = end_pos - start_pos;
     if (2*read_length < seq.length()) {
       string cigar2(cigar);
@@ -110,6 +111,8 @@ struct FragInfo {
     else replace(begin(seq), end(seq), 'C', 'T');
   }
 
+  bool rc() const { return strand == '-'; }
+
   string chrom;
   size_t start_pos;
   size_t end_pos;
@@ -121,17 +124,68 @@ struct FragInfo {
 
   static bool pbat;
   static size_t frag_count;
+  static size_t read_length;
 };
+
 bool FragInfo::pbat = false;
 size_t FragInfo::frag_count = 0;
+size_t FragInfo::read_length = 100;
 
 
 ostream &
 operator<<(ostream &out, FragInfo &the_info) {
-  return out << the_info.chrom << '\t' << the_info.start_pos << '\t'
-             << the_info.end_pos << '\t' << the_info.name << '\t'
-             << the_info.score << '\t' << the_info.strand << '\t'
-             << the_info.seq << '\t' << the_info.cigar;
+  uint16_t flags_read = 0;
+  uint16_t flags_mate = 0;
+
+  samflags::set(flags_read, samflags::read_paired);
+  samflags::set(flags_read, samflags::read_pair_mapped);
+  samflags::set(flags_read, samflags::template_first);
+  samflags::set(flags_read, the_info.rc() ? samflags::read_rc : samflags::mate_rc);
+
+  samflags::set(flags_mate, samflags::read_paired);
+  samflags::set(flags_mate, samflags::read_pair_mapped);
+  samflags::set(flags_mate, samflags::template_last);
+  samflags::set(flags_mate, the_info.rc() ? samflags::mate_rc : samflags::read_rc);
+
+  const size_t read_pos = the_info.start_pos + 1;
+  const size_t mate_pos = the_info.end_pos - FragInfo::read_length + 1;
+  const int tlen = the_info.rc() ? (-the_info.seq.size()) : (the_info.seq.size());
+  string cigar1 = the_info.cigar;
+  string cigar2 = the_info.cigar;
+
+  truncate_cigar_q(cigar1, FragInfo::read_length);
+  reverse_cigar(cigar2);
+  truncate_cigar_q(cigar2, FragInfo::read_length);
+  reverse_cigar(cigar2);
+
+  const string seq1 = the_info.seq.substr(0, FragInfo::read_length);
+  const string read_rc = revcomp(the_info.seq);
+  const string seq2 = read_rc.substr(0, FragInfo::read_length);
+
+  return out << the_info.name << ".1\t"
+             << flags_read << '\t'
+             << the_info.chrom << '\t'
+             << read_pos << '\t'
+             << "255\t"
+             << cigar1 << '\t'
+             << "=\t"
+             << the_info.chrom << "\t"
+             << mate_pos << "\t"
+             << tlen << '\t'
+             << seq1 << "\t"
+             << "*" << endl
+             << the_info.name << ".2\t"
+             << flags_mate << '\t'
+             << the_info.chrom << '\t'
+             << mate_pos << '\t'
+             << "255\t"
+             << cigar2 << '\t'
+             << "=\t"
+             << the_info.chrom << "\t"
+             << read_pos << "\t"
+             << -tlen << '\t'
+             << seq2 << "\t"
+             << "*";
 }
 
 istream &
@@ -241,10 +295,12 @@ struct FragMutator {
       if (mut == 'I') {
         cigar += "I";
         seq += random_base();
+        ++the_info.score;
       }
       else if (mut == 'D') {
         cigar += "D";
         ++i;
+        ++the_info.score;
       }
       else if (mut == 'M') {
         cigar += "M";
@@ -324,7 +380,6 @@ int main(int argc, const char **argv) {
     bool random_pbat = false;
 
     size_t n_reads = 100;
-    size_t read_length = 100;
     size_t min_frag_len = 100;
     size_t max_frag_len = 250;
 
@@ -347,7 +402,7 @@ int main(int argc, const char **argv) {
     opt_parse.add_opt("out", 'o', "output file prefix", true, output_prefix);
     opt_parse.add_opt("single", '\0', "output single end", false, single_end);
     opt_parse.add_opt("loc", '\0', "write locations", false, write_locations);
-    opt_parse.add_opt("read-len", 'l', "read length", false, read_length);
+    opt_parse.add_opt("read-len", 'l', "read length", false, FragInfo::read_length);
     opt_parse.add_opt("min-fraglen", '\0', "min fragment length",
                       false, min_frag_len);
     opt_parse.add_opt("max-fraglen", '\0', "max fragment length",
@@ -438,14 +493,14 @@ int main(int argc, const char **argv) {
 
 
     if (write_locations) {
-      const string locations_file = output_prefix + ".mr";
+      const string locations_file = output_prefix + ".sam";
       if (VERBOSE)
         cerr << "[writing frag locations: " << locations_file << "]" << endl;
       ofstream loc_out(locations_file);
       if (!loc_out)
         throw runtime_error("bad locations file: " + locations_file);
       for (size_t i = 0; i < the_info.size(); ++i) {
-        the_info[i].erase_info_through_insert(read_length);
+        //the_info[i].erase_info_through_insert();
         loc_out << the_info[i] << endl;
       }
     }
@@ -457,7 +512,7 @@ int main(int argc, const char **argv) {
     if (!read1_out)
       throw runtime_error("bad output file: " + read1_outfile);
     for (size_t i = 0; i < the_info.size(); ++i)
-      read1_out << the_info[i].read1(read_length) << endl;
+      read1_out << the_info[i].read1() << endl;
 
 
     if (!single_end) {
@@ -468,7 +523,7 @@ int main(int argc, const char **argv) {
       if (!read2_out)
         throw runtime_error("bad output file: " + read2_outfile);
       for (size_t i = 0; i < the_info.size(); ++i)
-        read2_out << the_info[i].read2(read_length) << endl;
+        read2_out << the_info[i].read2() << endl;
     }
   }
   catch (const runtime_error &e) {
