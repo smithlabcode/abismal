@@ -31,6 +31,7 @@
 #include <stdexcept>
 #include <random>
 #include <functional>
+#include <algorithm>
 
 #include <unistd.h>
 
@@ -134,6 +135,7 @@ size_t FragInfo::read_length = 100;
 
 ostream &
 operator<<(ostream &out, FragInfo &the_info) {
+  const bool rc = the_info.rc();
   uint16_t flags_read = 0;
   uint16_t flags_mate = 0;
 
@@ -149,40 +151,47 @@ operator<<(ostream &out, FragInfo &the_info) {
 
   const size_t read_pos = the_info.start_pos + 1;
   const size_t mate_pos = the_info.end_pos - FragInfo::read_length + 1;
-  const int tlen = the_info.rc() ? (-the_info.seq.size()) : (the_info.seq.size());
+  const int tlen = rc ? (-the_info.seq.size()) : (the_info.seq.size());
   string cigar1 = the_info.cigar;
   string cigar2 = the_info.cigar;
 
   truncate_cigar_q(cigar1, FragInfo::read_length);
   reverse_cigar(cigar2);
   truncate_cigar_q(cigar2, FragInfo::read_length);
-  reverse_cigar(cigar2);
+
+  if (rc) {
+    reverse_cigar(cigar1);
+  }
+  else
+    reverse_cigar(cigar2);
 
   const string seq1 = the_info.seq.substr(0, FragInfo::read_length);
   const string read_rc = revcomp(the_info.seq);
   const string seq2 = read_rc.substr(0, FragInfo::read_length);
+  const size_t pos1 = rc ? mate_pos : read_pos;
+  const size_t pos2 = rc ? read_pos : mate_pos;
 
   return out << the_info.name << ".1\t"
              << flags_read << '\t'
              << the_info.chrom << '\t'
-             << read_pos << '\t'
+             << pos1 << '\t'
              << "255\t"
              << cigar1 << '\t'
              << "=\t"
              << the_info.chrom << "\t"
-             << mate_pos << "\t"
+             << pos2 << "\t"
              << tlen << '\t'
              << seq1 << "\t"
              << "*" << endl
              << the_info.name << ".2\t"
              << flags_mate << '\t'
              << the_info.chrom << '\t'
-             << mate_pos << '\t'
+             << pos2 << '\t'
              << "255\t"
              << cigar2 << '\t'
              << "=\t"
              << the_info.chrom << "\t"
-             << read_pos << "\t"
+             << pos1 << "\t"
              << -tlen << '\t'
              << seq2 << "\t"
              << "*";
