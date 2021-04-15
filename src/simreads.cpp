@@ -71,7 +71,7 @@ struct FragInfo {
     string read = seq.substr(0, read_length);
     for (size_t i = 0; i < read_length - read.length(); ++i)
       read += random_base();
-    return format_fastq_record(name + "_1", read);
+    return format_fastq_record(name + ".1", read);
   }
   string
   read2() const {
@@ -81,7 +81,7 @@ struct FragInfo {
     read = read.substr(0, read_length);
     for (size_t i = 0; i < read_length - read.length(); ++i)
       read += random_base();
-    return format_fastq_record(name + "_2", read);
+    return format_fastq_record(name + ".2", read);
   }
   void
   erase_info_through_insert() {
@@ -178,11 +178,11 @@ operator<<(ostream &out, FragInfo &the_info) {
              << "255\t"
              << cigar1 << '\t'
              << "=\t"
-             << the_info.chrom << "\t"
              << pos2 << "\t"
              << tlen << '\t'
              << seq1 << "\t"
              << "*" << endl
+
              << the_info.name << ".2\t"
              << flags_mate << '\t'
              << the_info.chrom << '\t'
@@ -190,7 +190,6 @@ operator<<(ostream &out, FragInfo &the_info) {
              << "255\t"
              << cigar2 << '\t'
              << "=\t"
-             << the_info.chrom << "\t"
              << pos1 << "\t"
              << -tlen << '\t'
              << seq2 << "\t"
