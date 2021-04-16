@@ -106,10 +106,18 @@ struct FragInfo {
     merge_equal_neighbor_cigar_ops(cigar);
   }
   void
-  bisulfite_conversion(const bool random_pbat) {
-    if (pbat || (random_pbat && rand_double() < 0.5))
-      replace(begin(seq), end(seq), 'G', 'A');
-    else replace(begin(seq), end(seq), 'C', 'T');
+  bisulfite_conversion(const bool random_pbat,
+                       const double bs_conv) {
+    if (pbat || (random_pbat && rand_double() < 0.5)) {
+      for (auto it(begin(seq)); it != end(seq); ++it)
+        if (*it == 'G' && rand() < bs_conv)
+          *it = 'A';
+    }
+    else {
+      for (auto it(begin(seq)); it != end(seq); ++it)
+        if (*it == 'C' && rand() < bs_conv)
+          *it = 'T';
+    }
   }
 
   bool rc() const { return strand == '-'; }
@@ -239,7 +247,8 @@ struct FragSampler {
               const size_t milen, const size_t malen) :
     genome(g), cl(c), strand_code(sc), min_length(milen), max_length(malen) {}
   void
-  sample_fragment(FragInfo &the_info, const bool random_pbat) const {
+  sample_fragment(FragInfo &the_info, const bool random_pbat,
+                  const double bs_conv) const {
     const size_t frag_len = sim_frag_length(min_length, max_length);
     sim_frag_position(genome, frag_len, the_info.seq, the_info.start_pos);
 
@@ -255,7 +264,7 @@ struct FragSampler {
       revcomp_inplace(the_info.seq);
     the_info.cigar = to_string(frag_len) + "M"; // default, no muts
 
-    the_info.bisulfite_conversion(random_pbat);
+    the_info.bisulfite_conversion(random_pbat, bs_conv);
   }
   char sim_strand() const {
     if (strand_code == 'f') return '+';
@@ -401,6 +410,8 @@ int main(int argc, const char **argv) {
     double insertion_rate = 1.0;
     double deletion_rate = 1.0;
 
+    double bs_conv = 1.0;
+
     size_t max_mutations = std::numeric_limits<size_t>::max();
 
     /****************** COMMAND LINE OPTIONS ********************/
@@ -417,6 +428,8 @@ int main(int argc, const char **argv) {
                       false, max_frag_len);
     opt_parse.add_opt("n-reads", 'n', "number of reads", false, n_reads);
     opt_parse.add_opt("mut", 'm', "mutation rate", false, mutation_rate);
+    opt_parse.add_opt("bis", 'b', "bisulfite conversion rate", false,\
+                      bs_conv);
     opt_parse.add_opt("show-matches", '\0', "show match symbols in cigar",
                       false, show_cigar_matches);
     opt_parse.add_opt("changes", 'c',
@@ -482,7 +495,7 @@ int main(int argc, const char **argv) {
       cerr << "[simulating clean frags]" << endl;
     vector<FragInfo> the_info(n_reads);
     for (size_t i = 0; i < n_reads; ++i)
-      frag_samp.sample_fragment(the_info[i], random_pbat);
+      frag_samp.sample_fragment(the_info[i], random_pbat, bs_conv);
 
 
     if (VERBOSE)
