@@ -110,12 +110,12 @@ struct FragInfo {
                        const double bs_conv) {
     if (pbat || (random_pbat && rand_double() < 0.5)) {
       for (auto it(begin(seq)); it != end(seq); ++it)
-        if (*it == 'G' && rand() < bs_conv)
+        if (*it == 'G' && rand_double() < bs_conv)
           *it = 'A';
     }
     else {
       for (auto it(begin(seq)); it != end(seq); ++it)
-        if (*it == 'C' && rand() < bs_conv)
+        if (*it == 'C' && rand_double() < bs_conv)
           *it = 'T';
     }
   }
