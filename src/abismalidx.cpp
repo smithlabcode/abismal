@@ -79,11 +79,13 @@ int main(int argc, const char **argv) {
 
     /****************** START BUILDING INDEX *************/
     AbismalIndex abismal_index;
+    vector<uint8_t> genome;
     if (VERBOSE)
           cerr << "[loading genome]" << endl;
-      load_genome(genome_file, abismal_index.genome, abismal_index.cl);
+      load_genome(genome_file, genome, abismal_index.cl);
 
-    abismal_index.encode_genome();
+    abismal_index.encode_genome(genome);
+    vector<uint8_t>().swap(genome);
     abismal_index.compress_minimizers();
     abismal_index.hash_genome();
     abismal_index.sort_buckets();

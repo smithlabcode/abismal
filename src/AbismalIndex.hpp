@@ -26,8 +26,9 @@
 #include <algorithm>
 #include <deque>
 #include <bitset>
+#include <cassert>
 
-typedef std::vector<uint8_t> Genome;
+typedef std::vector<size_t> Genome;
 static inline char random_base() {return "ACGT"[rand() & 3];}
 
 namespace seed {
@@ -35,7 +36,9 @@ namespace seed {
   static const uint32_t key_weight = 26;
 
   // window in which we select the best k-mer
-  static const uint32_t minimizer_window_size = 17;
+  static const uint32_t w_index = 20;
+  static const uint32_t w_map = 30;
+  static const size_t max_seeds = 5;
 
   // number of positions to sort within buckets
   static const uint32_t n_sorting_positions = 128;
@@ -44,6 +47,7 @@ namespace seed {
   static const uint32_t n_seed_positions = 32;
 
   static const size_t hash_mask = (1ull << seed::key_weight) - 1;
+
   // the purpose of padding the left and right ends of the
   // concatenated genome is so that later we can avoid having to check
   // the (unlikely) case that a read maps partly off either end of the
@@ -84,8 +88,6 @@ struct ChromLookup {
 template <class G>
 void
 load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
-
-
   std::ifstream in(genome_file);
   if (!in)
     throw std::runtime_error("bad genome file: " + genome_file);
@@ -110,7 +112,7 @@ load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
   while (getline(in, line))
     if (line[0] != '>') {
       for (auto it(begin(line)); it != end(line); ++it)
-        if (*it == 'N') *it = random_base();
+        if (*it == 'N' || *it == 'n') *it = random_base();
 
       copy(std::begin(line), std::end(line), std::back_inserter(genome));
     }
@@ -145,7 +147,6 @@ struct AbismalIndex {
   ChromLookup cl;
 
   /* count how many positions must be stored for each hash value */
-  template<const uint32_t key_weight>
   void get_bucket_sizes();
 
   /* select genome positions using minimizers*/
@@ -159,34 +160,30 @@ struct AbismalIndex {
   void sort_buckets();
 
   /* convert the genome to 4-bit encoding */
-  void encode_genome();
+  void encode_genome(const std::vector<uint8_t> &input_genome);
 
   void write(const std::string &index_file) const;
   void read(const std::string &index_file);
 
   static std::string internal_identifier;
-  static const uint32_t index_interval = 1;
-  AbismalIndex() { }
-
+  AbismalIndex() {}
 };
 
 // A/T nucleotide to 1-bit value (0100 | 0001 = 5) is for A or G.
 inline uint32_t
 get_bit(const uint8_t nt) {return (nt & 5) == 0;}
 
-template<const uint32_t key_weight>
 inline void
 shift_hash_key(const uint8_t c, size_t &hash_key) {
-  static const size_t hash_mask = (1ull << key_weight) - 1;
-  hash_key = (((hash_key << 1) | get_bit(c)) & hash_mask);
+  hash_key = (((hash_key << 1) | get_bit(c)) & seed::hash_mask);
 }
 
 // get the hash value for a k-mer (specified as some iterator/pointer)
 // and the encoding for the function above
-template <const uint32_t kmer_len, class T>
+template <class T>
 inline void
 get_1bit_hash(T r, size_t &k) {
-  const auto lim = r + kmer_len;
+  const auto lim = r + seed::key_weight;
   k = 0;
   while (r != lim) {
     k = ((k << 1) | get_bit(*r));
@@ -196,42 +193,42 @@ get_1bit_hash(T r, size_t &k) {
 
 /****** MINIMIZER FUNCTIONS ******/
 struct kmer_loc {
-  //uint32_t kmer;
   uint32_t kmer;
   uint32_t loc;
 
   kmer_loc(const uint32_t k, const uint32_t l) : kmer(k), loc(l) {};
 
-  inline size_t cost() const {
-    return (kmer ^ random_mask);
+  inline uint32_t cost() const {
+    return (kmer^random_mask);
   }
-
-  bool operator < (const kmer_loc &rhs) const {
+  bool operator<(const kmer_loc &rhs) const {
     return cost() < rhs.cost();
   };
-  bool operator > (const kmer_loc &rhs) const {
+  bool operator>(const kmer_loc &rhs) const {
     return cost() > rhs.cost();
   };
-  bool operator == (const kmer_loc &rhs) const {
-    return cost() == rhs.cost();
-  };
-
-  static const uint32_t random_mask = 57491688u;
+  bool operator==(const kmer_loc &rhs) const {
+    return loc == rhs.loc;
+  }
+   bool operator!=(const kmer_loc &rhs) const {
+    return loc != rhs.loc;
+  }
+  static const uint32_t random_mask = 56832730u;
 };
 
+template<const size_t window_size>
 inline void
-add_kmer(std::deque<kmer_loc> &window_kmers, const kmer_loc new_pos) {
+add_kmer(const kmer_loc new_pos,
+         std::deque<kmer_loc> &window_kmers) {
+  // remove k-mers that will no longer be minimizers because they
+  // have higher value than the new entry
   while(!window_kmers.empty() && window_kmers.back() > new_pos)
     window_kmers.pop_back();
 
   window_kmers.push_back(new_pos);
 
   // removes k-mers outside of the sliding window
-  while (window_kmers.front().loc + seed::minimizer_window_size <= new_pos.loc)
-    window_kmers.pop_front();
-
-  // furtherPop(): Retain only the rightmost k-mer in case of ties
-  while (window_kmers.size() > 1 && window_kmers[0] == window_kmers[1])
+  while (window_kmers.front().loc + window_size <= new_pos.loc)
     window_kmers.pop_front();
 
   //assert(is_sorted(begin(window_kmers), end(window_kmers)));

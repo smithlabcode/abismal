@@ -28,7 +28,6 @@
 #include <iterator>
 #include <algorithm>
 #include <deque>
-#include <bitset>
 
 using std::string;
 using std::vector;
@@ -47,13 +46,12 @@ string AbismalIndex::internal_identifier = "AbismalIndex";
 using genome_iterator = genome_four_bit_itr;
 
 void
-AbismalIndex::encode_genome() {
+AbismalIndex::encode_genome(const vector<uint8_t> &input_genome) {
   if (VERBOSE)
     cerr << "[encoding genome]" << endl;
-  auto updated_end =
-    encode_dna_four_bit(begin(genome), end(genome), begin(genome));
-  genome.erase(updated_end, end(genome));
-  vector<uint8_t>(genome).swap(genome); // shrink to fit
+
+  genome.resize(input_genome.size()/16 + (input_genome.size()%16 != 0));
+  encode_dna_four_bit(begin(input_genome), end(input_genome), begin(genome));
 
   keep.resize(cl.get_genome_size());
   std::fill(begin(keep), end(keep), true);
@@ -61,17 +59,17 @@ AbismalIndex::encode_genome() {
   std::fill(end(keep) - seed::padding_size, end(keep), false);
 }
 
-template <const uint32_t key_weight> void
+void
 AbismalIndex::get_bucket_sizes() {
   counter.clear();
 
   // the "counter" has an additional entry for convenience
-  counter_size = (1ull << key_weight);
+  counter_size = (1ull << seed::key_weight);
   counter.resize(counter_size + 1, 0);
 
   const size_t genome_st = seed::padding_size;
   const size_t lim = cl.get_genome_size() - seed::key_weight - seed::padding_size;
-  ProgressBar progress(lim, "counting " + std::to_string(key_weight) +
+  ProgressBar progress(lim, "counting " + std::to_string(seed::key_weight) +
                             "-bit words");
 
   if (VERBOSE)
@@ -81,33 +79,30 @@ AbismalIndex::get_bucket_sizes() {
   genome_iterator gi(begin(genome));
   gi = gi + genome_st;
 
-  const auto gi_lim(gi + (key_weight - index_interval));
+  const auto gi_lim(gi + (seed::key_weight - 1));
   size_t hash_key = 0;
   while (gi != gi_lim)
-    shift_hash_key<key_weight>(*gi++, hash_key);
+    shift_hash_key(*gi++, hash_key);
 
-  for (size_t i = genome_st; i < lim; i += index_interval) {
+  for (size_t i = genome_st; i < lim; ++i) {
     if (VERBOSE && progress.time_to_report(i))
       progress.report(cerr, i);
 
-    for (size_t j = 0; j < index_interval; ++j)
-      shift_hash_key<key_weight>(*gi++, hash_key);
-
+    shift_hash_key(*gi++, hash_key);
     counter[hash_key] += keep[i];
-    //num_kmers += ((counter[hash_key] == 1) && keep[i]);
   }
   if (VERBOSE)
     progress.report(cerr, lim);
 
-  index_size = std::accumulate(begin(counter), end(counter), 0ULL);
   if (VERBOSE) {
-    cerr << "[bases indexed: " << index_size << "]\n";
+    const size_t bases_indexed = std::accumulate(begin(counter), end(counter), 0ULL);
+    cerr << "[bases indexed: " << bases_indexed << "]\n";
   }
 }
 
 void
 AbismalIndex::hash_genome() {
-  get_bucket_sizes<seed::key_weight>();
+  get_bucket_sizes();
 
   if (VERBOSE)
     cerr << "[allocating hash table]" << endl;
@@ -124,21 +119,19 @@ AbismalIndex::hash_genome() {
   genome_iterator gi(begin(genome));
   gi = gi + genome_st;
 
-  const auto gi_lim(gi + (seed::key_weight - index_interval));
+  const auto gi_lim(gi + (seed::key_weight - 1));
   size_t hash_key = 0;
   while (gi != gi_lim)
-    shift_hash_key<seed::key_weight>(*gi++, hash_key);
+    shift_hash_key(*gi++, hash_key);
 
-  for (size_t i = genome_st; i < lim; i += index_interval) {
+  for (size_t i = genome_st; i < lim; ++i) {
     if (VERBOSE && progress.time_to_report(i))
       progress.report(cerr, i);
 
-    for (size_t j = 0; j < index_interval; ++j)
-      shift_hash_key<seed::key_weight>(*gi++, hash_key);
+    shift_hash_key(*gi++, hash_key);
     if (keep[i])
       index[--counter[hash_key]] = i;
   }
-
   if (VERBOSE)
     progress.report(cerr, lim);
 }
@@ -150,6 +143,7 @@ AbismalIndex::compress_minimizers() {
 
   const size_t genome_st = seed::padding_size;
   const size_t lim = cl.get_genome_size() - seed::key_weight - seed::padding_size;
+
   ProgressBar progress(lim, "selecting minimizers");
 
   // start building up the hash key
@@ -158,24 +152,25 @@ AbismalIndex::compress_minimizers() {
   const auto gi_lim(gi + (seed::key_weight - 1));
   size_t hash_key = 0;
   while (gi != gi_lim)
-    shift_hash_key<seed::key_weight>(*gi++, hash_key);
+    shift_hash_key(*gi++, hash_key);
 
   // get the first W minimizers
-  for (size_t i = genome_st; i < genome_st + seed::minimizer_window_size; ++i) {
-    shift_hash_key<seed::key_weight>(*gi++, hash_key);
-    add_kmer(window_kmers, kmer_loc(hash_key, i));
+  for (size_t i = genome_st; i < genome_st + seed::w_index; ++i) {
+    shift_hash_key(*gi++, hash_key);
+    add_kmer<seed::w_index>(kmer_loc(hash_key, i), window_kmers);
   }
 
-  for (size_t i = genome_st + seed::minimizer_window_size; i < lim; ++i) {
+  for (size_t i = genome_st + seed::w_index; i < lim; ++i) {
     if (VERBOSE && progress.time_to_report(i))
       progress.report(cerr, i);
-
+    
     keep[window_kmers.front().loc] = true;
 
     // update minimizers using k-mer from current base
-    shift_hash_key<seed::key_weight>(*gi++, hash_key);
-    add_kmer(window_kmers, kmer_loc(hash_key, i));
+    shift_hash_key(*gi++, hash_key);
+    add_kmer<seed::w_index>(kmer_loc(hash_key, i), window_kmers);
   }
+
   keep[window_kmers.front().loc] = true;
 
   if (VERBOSE)
@@ -206,8 +201,9 @@ AbismalIndex::sort_buckets() {
   const BucketLess bucket_less(genome);
 #pragma omp parallel for
   for (size_t i = 0; i < counter_size; ++i)
-    if (counter[i + 1] > counter[i] + 1)
+    if (counter[i + 1] > counter[i] + 1) {
       sort(b + counter[i], b + counter[i + 1], bucket_less);
+    }
 }
 
 static void
@@ -228,7 +224,7 @@ AbismalIndex::write(const string &index_file) const {
   write_internal_identifier(out);
   cl.write(out);
 
-  if (fwrite((char*)&genome[0], 1, genome.size(), out) != genome.size() ||
+  if (fwrite((char*)&genome[0], sizeof(size_t), genome.size(), out) != genome.size() ||
       fwrite((char*)&counter_size, sizeof(size_t), 1, out) != 1 ||
       fwrite((char*)&index_size, sizeof(size_t), 1, out) != 1 ||
       fwrite((char*)(&counter[0]), sizeof(uint32_t),
@@ -264,10 +260,10 @@ AbismalIndex::read(const string &index_file) {
 
   cl.read(in);
 
-  const size_t genome_to_read = (cl.get_genome_size() + 1)/2;
+  const size_t genome_to_read = (cl.get_genome_size() + 15)/16;
   // read the 4-bit encoded genome
   genome.resize(genome_to_read);
-  if (fread((char*)&genome[0], 1, genome_to_read, in) != genome_to_read)
+  if (fread((char*)&genome[0], sizeof(size_t), genome_to_read, in) != genome_to_read)
     throw runtime_error(error_msg);
 
   // read the sizes of counter and index vectors
@@ -281,7 +277,7 @@ AbismalIndex::read(const string &index_file) {
             (counter_size + 1), in) != (counter_size + 1))
     throw runtime_error(error_msg);
 
-  // allocate then read the index vector
+  // allocate the read the index vector
   index = vector<uint32_t>(index_size);
   if (fread((char*)(&index[0]), sizeof(uint32_t), index_size, in) != index_size)
     throw runtime_error(error_msg);
