@@ -109,14 +109,16 @@ struct FragInfo {
   bisulfite_conversion(const bool random_pbat,
                        const double bs_conv) {
     if (pbat || (random_pbat && rand_double() < 0.5)) {
-      for (auto it(begin(seq)); it != end(seq); ++it)
-        if (*it == 'G' && rand_double() < bs_conv)
+      for (auto it(begin(seq)); it != end(seq); ++it) {
+        if (*it == 'G' && (rand_double() < bs_conv))
           *it = 'A';
+      }
     }
     else {
-      for (auto it(begin(seq)); it != end(seq); ++it)
-        if (*it == 'C' && rand_double() < bs_conv)
+      for (auto it(begin(seq)); it != end(seq); ++it) {
+        if (*it == 'C' && (rand_double() < bs_conv))
           *it = 'T';
+      }
     }
   }
 
@@ -247,8 +249,7 @@ struct FragSampler {
               const size_t milen, const size_t malen) :
     genome(g), cl(c), strand_code(sc), min_length(milen), max_length(malen) {}
   void
-  sample_fragment(FragInfo &the_info, const bool random_pbat,
-                  const double bs_conv) const {
+  sample_fragment(FragInfo &the_info) const {
     const size_t frag_len = sim_frag_length(min_length, max_length);
     sim_frag_position(genome, frag_len, the_info.seq, the_info.start_pos);
 
@@ -263,8 +264,6 @@ struct FragSampler {
     if (the_info.strand == '-')
       revcomp_inplace(the_info.seq);
     the_info.cigar = to_string(frag_len) + "M"; // default, no muts
-
-    the_info.bisulfite_conversion(random_pbat, bs_conv);
   }
   char sim_strand() const {
     if (strand_code == 'f') return '+';
@@ -393,7 +392,7 @@ int main(int argc, const char **argv) {
     bool VERBOSE = false;
     bool write_locations = false;
     bool single_end = false;
-    bool show_cigar_matches = false;
+    bool show_cigar_matches = true;
     bool random_pbat = false;
 
     size_t n_reads = 100;
@@ -495,8 +494,7 @@ int main(int argc, const char **argv) {
       cerr << "[simulating clean frags]" << endl;
     vector<FragInfo> the_info(n_reads);
     for (size_t i = 0; i < n_reads; ++i)
-      frag_samp.sample_fragment(the_info[i], random_pbat, bs_conv);
-
+      frag_samp.sample_fragment(the_info[i]);
 
     if (VERBOSE)
       cerr << "[mutating the frags]" << endl;
@@ -504,9 +502,13 @@ int main(int argc, const char **argv) {
                          insertion_rate, deletion_rate);
     if (VERBOSE)
       cerr << frag_mut << endl;
+
+
     for (size_t i = 0; i < the_info.size(); ++i)
       frag_mut.mutate(the_info[i]);
 
+    for (size_t i = 0; i < the_info.size(); ++i)
+      the_info[i].bisulfite_conversion(random_pbat, bs_conv);
 
     if (!show_cigar_matches)
       for (size_t i = 0; i < the_info.size(); ++i)
@@ -521,7 +523,6 @@ int main(int argc, const char **argv) {
       if (!loc_out)
         throw runtime_error("bad locations file: " + locations_file);
       for (size_t i = 0; i < the_info.size(); ++i) {
-        //the_info[i].erase_info_through_insert();
         loc_out << the_info[i] << endl;
       }
     }
