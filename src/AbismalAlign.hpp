@@ -51,7 +51,7 @@ struct AbismalAlign {
   const size_t q_sz_max;
   const size_t bw;
 
-  static const uint16_t max_off_diag = 2;
+  static const uint16_t max_off_diag = 3;
 };
 
 template <score_t (*scr_fun)(const uint8_t, const uint8_t),
@@ -268,7 +268,7 @@ namespace simple_aln {
 
   // edit distance as a function of aln_score and len
   inline score_t edit_distance(const score_t scr, const uint32_t len,
-                               const std::string & cigar) {
+                               const std::string &cigar) {
     if (scr == 0) return std::numeric_limits<score_t>::max();
     const score_t ins = count_insertions(cigar);
     const score_t del = count_deletions(cigar);
