@@ -196,10 +196,11 @@ struct se_candidates {
   inline bool full() const { return sz == max_size; };
   void update_exact_match(const uint32_t p, const score_t d, const flags_t s) {
     if (d == 0) {
+      const se_element cand(p, d, s);
       if (best.empty())
-        best = se_element(p, d, s); // s has ambig flag set to false
+        best = cand; // s has ambig flag set to false
 
-      else if ((p != best.pos || s != best.flags))
+      else if (cand != best)
         best.set_ambig();
     }
   }
@@ -233,7 +234,7 @@ struct se_candidates {
   }
 
   void prepare_for_alignments() {
-   sort(begin(v), begin(v) + sz, // no sort_heap here as heapify used "diffs"
+    sort(begin(v), begin(v) + sz, // no sort_heap here as heapify used "diffs"
          [](const se_element &a, const se_element &b) {
            return (a.pos < b.pos) || (a.pos == b.pos && a.flags < b.flags);
          });
@@ -248,7 +249,7 @@ struct se_candidates {
   static const uint32_t max_size;
 };
 
-const uint32_t se_candidates::max_size = 100;
+const uint32_t se_candidates::max_size = 50;
 
 inline bool
 chrom_and_posn(const ChromLookup &cl, const string &cig, const uint32_t p,
@@ -298,7 +299,7 @@ struct pe_element {
     r2.reset();
   }
   inline void update(const se_element s1, const se_element s2) {
-    r1 = s2;
+    r1 = s1;
     r2 = s2;
   }
 
@@ -431,7 +432,7 @@ struct pe_candidates {
   static const uint32_t max_size;
 };
 
-const uint32_t pe_candidates::max_size = 1000;
+const uint32_t pe_candidates::max_size = 300;
 
 inline double pct(const double a, const double b) {return 100.0*a/b;}
 
@@ -1288,7 +1289,6 @@ map_paired_ended(const bool VERBOSE,
         cigar1[i], cigar2[i], aln, offsets, window_kmers, res1, res2,
         res_se1, res_se2, bests[i]
       );
-
       map_fragments<!conv, true,
                    get_strand_code('+', flip_conv(conv)),
                    get_strand_code('-', conv)>(
@@ -1297,7 +1297,6 @@ map_paired_ended(const bool VERBOSE,
         cigar2[i], cigar1[i], aln, offsets, window_kmers, res2, res1,
         res_se2, res_se1, bests[i]
       );
-
       if (bests[i].empty() || (!allow_ambig && bests[i].ambig())) {
         align_se_candidates(reads1[i], res_se1, bests_se1[i], cigar1[i], pread1, aln);
         align_se_candidates(reads2[i], res_se2, bests_se2[i], cigar2[i], pread2, aln);
