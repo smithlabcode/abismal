@@ -37,7 +37,11 @@ namespace seed {
 
   // window in which we select the best k-mer
   static const uint32_t w_index = 20;
+
+  // GS: must be >= w_index to guarantee the minimizer was indexed
   static const uint32_t w_map = 30;
+
+  // max k-mers used for comparison
   static const size_t max_seeds = 5;
 
   // number of positions to sort within buckets
