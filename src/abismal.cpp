@@ -184,6 +184,13 @@ valid(const se_element s, const uint32_t readlen) {
 }
 
 inline bool
+valid_pair(const se_element s1, const se_element s2,
+           const uint32_t readlen1, const uint32_t readlen2) {
+  return (s1.diffs +s2.diffs) <=
+         static_cast<score_t>(se_element::valid_frac*(readlen1+readlen2));
+}
+
+inline bool
 valid_hit(const se_element s, const uint32_t readlen) {
   return s.diffs < static_cast<score_t>(se_element::invalid_hit_frac*readlen);
 }
@@ -227,6 +234,7 @@ struct se_candidates {
   inline bool sure_ambig() const {
     return best.sure_ambig();
   }
+
   void reset(const uint32_t readlen)  {
     v.front().reset(readlen);
     sz = 1;
@@ -402,7 +410,7 @@ format_pe(const bool allow_ambig,
 struct pe_candidates {
   pe_candidates() : v(vector<se_element>(max_size)), sz(1) {}
   bool full() const {return sz == max_size;}
-  void reset(const uint32_t readlen) {
+  inline void reset(const uint32_t readlen) {
     v.front().reset(readlen); sz = 1;
   }
   score_t get_cutoff() const { return v.front().diffs; }
@@ -419,9 +427,10 @@ struct pe_candidates {
       }
     }
   }
-  bool sure_ambig() const {
+  inline bool sure_ambig() const {
     return full() && (v.front().diffs == 0);
   }
+
   void prepare_for_mating() {
     sort(begin(v), begin(v) + sz, // no sort_heap here as heapify used "diffs"
          [](const se_element &a, const se_element &b) {return a.pos < b.pos;});
@@ -570,9 +579,13 @@ score_t
 full_compare(const score_t cutoff, const PackedRead::const_iterator read_end,
              const uint32_t offset, PackedRead::const_iterator read_itr,
              Genome::const_iterator genome_itr) {
+  static const score_t max_matches = static_cast<score_t>(16);
   score_t d = 0;
   while (d < cutoff && read_itr != read_end) {
-    d += 16 - __builtin_popcountll((*read_itr) & 
+    d += max_matches - __builtin_popcountll(
+      (*read_itr) & /*16 bases from the read*/
+
+      /*16 bases from the padded genome*/
       ((*genome_itr >> offset) | ((*++genome_itr << (63 - offset)) << 1))
     );
     ++read_itr;
@@ -670,7 +683,6 @@ find_candidates(const Read::const_iterator read_start,
   }
 }
 
-
 template <const uint16_t strand_code, class result_type>
 void
 process_seeds(const uint32_t max_candidates,
@@ -709,6 +721,8 @@ process_seeds(const uint32_t max_candidates,
     // GS: this needs to be more readable
     shift_hash_key(*(read_start + seed::key_weight + j), k);
   }
+
+  if (res.sure_ambig()) return;
 
   // sensitive step: get positions using minimizers
   get_minimizer_offsets(readlen, read_start, offsets, window_kmers);
@@ -785,9 +799,10 @@ pack_read(const Read &pread, PackedRead &packed_pread) {
 
 using AbismalAlignSimple =
       AbismalAlign<simple_aln::mismatch_score, simple_aln::indel>;
+//using AbismalAlignSimple = AbismalAlignKSW;
 
 static score_t
-align_read(se_element &res, const Read &pread,
+align_read(Read &pread, se_element &res,
          uint32_t &len, string &cigar, AbismalAlignSimple &aln) {
   const score_t readlen = static_cast<score_t>(pread.size());
   if (res.diffs == readlen ||
@@ -805,7 +820,7 @@ align_read(se_element &res, const Read &pread,
 }
 
 static score_t
-align_read(se_element &res, const string &read,
+align_read(const string &read, se_element &res,
            Read &pread, uint32_t &len, string &cigar,
            AbismalAlignSimple &aln) {
   // re-encodes the read based on best match
@@ -819,7 +834,7 @@ align_read(se_element &res, const string &read,
     if (res.elem_is_a_rich()) prep_read<true>(read, pread);
     else prep_read<false>(read, pread);
   }
-  return align_read(res, pread, len, cigar, aln);
+  return align_read(pread, res, len, cigar, aln);
 }
 
 static void
@@ -830,15 +845,13 @@ align_se_candidates(const string &read,
   /* GS: this is faster, but potentially prevents ends to be
    * soft-clipped, which is helpful on reads with bad ends that were
    * not trimmed prior to alignment */
-  if (res.best.diffs <= simple_aln::min_diffs_to_align) {
+  const score_t readlen = static_cast<score_t>(read.size());
+  if (res.best.diffs < simple_aln::min_diffs_to_align) {
     best = res.best;
-    simple_aln::make_default_cigar(read.size(), cigar);
+    simple_aln::make_default_cigar(readlen, cigar);
     return;
   }
 
-  const score_t readlen = static_cast<score_t>(read.size());
-
-  // variables to store the best alignment score
   score_t best_score = 0;
   uint32_t len = 0;
   se_element s;
@@ -850,7 +863,7 @@ align_se_candidates(const string &read,
   for (auto it(begin(res.v)); it != lim; ++it) {
     s = *it;
     if (valid_hit(s, readlen)) {
-      const score_t scr = align_read(s, read, pread, len, cand_cigar, aln);
+      const score_t scr = align_read(read, s, pread, len, cand_cigar, aln);
       if (valid(s, len)) {
         if (scr > best_score) {
           best = s; // GS: ambig is unset on s
@@ -1094,7 +1107,7 @@ best_single(const pe_candidates &pres, se_candidates &res) {
 template <const bool swap_ends>
 static void
 best_pair(const pe_candidates &res1, const pe_candidates &res2,
-          const Read &pread1, const Read &pread2,
+          Read &pread1, Read &pread2,
           score_t &aln_score, string &cig1, string &cig2,
           AbismalAlignSimple &aln, pe_element &best) {
   auto j1 = begin(res1.v);
@@ -1117,16 +1130,15 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
       while (j1 != j1_end && j1->pos + pe_element::min_dist <= unaligned_lim) {
         s1 = *j1;
         if (valid_hit(s1, pread1.size())) {
-          const score_t scr1 = align_read(s1, pread1, len1, cand_cig1, aln);
+          const score_t scr1 = align_read(pread1, s1, len1, cand_cig1, aln);
 
           // GS: guarantees that j2 is aligned only once
           if (scr2 == 0) {
-            scr2 = align_read(s2, pread2, len2, cand_cig2, aln);
+            scr2 = align_read(pread2, s2, len2, cand_cig2, aln);
             aligned_lim = s2.pos + cigar_rseq_ops(cand_cig2);
           }
-
           // GS: only accept if length post alignment is still within limits
-          if (valid(s1, len1) && valid(s2, len2) &&
+          if (valid_pair(s1, s2, len1, len2) &&
               (s1.pos + pe_element::max_dist >= aligned_lim) &&
               (s1.pos + pe_element::min_dist <= aligned_lim)) {
             const score_t scr = scr1 + scr2;
@@ -1151,8 +1163,8 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
 }
 
 template <const bool swap_ends>
-inline void
-select_maps(const Read &pread1, const Read &pread2,
+void
+select_maps(Read &pread1, Read &pread2,
             score_t &aln_score, string &cig1, string &cig2,
             pe_candidates &res1, pe_candidates &res2,
             se_candidates &res_se1, se_candidates &res_se2,
@@ -1170,7 +1182,7 @@ select_maps(const Read &pread1, const Read &pread2,
 
 template <const bool cmp, const bool swap_ends,
           const uint16_t strand_code1, const uint16_t strand_code2>
-inline void
+void
 map_fragments(const string &read1, const string &read2,
               const uint32_t max_candidates,
               const vector<uint32_t>::const_iterator counter_st,
@@ -1289,6 +1301,7 @@ map_paired_ended(const bool VERBOSE,
         cigar1[i], cigar2[i], aln, offsets, window_kmers, res1, res2,
         res_se1, res_se2, bests[i]
       );
+
       map_fragments<!conv, true,
                    get_strand_code('+', flip_conv(conv)),
                    get_strand_code('-', conv)>(
@@ -1297,6 +1310,7 @@ map_paired_ended(const bool VERBOSE,
         cigar2[i], cigar1[i], aln, offsets, window_kmers, res2, res1,
         res_se2, res_se1, bests[i]
       );
+
       if (bests[i].empty() || (!allow_ambig && bests[i].ambig())) {
         align_se_candidates(reads1[i], res_se1, bests_se1[i], cigar1[i], pread1, aln);
         align_se_candidates(reads2[i], res_se2, bests_se2[i], cigar2[i], pread2, aln);
