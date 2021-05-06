@@ -186,8 +186,7 @@ valid(const se_element s, const uint32_t readlen) {
 inline bool
 valid_pair(const se_element s1, const se_element s2,
            const uint32_t readlen1, const uint32_t readlen2) {
-  return (s1.diffs +s2.diffs) <=
-         static_cast<score_t>(se_element::valid_frac*(readlen1+readlen2));
+  return valid(s1, readlen1) && valid(s2, readlen2);
 }
 
 inline bool
@@ -544,15 +543,19 @@ select_output(const bool allow_ambig, const ChromLookup &cl,
   if (pe_map_type == map_unmapped ||
       (!allow_ambig && pe_map_type == map_ambig)) {
     // GS: do not report in mapstats a read that was not reported
-    if (pe_map_type == map_unmapped)
+    if (pe_map_type == map_unmapped) {
       best.reset();
-
-    if (format_se(allow_ambig, se1, cl, read1, name1, cig1, out) ==
-        map_unmapped)
-      se1.reset(read1.size());
-    if (format_se(allow_ambig, se2, cl, read2, name2, cig2, out) ==
-        map_unmapped)
-      se2.reset(read2.size());
+      se1.reset();
+      se2.reset();
+    }
+    else {
+      if (format_se(allow_ambig, se1, cl, read1, name1, cig1, out) ==
+          map_unmapped)
+        se1.reset();
+      if (format_se(allow_ambig, se2, cl, read2, name2, cig2, out) ==
+          map_unmapped)
+        se2.reset();
+    }
   }
 }
 
@@ -1311,7 +1314,7 @@ map_paired_ended(const bool VERBOSE,
         res_se2, res_se1, bests[i]
       );
 
-      if (bests[i].empty() || (!allow_ambig && bests[i].ambig())) {
+      if (!allow_ambig && bests[i].ambig()) {
         align_se_candidates(reads1[i], res_se1, bests_se1[i], cigar1[i], pread1, aln);
         align_se_candidates(reads2[i], res_se2, bests_se2[i], cigar2[i], pread2, aln);
       }
@@ -1447,7 +1450,7 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
       );
 
       // GS: align best SE candidates if no concordant pairs found
-      if (bests[i].empty() || bests[i].ambig()) {
+      if (!allow_ambig && bests[i].ambig()) {
         align_se_candidates(reads1[i], res_se1, bests_se1[i], cigar1[i], pread1, aln);
         align_se_candidates(reads2[i], res_se2, bests_se2[i], cigar2[i], pread2, aln);
       }
