@@ -21,7 +21,6 @@ $(error src/smithlab_cpp does not have a Makefile. \
 	      Did you use --recursive when running git clone?)
 endif
 
-
 SRC_ROOT=$(shell pwd)
 all:
 	@make -C $(SMITHLAB_CPP) all
@@ -31,5 +30,6 @@ install:
 	@make -C src SRC_ROOT=$(SRC_ROOT) OPT=1 install
 
 clean:
+	@make -C $(SMITHLAB_CPP) clean
 	@make -C src clean
 .PHONY: clean
