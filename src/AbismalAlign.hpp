@@ -51,7 +51,7 @@ struct AbismalAlign {
   const size_t q_sz_max;
   const size_t bw;
 
-  static const uint16_t max_off_diag = 3;
+  static const uint16_t max_off_diag = 2;
 };
 
 template <score_t (*scr_fun)(const uint8_t, const uint8_t),
@@ -194,11 +194,12 @@ AbismalAlign<scr_fun, indel_pen>::align(const std::vector<uint8_t> &qseq,
     tb_cur += bw; // next row in traceback
     cur += bw; // next row in aln matrix
     from_diag<scr_fun>(cur + left, cur + right, prev + left,
-                       q_itr + (i > bw ? i - bw : 0), *t_itr++, tb_cur + left);
+                       q_itr + (i > bw ? i - bw : 0), *t_itr, tb_cur + left);
 
     from_above<indel_pen>(prev + left + 1, prev + right, cur + left, tb_cur + left);
 
     from_left<indel_pen>(cur + left, cur + left + 1, cur + right, tb_cur + left + 1);
+    ++t_itr;
     prev += bw; // update previous row
   }
 
@@ -235,8 +236,8 @@ AbismalAlign<scr_fun, indel_pen>::align(const std::vector<uint8_t> &qseq,
 // 1 -1 -1 scoring scheme for edit distance.
 namespace simple_aln {
   static const score_t match = 1;
-  static const score_t mismatch = -2;
-  static const score_t indel = -2;
+  static const score_t mismatch = -1;
+  static const score_t indel = -1;
   static const std::array<score_t, 2> score_lookup = {match, mismatch};
   static const score_t min_diffs_to_align = 4;
 
