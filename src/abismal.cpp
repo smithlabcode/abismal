@@ -256,7 +256,7 @@ struct se_candidates {
   static const uint32_t max_size;
 };
 
-const uint32_t se_candidates::max_size = 50;
+const uint32_t se_candidates::max_size = 200;
 
 inline bool
 chrom_and_posn(const ChromLookup &cl, const string &cig, const uint32_t p,
@@ -440,7 +440,7 @@ struct pe_candidates {
   static const uint32_t max_size;
 };
 
-const uint32_t pe_candidates::max_size = 300;
+const uint32_t pe_candidates::max_size = 400;
 
 inline double pct(const double a, const double b) {return 100.0*a/b;}
 
@@ -543,19 +543,14 @@ select_output(const bool allow_ambig, const ChromLookup &cl,
   if (pe_map_type == map_unmapped ||
       (!allow_ambig && pe_map_type == map_ambig)) {
     // GS: do not report in mapstats a read that was not reported
-    if (pe_map_type == map_unmapped) {
+    if (pe_map_type == map_unmapped)
       best.reset();
+    if (format_se(allow_ambig, se1, cl, read1, name1, cig1, out) ==
+        map_unmapped)
       se1.reset();
+    if (format_se(allow_ambig, se2, cl, read2, name2, cig2, out) ==
+        map_unmapped)
       se2.reset();
-    }
-    else {
-      if (format_se(allow_ambig, se1, cl, read1, name1, cig1, out) ==
-          map_unmapped)
-        se1.reset();
-      if (format_se(allow_ambig, se2, cl, read2, name2, cig2, out) ==
-          map_unmapped)
-        se2.reset();
-    }
   }
 }
 
@@ -632,27 +627,27 @@ get_minimizer_offsets(const uint32_t readlen,
   const uint32_t shift_lim = (readlen >= seed::n_seed_positions) ? 
                              (readlen - seed::n_seed_positions) : 0;
   size_t kmer = 0;
+  size_t shift = 0;
 
   offsets.clear();
   window_kmers.clear();
 
   get_1bit_hash(read_start, kmer);
-  add_kmer<seed::w_map>(kmer_loc(kmer, 0), window_kmers);
   read_start += seed::key_weight;
 
-  for (size_t i = 1; i < seed::w_map; ++i) {
+  for (; shift <= seed::w_map; ++shift) {
+    add_kmer<seed::w_map>(kmer_loc(kmer, shift), window_kmers);
     shift_hash_key(*read_start++, kmer);
-    add_kmer<seed::w_map>(kmer_loc(kmer, i), window_kmers);
   }
 
-  for (size_t i = seed::w_map; i <= shift_lim; ++i) {
-    if (window_kmers.front() != offsets.back())
+  for (; shift <= shift_lim; ++shift) {
+    if (offsets.empty() || window_kmers.front() != offsets.back())
       offsets.push_back(window_kmers.front());
+    add_kmer<seed::w_map>(kmer_loc(kmer, shift), window_kmers);
     shift_hash_key(*read_start++, kmer);
-    add_kmer<seed::w_map>(kmer_loc(kmer, i), window_kmers);
   }
 
-  if (window_kmers.front() != offsets.back())
+  if (offsets.empty() || window_kmers.front() != offsets.back())
     offsets.push_back(window_kmers.front());
 }
 
@@ -805,7 +800,7 @@ using AbismalAlignSimple =
 //using AbismalAlignSimple = AbismalAlignKSW;
 
 static score_t
-align_read(Read &pread, se_element &res,
+align_read(const Read &pread, se_element &res,
          uint32_t &len, string &cigar, AbismalAlignSimple &aln) {
   const score_t readlen = static_cast<score_t>(pread.size());
   if (res.diffs == readlen ||
@@ -822,33 +817,16 @@ align_read(Read &pread, se_element &res,
   return ans;
 }
 
-static score_t
-align_read(const string &read, se_element &res,
-           Read &pread, uint32_t &len, string &cigar,
-           AbismalAlignSimple &aln) {
-  // re-encodes the read based on best match
-  if (res.rc()) {
-    const string read_rc(revcomp(read));
-    // rc reverses richness of read
-    if (res.elem_is_a_rich()) prep_read<false>(read_rc, pread);
-    else prep_read<true>(read_rc, pread);
-  }
-  else {
-    if (res.elem_is_a_rich()) prep_read<true>(read, pread);
-    else prep_read<false>(read, pread);
-  }
-  return align_read(pread, res, len, cigar, aln);
-}
-
 static void
-align_se_candidates(const string &read,
+align_se_candidates(const Read &pread_t, const Read &pread_t_rc,
+                    const Read &pread_a, const Read &pread_a_rc,
                     se_candidates &res, se_element &best, 
-                    string &cigar, Read &pread,
+                    string &cigar,
                     AbismalAlignSimple &aln) {
   /* GS: this is faster, but potentially prevents ends to be
    * soft-clipped, which is helpful on reads with bad ends that were
    * not trimmed prior to alignment */
-  const score_t readlen = static_cast<score_t>(read.size());
+  const score_t readlen = static_cast<score_t>(pread_t.size());
   if (res.best.diffs < simple_aln::min_diffs_to_align) {
     best = res.best;
     simple_aln::make_default_cigar(readlen, cigar);
@@ -857,6 +835,7 @@ align_se_candidates(const string &read,
 
   score_t best_score = 0;
   uint32_t len = 0;
+  uint32_t best_len = 0;
   se_element s;
   string cand_cigar;
 
@@ -866,24 +845,28 @@ align_se_candidates(const string &read,
   for (auto it(begin(res.v)); it != lim; ++it) {
     s = *it;
     if (valid_hit(s, readlen)) {
-      const score_t scr = align_read(read, s, pread, len, cand_cigar, aln);
-      if (valid(s, len)) {
-        if (scr > best_score) {
-          best = s; // GS: ambig is unset on s
-          best_score = scr;
-          cigar = cand_cigar;
-        }
-
-        /* GS: need to check != here in case alignment caused the pos
-         * to be the same, even if not excluded by unique(). This is
-         * the case when there are indels, where the same position can
-         * be one apart because of k-mers sampled before and after the
-         * indel */
-        else if (scr == best_score && s != best)
-          best.set_ambig();
+      const score_t scr = align_read(
+        s.rc() ? (s.elem_is_a_rich() ? pread_a_rc : pread_t_rc) :
+                 (s.elem_is_a_rich() ? pread_a : pread_t)
+        , s, len, cand_cigar, aln
+      );
+      if (scr > best_score) {
+        best = s; // GS: ambig is unset on s
+        best_len = len;
+        best_score = scr;
+        cigar = cand_cigar;
       }
+
+      /* GS: need to check != here in case alignment caused the pos
+       * to be the same, even if not excluded by unique(). This is
+       * the case when there are indels, where the same position can
+       * be one apart because of k-mers sampled before and after the
+       * indel */
+      else if (scr == best_score && s != best)
+        best.set_ambig();
     }
   }
+  if (!valid(best, best_len)) best.reset();
 }
 
 template <const  conversion_type conv>
@@ -910,7 +893,7 @@ map_single_ended(const bool VERBOSE, const bool allow_ambig,
   bests.resize(ReadLoader::batch_size);
 
   // pre-allocated variabes used idependently in each read
-  Read pread;
+  Read pread, pread_rc;
   PackedRead packed_pread;
   vector<kmer_loc> offsets;
   deque<kmer_loc> window_kmers;
@@ -943,13 +926,15 @@ map_single_ended(const bool VERBOSE, const bool allow_ambig,
         );
 
         const string read_rc(revcomp(reads[i]));
-        prep_read<!conv>(read_rc, pread);
-        pack_read(pread, packed_pread);
+        prep_read<!conv>(read_rc, pread_rc);
+        pack_read(pread_rc, packed_pread);
         process_seeds<get_strand_code('-', conv)>(max_candidates,
-          counter_st, index_st, genome_st, pread,
+          counter_st, index_st, genome_st, pread_rc,
           packed_pread, offsets, window_kmers, res
         );
-        align_se_candidates(reads[i], res, bests[i], cigar[i], pread, aln);
+        align_se_candidates(
+          pread, pread_rc, pread, pread_rc, res, bests[i], cigar[i], aln
+        );
       }
     }
 
@@ -992,7 +977,7 @@ map_single_ended_rand(const bool VERBOSE, const bool allow_ambig,
 
   // GS: pre-allocated variables used once per read
   // and not used for reporting
-  Read pread;
+  Read pread_t, pread_t_rc, pread_a, pread_a_rc;
   PackedRead packed_pread;
   se_candidates res;
   vector<kmer_loc> offsets;
@@ -1017,36 +1002,38 @@ map_single_ended_rand(const bool VERBOSE, const bool allow_ambig,
       res.reset(reads[i].size());
       bests[i].reset();
       if (!reads[i].empty()) {
-        prep_read<t_rich>(reads[i], pread);
-        pack_read(pread, packed_pread);
+        prep_read<t_rich>(reads[i], pread_t);
+        pack_read(pread_t, packed_pread);
         process_seeds<get_strand_code('+', t_rich)>(max_candidates,
-          counter_st, index_st, genome_st, pread,
+          counter_st, index_st, genome_st, pread_t,
           packed_pread, offsets, window_kmers, res
         );
 
-        prep_read<a_rich>(reads[i], pread);
-        pack_read(pread, packed_pread);
+        prep_read<a_rich>(reads[i], pread_a);
+        pack_read(pread_a, packed_pread);
         process_seeds<get_strand_code('+', a_rich)>(max_candidates,
-          counter_st, index_st, genome_st, pread,
+          counter_st, index_st, genome_st, pread_a,
           packed_pread, offsets, window_kmers, res
         );
 
         const string read_rc(revcomp(reads[i]));
-        prep_read<t_rich>(read_rc, pread);
-        pack_read(pread, packed_pread);
+        prep_read<t_rich>(read_rc, pread_t_rc);
+        pack_read(pread_t_rc, packed_pread);
         process_seeds<get_strand_code('-', a_rich)>(max_candidates,
-          counter_st, index_st, genome_st, pread, packed_pread,
-          offsets, window_kmers, res
-        );
-
-        prep_read<a_rich>(read_rc, pread);
-        pack_read(pread, packed_pread);
-        process_seeds<get_strand_code('-', t_rich)>(max_candidates,
-          counter_st, index_st, genome_st, pread,
+          counter_st, index_st, genome_st, pread_t_rc,
           packed_pread, offsets, window_kmers, res
         );
 
-        align_se_candidates(reads[i], res, bests[i], cigar[i], pread, aln);
+        prep_read<a_rich>(read_rc, pread_a_rc);
+        pack_read(pread_a_rc, packed_pread);
+        process_seeds<get_strand_code('-', t_rich)>(max_candidates,
+          counter_st, index_st, genome_st, pread_a_rc,
+          packed_pread, offsets, window_kmers, res
+        );
+
+        align_se_candidates(
+          pread_t, pread_t_rc, pread_a, pread_a_rc, res, bests[i], cigar[i], aln
+        );
       }
     }
 #pragma omp critical
@@ -1259,7 +1246,7 @@ map_paired_ended(const bool VERBOSE,
   // GS: pre-allocated variables used once per read
   // and not used for reporting
   score_t aln_score;
-  Read pread1, pread2;
+  Read pread1, pread1_rc, pread2, pread2_rc;
   PackedRead packed_pread;
   pe_candidates res1;
   pe_candidates res2;
@@ -1300,7 +1287,7 @@ map_paired_ended(const bool VERBOSE,
                    get_strand_code('+',conv),
                    get_strand_code('-', flip_conv(conv))>(
         reads1[i], reads2[i], max_candidates, counter_st,
-        index_st, genome_st, pread1, pread2, packed_pread, aln_score,
+        index_st, genome_st, pread1, pread2_rc, packed_pread, aln_score,
         cigar1[i], cigar2[i], aln, offsets, window_kmers, res1, res2,
         res_se1, res_se2, bests[i]
       );
@@ -1309,14 +1296,20 @@ map_paired_ended(const bool VERBOSE,
                    get_strand_code('+', flip_conv(conv)),
                    get_strand_code('-', conv)>(
         reads2[i], reads1[i], max_candidates, counter_st,
-        index_st, genome_st, pread1, pread2, packed_pread, aln_score,
+        index_st, genome_st, pread2, pread1_rc, packed_pread, aln_score,
         cigar2[i], cigar1[i], aln, offsets, window_kmers, res2, res1,
         res_se2, res_se1, bests[i]
       );
 
-      if (!allow_ambig && bests[i].ambig()) {
-        align_se_candidates(reads1[i], res_se1, bests_se1[i], cigar1[i], pread1, aln);
-        align_se_candidates(reads2[i], res_se2, bests_se2[i], cigar2[i], pread2, aln);
+      if (bests[i].empty() || (!allow_ambig && bests[i].ambig())) {
+        align_se_candidates(
+          pread1, pread1_rc, pread1, pread1_rc,
+          res_se1, bests_se1[i], cigar1[i], aln
+        );
+        align_se_candidates(
+          pread2, pread2_rc, pread2, pread2_rc,
+          res_se2, bests_se2[i], cigar2[i], aln
+        );
       }
     }
 
@@ -1371,7 +1364,8 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
   bests_se2.resize(ReadLoader::batch_size);
 
   score_t aln_score;
-  Read pread1, pread2;
+  Read pread1_t, pread1_t_rc, pread2_t, pread2_t_rc;
+  Read pread1_a, pread1_a_rc, pread2_a, pread2_a_rc;
   PackedRead packed_pread;
   pe_candidates res1;
   pe_candidates res2;
@@ -1414,7 +1408,7 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
                    get_strand_code('+', t_rich),
                    get_strand_code('-', a_rich)>(
         reads1[i], reads2[i], max_candidates, counter_st,
-        index_st, genome_st, pread1, pread2, packed_pread, aln_score,
+        index_st, genome_st, pread1_t, pread2_a_rc, packed_pread, aln_score,
         cigar1[i], cigar2[i], aln, offsets, window_kmers, res1, res2,
         res_se1, res_se2, bests[i]
       );
@@ -1424,7 +1418,7 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
                    get_strand_code('+', a_rich),
                    get_strand_code('-', t_rich)>(
         reads2[i], reads1[i], max_candidates, counter_st,
-        index_st, genome_st, pread2, pread1, packed_pread, aln_score,
+        index_st, genome_st, pread2_a, pread1_t_rc, packed_pread, aln_score,
         cigar2[i], cigar1[i], aln, offsets, window_kmers, res2, res1,
         res_se2, res_se1, bests[i]
       );
@@ -1434,7 +1428,7 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
                    get_strand_code('+', a_rich),
                    get_strand_code('-', t_rich)>(
         reads1[i], reads2[i], max_candidates, counter_st,
-        index_st, genome_st, pread1, pread2, packed_pread, aln_score,
+        index_st, genome_st, pread1_a, pread2_t_rc, packed_pread, aln_score,
         cigar1[i], cigar2[i], aln, offsets, window_kmers, res1, res2,
         res_se1, res_se2, bests[i]
       );
@@ -1444,15 +1438,21 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
                    get_strand_code('+', t_rich),
                    get_strand_code('-', a_rich)>(
         reads2[i], reads1[i], max_candidates, counter_st,
-        index_st, genome_st, pread2, pread1, packed_pread, aln_score,
+        index_st, genome_st, pread2_t, pread1_a_rc, packed_pread, aln_score,
         cigar2[i], cigar1[i], aln, offsets, window_kmers, res2, res1,
         res_se2, res_se1, bests[i]
       );
 
       // GS: align best SE candidates if no concordant pairs found
-      if (!allow_ambig && bests[i].ambig()) {
-        align_se_candidates(reads1[i], res_se1, bests_se1[i], cigar1[i], pread1, aln);
-        align_se_candidates(reads2[i], res_se2, bests_se2[i], cigar2[i], pread2, aln);
+      if (bests[i].empty() || (!allow_ambig && bests[i].ambig())) {
+        align_se_candidates(
+          pread1_t, pread1_t_rc, pread1_a, pread1_a_rc,
+          res_se1, bests_se1[i], cigar1[i], aln
+        );
+        align_se_candidates(
+          pread2_t, pread2_t_rc, pread2_a, pread2_a_rc,
+          res_se2, bests_se2[i], cigar2[i], aln
+        );
       }
     }
 
