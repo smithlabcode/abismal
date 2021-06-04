@@ -312,6 +312,9 @@ struct pe_element {
 
   inline bool ambig() const { return r1.ambig(); }
   inline bool empty() const { return r1.empty(); }
+  inline bool sure_ambig() const {
+    return ambig() && r1.diffs == 0 && r2.diffs == 0;
+  }
   inline void set_ambig() { r1.set_ambig(); }
 
   se_element r1;
@@ -1108,7 +1111,7 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
   se_element s1, s2;
   string cand_cig1, cand_cig2;
 
-  for (auto j2(begin(res2.v)); j2 != j2_end; ++j2) {
+  for (auto j2(begin(res2.v)); j2 != j2_end && !best.sure_ambig(); ++j2) {
     s2 = *j2;
     if (valid_hit(s2, pread2.size())) {
       const uint32_t unaligned_lim = s2.pos + pread2.size();
@@ -1117,7 +1120,8 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
 
       score_t scr2 = 0;
       uint32_t aligned_lim = 0;
-      while (j1 != j1_end && j1->pos + pe_element::min_dist <= unaligned_lim) {
+      while (j1 != j1_end && j1->pos + pe_element::min_dist <= unaligned_lim
+             && !best.sure_ambig()) {
         s1 = *j1;
         if (valid_hit(s1, pread1.size())) {
           const score_t scr1 = align_read(pread1, s1, len1, cand_cig1, aln);
@@ -1141,7 +1145,7 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
               best.update(swap_ends ? s2 : s1, swap_ends ? s1 : s2);
             }
             else if ((scr == aln_score) &&
-                     (((swap_ends ? s2 : s1) != best.r1) || 
+                     (((swap_ends ? s2 : s1) != best.r1) ||
                       ((swap_ends ? s1 : s2) != best.r2)))
               best.set_ambig();
           }
