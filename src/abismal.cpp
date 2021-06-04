@@ -1522,7 +1522,7 @@ run_paired_ended(const bool VERBOSE,
 int main(int argc, const char **argv) {
 
   try {
-    static const string ABISMAL_VERSION = "0.2.0";
+    static const string ABISMAL_VERSION = "0.3.0";
     bool VERBOSE = false;
     bool GA_conversion = false;
     bool allow_ambig = false;
