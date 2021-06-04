@@ -489,11 +489,13 @@ struct se_map_stats {
 
 struct pe_map_stats {
   pe_map_stats() :
-    tot_pairs(0), uniq_pairs(0), ambig_pairs(0), unmapped_pairs(0) {}
+    tot_pairs(0), uniq_pairs(0), ambig_pairs(0),
+    unmapped_pairs(0), translocations(0) {}
   uint32_t tot_pairs;
   uint32_t uniq_pairs;
   uint32_t ambig_pairs;
   uint32_t unmapped_pairs;
+  uint32_t translocations;
   uint32_t min_dist;
   se_map_stats end1_stats;
   se_map_stats end2_stats;
@@ -506,12 +508,13 @@ struct pe_map_stats {
     ++tot_pairs;
     ambig_pairs += (valid && ambig);
     uniq_pairs += (valid && !ambig);
+    translocations += (!valid && !s1.empty() && !s2.empty());
 
     if (p.empty() || (!allow_ambig && p.ambig())) {
+      ++unmapped_pairs;
       end1_stats.update(s1, skipped_se1);
       end2_stats.update(s2, skipped_se2);
     }
-    else ++unmapped_pairs;
   }
 
   string tostring() const {
@@ -527,6 +530,9 @@ struct pe_map_stats {
         << t+t << "percent_unique: " << pct(uniq_pairs, tot_pairs) << endl
         << t+t << "ambiguous: " << ambig_pairs << endl
         << t   << "unmapped: " << unmapped_pairs << endl
+        << t   << "percent_unmapped: " << pct(unmapped_pairs, tot_pairs) << endl
+        << t   << "translocations: " << translocations << endl
+        << t   << "percent_translocations: " << pct(translocations, tot_pairs) << endl
         << "mate1:" << endl << end1_stats.tostring(1)
         << "mate2:" << endl << end2_stats.tostring(1);
     return oss.str();
