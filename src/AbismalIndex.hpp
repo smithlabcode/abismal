@@ -121,7 +121,7 @@ load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
       copy(std::begin(line), std::end(line), std::back_inserter(genome));
     }
     else {
-      cl.names.push_back(line.substr(1, line.find_first_of(" \t")));
+      cl.names.push_back(line.substr(1, line.find_first_of(" \t") - 1));
       cl.starts.push_back(genome.size());
     }
 
