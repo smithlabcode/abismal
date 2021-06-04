@@ -103,7 +103,8 @@ get_traceback(const size_t n_col,
     else { // match or mismatch
       --the_row;
     } // should not go into uninitialized cells
-    *c_itr++ = the_arrow;
+    *c_itr = the_arrow;
+    ++c_itr;
     score = table[the_row*n_col + the_col];
   }
 }
@@ -126,12 +127,12 @@ void
 from_diag(T next_row, const T next_row_end, T cur_row,
           QueryConstItr query_seq, uint8_t ref_base, U traceback) {
   while (next_row != next_row_end) {
-    auto score = scr_fun(*query_seq++, ref_base) + *cur_row++;
+    auto score = scr_fun(*query_seq, ref_base) + *cur_row;
     if (score > *next_row) {
       *next_row = score;
       *traceback = diag_symbol;
     }
-    ++next_row; ++traceback;
+    ++next_row; ++traceback; ++query_seq; ++cur_row;
   }
 }
 
@@ -247,8 +248,8 @@ namespace simple_aln {
   static score_t
   count_deletions(const std::string &cigar) {
     score_t ans = 0;
-    for (auto it(begin(cigar)); it != end(cigar);) {
-      ans += (extract_op_count(it, end(cigar))) * (*(it++) == 'D');
+    for (auto it(begin(cigar)); it != end(cigar); ++it) {
+      ans += (extract_op_count(it, end(cigar))) * (*it == 'D');
     }
     return ans;
   }
@@ -256,8 +257,8 @@ namespace simple_aln {
   static score_t
   count_insertions(const std::string &cigar) {
     score_t ans = 0;
-    for (auto it(begin(cigar)); it != end(cigar);) {
-      ans += (extract_op_count(it, end(cigar))) * (*(it++) == 'I');
+    for (auto it(begin(cigar)); it != end(cigar); ++it) {
+      ans += (extract_op_count(it, end(cigar))) * (*it == 'I');
     }
     return ans;
   }
