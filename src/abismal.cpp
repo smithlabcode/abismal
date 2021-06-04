@@ -202,14 +202,12 @@ struct se_candidates {
   se_candidates () : sz(1), best(se_element()), v(vector<se_element>(max_size)) {}
   inline bool full() const { return sz == max_size; };
   void update_exact_match(const uint32_t p, const score_t d, const flags_t s) {
-    if (d == 0) {
-      const se_element cand(p, d, s);
-      if (best.empty())
-        best = cand; // s has ambig flag set to false
+    const se_element cand(p, d, s);
+    if (best.empty())
+      best = cand; // cand has ambig flag set to false
 
-      else if (cand != best)
-        best.set_ambig();
-    }
+    else if (cand != best)
+      best.set_ambig();
   }
 
   void update_cand(const uint32_t p, const score_t d, const flags_t s) {
@@ -227,7 +225,8 @@ struct se_candidates {
   }
 
   void update(const uint32_t p, const score_t d, const flags_t s) {
-    update_exact_match(p, d, s);
+    if (d == 0)
+      update_exact_match(p, d, s);
     update_cand(p, d, s);
   }
 
