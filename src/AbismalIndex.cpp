@@ -28,6 +28,7 @@
 #include <iterator>
 #include <algorithm>
 #include <deque>
+#include <parallel/algorithm>
 
 using std::string;
 using std::vector;
@@ -189,14 +190,17 @@ AbismalIndex::hash_genome(vector<bool> &keep) {
 }
 
 void
-AbismalIndex::compress_minimizers() {
+AbismalIndex::compress_minimizers(vector<bool> &keep) {
   fill(begin(keep), end(keep), false);
   deque<kmer_loc> window_kmers;
 
   const size_t genome_st = seed::padding_size;
   const size_t lim = cl.get_genome_size() - seed::key_weight - seed::padding_size;
 
-  ProgressBar progress(lim, "selecting minimizers");
+  ProgressBar progress(lim, "selecting (" +
+    to_string(seed::window_size) + "," + to_string(seed::key_weight) +
+    ") minimizers"
+  );
 
   // start building up the hash key
   genome_iterator gi(begin(genome));
@@ -207,12 +211,12 @@ AbismalIndex::compress_minimizers() {
     shift_hash_key(*gi++, hash_key);
 
   // get the first W minimizers
-  for (size_t i = genome_st; i < genome_st + seed::w_index; ++i) {
+  for (size_t i = genome_st; i < genome_st + seed::window_size; ++i) {
     shift_hash_key(*gi++, hash_key);
-    add_kmer<seed::w_index>(kmer_loc(hash_key, i), window_kmers);
+    add_kmer(kmer_loc(hash_key, i), window_kmers);
   }
 
-  for (size_t i = genome_st + seed::w_index; i < lim; ++i) {
+  for (size_t i = genome_st + seed::window_size; i < lim; ++i) {
     if (VERBOSE && progress.time_to_report(i))
       progress.report(cerr, i);
     
@@ -220,7 +224,7 @@ AbismalIndex::compress_minimizers() {
 
     // update minimizers using k-mer from current base
     shift_hash_key(*gi++, hash_key);
-    add_kmer<seed::w_index>(kmer_loc(hash_key, i), window_kmers);
+    add_kmer(kmer_loc(hash_key, i), window_kmers);
   }
 
   keep[window_kmers.front().loc] = true;
