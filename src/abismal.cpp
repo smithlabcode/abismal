@@ -732,33 +732,25 @@ process_seeds(const uint32_t max_candidates,
         );
       }
     }
-
     // GS: this needs to be more readable
     shift_hash_key(*(read_start + seed::key_weight + j), k);
   }
 
   if (res.sure_ambig()) return;
-
   // sensitive step: get positions using minimizers
   get_minimizer_offsets(readlen, read_start, offsets, window_kmers);
 
   const auto offset_end = end(offsets);
-  size_t num_kmers = 0;
   for (auto it(begin(offsets)); it != offset_end; ++it) {
     auto s_idx(index_st + *(counter_st + it->kmer));
     auto e_idx(index_st + *(counter_st + it->kmer + 1));
     if (s_idx < e_idx) {
-      find_candidates<seed::n_seed_positions>(
-        read_start + it->loc, genome_st, readlen - it->loc, s_idx, e_idx
-      );
-      if ((e_idx - s_idx) <= max_candidates) {
-        ++num_kmers;
+      if (e_idx - s_idx <= max_candidates) {
         check_hits<strand_code>(
           it->loc, packed_read_start, packed_read_end,
           genome_st.itr, e_idx, s_idx, res
         );
       }
-      if (num_kmers == seed::max_seeds) return;
     }
   }
 }
