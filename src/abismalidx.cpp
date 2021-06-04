@@ -74,26 +74,19 @@ int main(int argc, const char **argv) {
     /****************** END COMMAND LINE OPTIONS *****************/
 
     omp_set_num_threads(n_threads);
-
+    const double start_time = omp_get_wtime();
     AbismalIndex::VERBOSE = VERBOSE;
 
     /****************** START BUILDING INDEX *************/
     AbismalIndex abismal_index;
-    vector<uint8_t> genome;
-    if (VERBOSE)
-          cerr << "[loading genome]" << endl;
-      load_genome(genome_file, genome, abismal_index.cl);
-
-    abismal_index.encode_genome(genome);
-    vector<uint8_t>().swap(genome);
-    abismal_index.compress_minimizers();
-    abismal_index.hash_genome();
-    abismal_index.sort_buckets();
+    abismal_index.create_index(genome_file);
 
     if (VERBOSE)
-      cerr << "[writing abismal index to: " << outfile << "]" << endl;
+      cerr << "[writing abismal index to: " << outfile << "]\n";
 
     abismal_index.write(outfile);
+    if (VERBOSE)
+      cerr << "[total indexing time: " << omp_get_wtime() - start_time << "]" << endl;
     /****************** END BUILDING INDEX *************/
 
   }

@@ -143,21 +143,23 @@ struct AbismalIndex {
 
   size_t counter_size; // number of kmers indexed
   size_t index_size; // size of the index
+  size_t max_candidates; // the estimated max_candidates from k-mer statistics
 
-  std::vector<bool> keep;
   std::vector<uint32_t> index; // genome positions for each k-mer
   std::vector<uint32_t> counter; // offset of each k-mer in "index"
   Genome genome; // the genome
   ChromLookup cl;
 
+  void create_index(const std::string &genome_file);
+
   /* count how many positions must be stored for each hash value */
-  void get_bucket_sizes();
+  void get_bucket_sizes(std::vector<bool> &keep);
 
   /* select genome positions using minimizers*/
-  void compress_minimizers();
+  void compress_minimizers(std::vector<bool> &keep);
 
   /* put genome positions in the appropriate buckets */
-  void hash_genome();
+  void hash_genome(std::vector<bool> &keep);
 
   /* Sort each bucket, if the seed length is more than 26, then use
    * binary search for the rest part of the seed */

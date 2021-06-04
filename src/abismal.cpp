@@ -1517,16 +1517,6 @@ run_paired_ended(const bool VERBOSE,
   }
 }
 
-static void
-select_max_candidates(const uint32_t genome_size,
-                      uint32_t &max_candidates) {
-  static const double genome_frac = 1.5e-5;
-  static const uint32_t min_max_candidates = 100u;
-
-  const uint32_t c = static_cast<uint32_t>(genome_size*genome_frac);
-  max_candidates = max(c, min_max_candidates);
-}
-
 int main(int argc, const char **argv) {
 
   try {
@@ -1538,8 +1528,9 @@ int main(int argc, const char **argv) {
     bool random_pbat = false;
     uint32_t max_candidates = 0;
     int n_threads = 1;
-    string index_file;
-    string outfile;
+    string index_file = "";
+    string genome_file = "";
+    string outfile = "";
     string stats_outfile = "";
 
     /****************** COMMAND LINE OPTIONS ********************/
@@ -1547,10 +1538,11 @@ int main(int argc, const char **argv) {
                            "map bisulfite converted reads",
                            "<reads-fq1> [<reads-fq2>]");
     opt_parse.set_show_defaults();
-    opt_parse.add_opt("index", 'i', "index file", true, index_file);
-    opt_parse.add_opt("outfile", 'o', "output file", false, outfile);
-    opt_parse.add_opt("mapstats", 'm',
-                      "mapstats output file [stderr]",
+    opt_parse.add_opt("index", 'i', "index file", false, index_file);
+    opt_parse.add_opt("genome", 'g', "genome file (FASTA)", false, genome_file);
+    opt_parse.add_opt("outfile", 'o', "output file (SAM) [stdout]", false, outfile);
+    opt_parse.add_opt("stats", 's',
+                      "map statistics file [stderr]",
                       false, stats_outfile);
     opt_parse.add_opt("threads", 't', "number of threads", false, n_threads);
     opt_parse.add_opt("candidates", 'c', "max candidates for full comparison",
@@ -1559,7 +1551,8 @@ int main(int argc, const char **argv) {
                       false, pe_element::min_dist);
     opt_parse.add_opt("max-frag", 'L', "max fragment size (pe mode)",
                       false, pe_element::max_dist);
-    opt_parse.add_opt("max-distance", 'M', "max fractional edit distance",
+    opt_parse.add_opt("max-distance", 'm',
+                      "max fractional edit distance",
                       false, se_element::valid_frac);
     opt_parse.add_opt("ambig", 'a', "report a posn for ambiguous mappers",
                       false, allow_ambig);
@@ -1592,6 +1585,11 @@ int main(int argc, const char **argv) {
       cerr << "please choose a positive number of threads" << endl;
       return EXIT_SUCCESS;
     }
+    if (index_file.empty() == genome_file.empty()) {
+      cerr << "please select either an index file (-i) or a genome file (-g)"
+           << endl;
+      return EXIT_SUCCESS;
+    }
 
     const string reads_file = leftover_args.front();
     string reads_file2;
@@ -1611,20 +1609,41 @@ int main(int argc, const char **argv) {
              << reads_file2 << "]\n";
       else
         cerr << "[mapping single end: " << reads_file << "]\n";
-      cerr << "[output file: " << outfile << "]" << endl;
+
+      if (outfile.empty())
+        cerr << "[printing SAM output to stdout]\n";
+      else
+        cerr << "[output file: " << outfile << "]" << endl;
+
+      if (stats_outfile.empty())
+        cerr << "[printing map statistics to stderr]\n";
+      else
+        cerr << "[stats output file: " << stats_outfile << "]" << endl;
     }
 
-    if (VERBOSE)
-      cerr << "[loading abismal index]" << endl;
     AbismalIndex abismal_index;
-    const double start_time = omp_get_wtime();
-    abismal_index.read(index_file);
 
-    if (VERBOSE)
-      cerr << "[loading time: " << (omp_get_wtime() - start_time) << "]" << endl;
+    const double start_time = omp_get_wtime();
+    if (!index_file.empty()) {
+      if (VERBOSE)
+        cerr << "[loading abismal index: " << index_file << "]" << endl;
+      abismal_index.read(index_file);
+
+      if (VERBOSE)
+        cerr << "[loading time: " << (omp_get_wtime() - start_time)
+             << "]" << endl;
+    }
+    else {
+      if (VERBOSE)
+        cerr << "[indexing genome: " << genome_file << "]\n";
+      abismal_index.create_index(genome_file);
+      if (VERBOSE)
+        cerr << "[indexing time: " << (omp_get_wtime() - start_time)
+             << "]" << endl;
+    }
 
     if (max_candidates == 0)
-      select_max_candidates(abismal_index.cl.get_genome_size(), max_candidates);
+      max_candidates = abismal_index.max_candidates;
 
     // avoiding opening the stats output file until mapping is done
     se_map_stats se_stats;

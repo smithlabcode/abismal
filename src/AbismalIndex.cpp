@@ -39,11 +39,34 @@ using std::sort;
 using std::cout;
 using std::min;
 using std::deque;
+using std::fill;
+using std::to_string;
 
 bool AbismalIndex::VERBOSE = false;
 string AbismalIndex::internal_identifier = "AbismalIndex";
 
 using genome_iterator = genome_four_bit_itr;
+
+void
+AbismalIndex::create_index(const string &genome_file) {
+  vector<uint8_t> inflated_genome;
+  if (VERBOSE)
+    cerr << "[loading genome]" << endl;
+  load_genome(genome_file, inflated_genome, cl);
+  encode_genome(inflated_genome);
+  vector<uint8_t>().swap(inflated_genome);
+
+  vector<bool> pos_to_keep;
+  pos_to_keep.resize(cl.get_genome_size());
+  fill(begin(pos_to_keep), end(pos_to_keep), true);
+  fill(begin(pos_to_keep), begin(pos_to_keep) + seed::padding_size, false);
+  fill(end(pos_to_keep) - seed::padding_size, end(pos_to_keep), false);
+
+  compress_minimizers(pos_to_keep);
+  hash_genome(pos_to_keep);
+  sort_buckets();
+}
+
 
 void
 AbismalIndex::encode_genome(const vector<uint8_t> &input_genome) {
@@ -52,15 +75,10 @@ AbismalIndex::encode_genome(const vector<uint8_t> &input_genome) {
 
   genome.resize(input_genome.size()/16 + (input_genome.size()%16 != 0));
   encode_dna_four_bit(begin(input_genome), end(input_genome), begin(genome));
-
-  keep.resize(cl.get_genome_size());
-  std::fill(begin(keep), end(keep), true);
-  std::fill(begin(keep), begin(keep) + seed::padding_size, false);
-  std::fill(end(keep) - seed::padding_size, end(keep), false);
 }
 
 void
-AbismalIndex::get_bucket_sizes() {
+AbismalIndex::get_bucket_sizes(vector<bool> &keep) {
   counter.clear();
 
   // the "counter" has an additional entry for convenience
@@ -69,7 +87,7 @@ AbismalIndex::get_bucket_sizes() {
 
   const size_t genome_st = seed::padding_size;
   const size_t lim = cl.get_genome_size() - seed::key_weight - seed::padding_size;
-  ProgressBar progress(lim, "counting " + std::to_string(seed::key_weight) +
+  ProgressBar progress(lim, "counting " + to_string(seed::key_weight) +
                             "-bit words");
 
   if (VERBOSE)
@@ -94,15 +112,49 @@ AbismalIndex::get_bucket_sizes() {
   if (VERBOSE)
     progress.report(cerr, lim);
 
+  double mean = 0;
+  size_t count = 0;
+  double stdev = 0;
+  if (VERBOSE)
+    cerr << "[calculating bucket count statistics]\n";
+
+  // mean
+  auto counter_end(end(counter));
+  for (auto it(begin(counter)); it != counter_end; ++it) {
+    mean += *it;
+    count += (*it != 0);
+  }
+
+  // stdev
+  mean = mean/static_cast<double>(count);
+  for (auto it(begin(counter)); it != counter_end; ++it) {
+    const double diff = (mean - static_cast<double>(*it));
+    stdev += (*it != 0)*diff*diff;
+  }
+  stdev = stdev/static_cast<double>(count - 1);
+  stdev = sqrt(stdev);
+
+  vector<uint32_t> copy_of_counter;
+  copy(begin(counter), end(counter), std::back_inserter(copy_of_counter));
+
+  __gnu_parallel::sort(begin(copy_of_counter), end(copy_of_counter));
+  max_candidates = copy_of_counter[
+    static_cast<size_t>((1 - seed::overrep_kmer_quantile)*
+    static_cast<double>(counter.size()))
+  ];
+
   if (VERBOSE) {
     const size_t bases_indexed = std::accumulate(begin(counter), end(counter), 0ULL);
-    cerr << "[bases indexed: " << bases_indexed << "]\n";
+    cerr << "[bases indexed: " << bases_indexed
+         << ". mean: " << mean
+         << ", stdev: " << stdev
+         << ", max_candidates: " << max_candidates << "]" << endl;
   }
 }
 
 void
-AbismalIndex::hash_genome() {
-  get_bucket_sizes();
+AbismalIndex::hash_genome(vector<bool> &keep) {
+  get_bucket_sizes(keep);
 
   if (VERBOSE)
     cerr << "[allocating hash table]" << endl;
@@ -225,6 +277,7 @@ AbismalIndex::write(const string &index_file) const {
   cl.write(out);
 
   if (fwrite((char*)&genome[0], sizeof(size_t), genome.size(), out) != genome.size() ||
+      fwrite((char*)&max_candidates, sizeof(size_t), 1, out) != 1 ||
       fwrite((char*)&counter_size, sizeof(size_t), 1, out) != 1 ||
       fwrite((char*)&index_size, sizeof(size_t), 1, out) != 1 ||
       fwrite((char*)(&counter[0]), sizeof(uint32_t),
@@ -264,6 +317,10 @@ AbismalIndex::read(const string &index_file) {
   // read the 4-bit encoded genome
   genome.resize(genome_to_read);
   if (fread((char*)&genome[0], sizeof(size_t), genome_to_read, in) != genome_to_read)
+    throw runtime_error(error_msg);
+
+  // read k-mer mean and standard deviation
+  if (fread((char*)&max_candidates, sizeof(size_t), 1, in) != 1)
     throw runtime_error(error_msg);
 
   // read the sizes of counter and index vectors
