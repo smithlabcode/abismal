@@ -548,12 +548,19 @@ select_output(const bool allow_ambig, const ChromLookup &cl,
     // GS: do not report in mapstats a read that was not reported
     if (pe_map_type == map_unmapped)
       best.reset();
-    if (format_se(allow_ambig, se1, cl, read1, name1, cig1, out) ==
-        map_unmapped)
+
+    if (!se1.empty() && !se2.empty()) {
+      if (format_se(allow_ambig, se1, cl, read1, name1, cig1, out) ==
+          map_unmapped)
+        se1.reset();
+      if (format_se(allow_ambig, se2, cl, read2, name2, cig2, out) ==
+          map_unmapped)
+        se2.reset();
+    }
+    else {
       se1.reset();
-    if (format_se(allow_ambig, se2, cl, read2, name2, cig2, out) ==
-        map_unmapped)
       se2.reset();
+    }
   }
 }
 
@@ -806,15 +813,13 @@ static score_t
 align_read(const Read &pread, se_element &res,
          uint32_t &len, string &cigar, AbismalAlignSimple &aln) {
   const score_t readlen = static_cast<score_t>(pread.size());
-  if (res.diffs == readlen ||
-      res.diffs < simple_aln::min_diffs_to_align) {
+  if (res.diffs < simple_aln::min_diffs_to_align || res.diffs == readlen) {
     simple_aln::make_default_cigar(readlen, cigar);
     len = readlen;
 
     // the score without indels
     return simple_aln::default_score(readlen, res.diffs);
   }
-
   const score_t ans = aln.align(pread, res.pos, len, cigar);
   res.diffs = simple_aln::edit_distance(ans, len, cigar);
   return ans;
@@ -823,19 +828,13 @@ align_read(const Read &pread, se_element &res,
 static void
 align_se_candidates(const Read &pread_t, const Read &pread_t_rc,
                     const Read &pread_a, const Read &pread_a_rc,
-                    se_candidates &res, se_element &best, 
+                    se_candidates &res, se_element &best,
                     string &cigar,
                     AbismalAlignSimple &aln) {
   /* GS: this is faster, but potentially prevents ends to be
    * soft-clipped, which is helpful on reads with bad ends that were
    * not trimmed prior to alignment */
   const score_t readlen = static_cast<score_t>(pread_t.size());
-  if (res.best.diffs < simple_aln::min_diffs_to_align) {
-    best = res.best;
-    simple_aln::make_default_cigar(readlen, cigar);
-    return;
-  }
-
   score_t best_score = 0;
   uint32_t len = 0;
   uint32_t best_len = 0;
@@ -1464,7 +1463,7 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
     {
       for (size_t i = 0; i < n_reads; ++i) {
         select_output(allow_ambig, abismal_index.cl,
-          reads1[i], names1[i], reads2[i], names2[i], cigar1[i], cigar2[i], 
+          reads1[i], names1[i], reads2[i], names2[i], cigar1[i], cigar2[i],
           bests[i], bests_se1[i], bests_se2[i], out
         );
 
