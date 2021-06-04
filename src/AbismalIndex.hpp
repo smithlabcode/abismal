@@ -219,10 +219,12 @@ struct kmer_loc {
    bool operator!=(const kmer_loc &rhs) const {
     return loc != rhs.loc;
   }
+  // this mask is a k-mer that does not exist in
+  // the human genome, with bit pattern
+  // 0b11011000110011001011011010
   static const uint32_t random_mask = 56832730u;
 };
 
-template<const size_t window_size>
 inline void
 add_kmer(const kmer_loc new_pos,
          std::deque<kmer_loc> &window_kmers) {
@@ -234,9 +236,10 @@ add_kmer(const kmer_loc new_pos,
   window_kmers.push_back(new_pos);
 
   // removes k-mers outside of the sliding window
-  while (window_kmers.front().loc + window_size <= new_pos.loc)
+  while (window_kmers.front().loc + seed::window_size <= new_pos.loc)
     window_kmers.pop_front();
 
   //assert(is_sorted(begin(window_kmers), end(window_kmers)));
+  //assert(window_kmers.size() <= window_size)
 }
 #endif

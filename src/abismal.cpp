@@ -634,7 +634,7 @@ get_minimizer_offsets(const uint32_t readlen,
                       Read::const_iterator read_start,
                       vector<kmer_loc> &offsets,
                       deque<kmer_loc> &window_kmers) {
-  const uint32_t shift_lim = (readlen >= seed::n_seed_positions) ? 
+  const uint32_t shift_lim = (readlen >= seed::n_seed_positions) ?
                              (readlen - seed::n_seed_positions) : 0;
   size_t kmer = 0;
   size_t shift = 0;
@@ -645,19 +645,19 @@ get_minimizer_offsets(const uint32_t readlen,
   get_1bit_hash(read_start, kmer);
   read_start += seed::key_weight;
 
-  for (; shift <= seed::w_map; ++shift) {
-    add_kmer<seed::w_map>(kmer_loc(kmer, shift), window_kmers);
+  for (; shift <= seed::window_size; ++shift) {
+    add_kmer(kmer_loc(kmer, shift), window_kmers);
     shift_hash_key(*read_start++, kmer);
   }
 
   for (; shift <= shift_lim; ++shift) {
-    if (offsets.empty() || window_kmers.front() != offsets.back())
+    if (offsets.empty() || window_kmers.front().loc != offsets.back().loc)
       offsets.push_back(window_kmers.front());
-    add_kmer<seed::w_map>(kmer_loc(kmer, shift), window_kmers);
+    add_kmer(kmer_loc(kmer, shift), window_kmers);
     shift_hash_key(*read_start++, kmer);
   }
 
-  if (offsets.empty() || window_kmers.front() != offsets.back())
+  if (offsets.empty() || window_kmers.front().loc != offsets.back().loc)
     offsets.push_back(window_kmers.front());
 }
 
@@ -707,11 +707,12 @@ process_seeds(const uint32_t max_candidates,
   const auto packed_read_start(begin(packed_read));
   const auto packed_read_end(end(packed_read));
 
-  size_t k = 0;
-  get_1bit_hash(read_start, k);
+
   // specific step: look for exact matches, which can be at most
   // w_index bases apart
-  for (uint32_t j = 0; j < seed::w_index; ++j) {
+  size_t k = 0;
+  get_1bit_hash(read_start, k);
+  for (size_t j = 0; j < seed::window_size; ++j) {
     auto s_idx(index_st + *(counter_st + k));
     auto e_idx(index_st + *(counter_st + k + 1));
     if (s_idx < e_idx) {
