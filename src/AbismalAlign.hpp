@@ -51,7 +51,7 @@ struct AbismalAlign {
   const size_t q_sz_max;
   const size_t bw;
 
-  static const uint16_t max_off_diag = 2;
+  static const uint16_t max_off_diag = 4;
 };
 
 template <score_t (*scr_fun)(const uint8_t, const uint8_t),
@@ -239,8 +239,8 @@ namespace simple_aln {
   static const score_t match = 1;
   static const score_t mismatch = -1;
   static const score_t indel = -1;
+  static const score_t min_diffs_to_align = 1;
   static const std::array<score_t, 2> score_lookup = {match, mismatch};
-  static const score_t min_diffs_to_align = 4;
 
   inline score_t default_score(const uint32_t len, const score_t diffs) {
     return match*(len - diffs) + mismatch*diffs;

@@ -256,7 +256,7 @@ struct se_candidates {
   static const uint32_t max_size;
 };
 
-const uint32_t se_candidates::max_size = 200;
+const uint32_t se_candidates::max_size = 20;
 
 inline bool
 chrom_and_posn(const ChromLookup &cl, const string &cig, const uint32_t p,
@@ -443,7 +443,7 @@ struct pe_candidates {
   static const uint32_t max_size;
 };
 
-const uint32_t pe_candidates::max_size = 400;
+const uint32_t pe_candidates::max_size = 100;
 
 inline double pct(const double a, const double b) {return 100.0*a/b;}
 
