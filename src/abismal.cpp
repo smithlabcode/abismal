@@ -116,7 +116,7 @@ struct ReadLoader {
 };
 
 const size_t ReadLoader::batch_size = 2000;
-const uint32_t ReadLoader::min_read_length = seed::n_seed_positions;
+const uint32_t ReadLoader::min_read_length = seed::key_weight;
 
 inline void
 update_max_read_length(size_t &max_length, const vector<string> &reads) {
@@ -186,8 +186,11 @@ valid(const se_element s, const uint32_t readlen) {
 inline bool
 valid_pair(const se_element s1, const se_element s2,
            const uint32_t readlen1, const uint32_t readlen2) {
+  /*
   return (s1.diffs + s2.diffs) <=
     static_cast<score_t>(se_element::valid_frac*(readlen1 + readlen2));
+    */
+  return valid(s1, readlen1) && valid(s2, readlen2);
 }
 
 inline bool
@@ -490,12 +493,12 @@ struct se_map_stats {
 struct pe_map_stats {
   pe_map_stats() :
     tot_pairs(0), uniq_pairs(0), ambig_pairs(0),
-    unmapped_pairs(0), translocations(0) {}
+    unmapped_pairs(0), discordant(0) {}
   uint32_t tot_pairs;
   uint32_t uniq_pairs;
   uint32_t ambig_pairs;
   uint32_t unmapped_pairs;
-  uint32_t translocations;
+  uint32_t discordant;
   uint32_t min_dist;
   se_map_stats end1_stats;
   se_map_stats end2_stats;
@@ -508,7 +511,7 @@ struct pe_map_stats {
     ++tot_pairs;
     ambig_pairs += (valid && ambig);
     uniq_pairs += (valid && !ambig);
-    translocations += (!valid && !s1.empty() && !s2.empty());
+    discordant += (!valid && !s1.empty() && !s2.empty());
 
     if (p.empty() || (!allow_ambig && p.ambig())) {
       ++unmapped_pairs;
@@ -531,8 +534,8 @@ struct pe_map_stats {
         << t+t << "ambiguous: " << ambig_pairs << endl
         << t   << "unmapped: " << unmapped_pairs << endl
         << t   << "percent_unmapped: " << pct(unmapped_pairs, tot_pairs) << endl
-        << t   << "translocations: " << translocations << endl
-        << t   << "percent_translocations: " << pct(translocations, tot_pairs) << endl
+        << t   << "discordant: " << discordant << endl
+        << t   << "percent_discordant: " << pct(discordant, tot_pairs) << endl
         << "mate1:" << endl << end1_stats.tostring(1)
         << "mate2:" << endl << end2_stats.tostring(1);
     return oss.str();
@@ -555,13 +558,20 @@ select_output(const bool allow_ambig, const ChromLookup &cl,
     if (pe_map_type == map_unmapped)
       best.reset();
 
-    if (!se1.empty() && !se2.empty()) {
+    if (se2.ambig() || se2.empty() || se2.diffs > se1.diffs) {
       if (format_se(allow_ambig, se1, cl, read1, name1, cig1, out) ==
           map_unmapped)
         se1.reset();
+      if (!se2.ambig())
+        se2.reset();
+    }
+
+    else if (se1.ambig() || se1.empty() || se1.diffs > se2.diffs) {
       if (format_se(allow_ambig, se2, cl, read2, name2, cig2, out) ==
           map_unmapped)
         se2.reset();
+      if (!se1.ambig())
+        se1.reset();
     }
     else {
       se1.reset();
@@ -640,8 +650,8 @@ get_minimizer_offsets(const uint32_t readlen,
                       Read::const_iterator read_start,
                       vector<kmer_loc> &offsets,
                       deque<kmer_loc> &window_kmers) {
-  const uint32_t shift_lim = (readlen >= seed::n_seed_positions) ?
-                             (readlen - seed::n_seed_positions) : 0;
+  const uint32_t shift_lim = (readlen >= seed::key_weight) ?
+                             (readlen - seed::key_weight) : 0;
   size_t kmer = 0;
   size_t shift = 0;
 
@@ -1318,13 +1328,16 @@ map_paired_ended(const bool VERBOSE,
 #pragma omp critical
     {
       for (size_t i = 0; i < n_reads; ++i) {
-        select_output(allow_ambig, abismal_index.cl,
-            reads1[i], names1[i], reads2[i], names2[i], cigar1[i], cigar2[i],
-            bests[i], bests_se1[i], bests_se2[i], out
-          );
-        pe_stats.update(allow_ambig, bests[i],
-                        bests_se1[i], reads1[i].length() == 0,
-                        bests_se2[i], reads2[i].length() == 0);
+        select_output(
+          allow_ambig, abismal_index.cl, reads1[i], names1[i],
+          reads2[i], names2[i], cigar1[i], cigar2[i],
+          bests[i], bests_se1[i], bests_se2[i], out
+        );
+        pe_stats.update(
+          allow_ambig, bests[i],
+          bests_se1[i], reads1[i].length() == 0,
+          bests_se2[i], reads2[i].length() == 0
+        );
       }
     }
 #pragma omp critical
