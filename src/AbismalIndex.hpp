@@ -36,13 +36,10 @@ namespace seed {
   static const uint32_t key_weight = 26;
 
   // window in which we select the best k-mer
-  static const uint32_t window_size = 30;
+  static const uint32_t window_size = 25;
 
   // number of positions to sort within buckets
   static const uint32_t n_sorting_positions = 128;
-
-  // seed size during mapping, or size of a two-letter exact match
-  static const uint32_t n_seed_positions = 26;
 
   // maximum number of candidates per seed as function of
   // overrepresented k-mers
