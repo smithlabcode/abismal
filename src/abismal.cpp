@@ -186,11 +186,8 @@ valid(const se_element s, const uint32_t readlen) {
 inline bool
 valid_pair(const se_element s1, const se_element s2,
            const uint32_t readlen1, const uint32_t readlen2) {
-  /*
   return (s1.diffs + s2.diffs) <=
     static_cast<score_t>(se_element::valid_frac*(readlen1 + readlen2));
-    */
-  return valid(s1, readlen1) && valid(s2, readlen2);
 }
 
 inline bool
