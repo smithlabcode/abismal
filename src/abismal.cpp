@@ -94,6 +94,9 @@ struct ReadLoader {
     line.reserve(reserve_size);
     while (line_count < num_lines_to_read && bool(getline(*in, line))) {
       if (line_count % 4 == 0) {
+        if (line.empty())
+          throw runtime_error("malformatted FASTQ file "
+                              "contains an empty read name\n");
         names.push_back(line.substr(1, line.find_first_of(" \t") - 1));
       }
       else if (line_count % 4 == 1) {
