@@ -488,8 +488,7 @@ int main(int argc, const char **argv) {
 
     FragSampler frag_samp(genome, cl, strand_arg, min_frag_len, max_frag_len);
     if (VERBOSE)
-      cerr << "[constructed fragment sampler]" << endl
-           << frag_samp << endl;
+      cerr << "[constructed fragment sampler]" << endl;
     if (VERBOSE)
       cerr << "[simulating clean frags]" << endl;
     vector<FragInfo> the_info(n_reads);
@@ -500,9 +499,6 @@ int main(int argc, const char **argv) {
       cerr << "[mutating the frags]" << endl;
     FragMutator frag_mut(mutation_rate, substitution_rate,
                          insertion_rate, deletion_rate);
-    if (VERBOSE)
-      cerr << frag_mut << endl;
-
 
     for (size_t i = 0; i < the_info.size(); ++i)
       frag_mut.mutate(the_info[i]);
