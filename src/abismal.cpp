@@ -645,6 +645,13 @@ check_hits(const uint32_t offset,
   }
 }
 
+inline size_t
+estimate_window_size(const uint32_t readlen) {
+  return max(static_cast<size_t>(seed::window_size),
+             // GS: used in bowtie2
+             static_cast<size_t>(1 + 2.3*sqrt(readlen)));
+}
+
 static void
 get_minimizer_offsets(const uint32_t readlen,
                       Read::const_iterator read_start,
@@ -661,15 +668,16 @@ get_minimizer_offsets(const uint32_t readlen,
   get_1bit_hash(read_start, kmer);
   read_start += seed::key_weight;
 
-  for (; shift <= seed::window_size; ++shift) {
-    add_kmer(kmer_loc(kmer, shift), window_kmers);
+  const size_t window_size = estimate_window_size(readlen);
+  for (; shift <= window_size; ++shift) {
+    add_kmer(kmer_loc(kmer, shift), window_size, window_kmers);
     shift_hash_key(*read_start++, kmer);
   }
 
   for (; shift <= shift_lim; ++shift) {
     if (offsets.empty() || window_kmers.front().loc != offsets.back().loc)
       offsets.push_back(window_kmers.front());
-    add_kmer(kmer_loc(kmer, shift), window_kmers);
+    add_kmer(kmer_loc(kmer, shift), window_size, window_kmers);
     shift_hash_key(*read_start++, kmer);
   }
 
