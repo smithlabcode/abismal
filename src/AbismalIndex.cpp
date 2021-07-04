@@ -213,7 +213,7 @@ AbismalIndex::compress_minimizers(vector<bool> &keep) {
   // get the first W minimizers
   for (size_t i = genome_st; i < genome_st + seed::window_size; ++i) {
     shift_hash_key(*gi++, hash_key);
-    add_kmer(kmer_loc(hash_key, i), window_kmers);
+    add_kmer(kmer_loc(hash_key, i), seed::window_size, window_kmers);
   }
 
   for (size_t i = genome_st + seed::window_size; i < lim; ++i) {
@@ -224,7 +224,7 @@ AbismalIndex::compress_minimizers(vector<bool> &keep) {
 
     // update minimizers using k-mer from current base
     shift_hash_key(*gi++, hash_key);
-    add_kmer(kmer_loc(hash_key, i), window_kmers);
+    add_kmer(kmer_loc(hash_key, i), seed::window_size, window_kmers);
   }
 
   keep[window_kmers.front().loc] = true;
