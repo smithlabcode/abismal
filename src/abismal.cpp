@@ -1707,14 +1707,12 @@ int main(int argc, const char **argv) {
             reads_file2, max_candidates, abismal_index, pe_stats,
             out);
     }
-    std::ofstream stats_of;
-    if (!stats_outfile.empty())
-      stats_of.open(stats_outfile.c_str(), std::ios::binary);
-    std::ostream stats_out(
-      stats_outfile.empty() ? std::cerr.rdbuf() : stats_of.rdbuf()
-    );
-    stats_out << (reads_file2.empty() ?
-                 se_stats.tostring() : pe_stats.tostring());
+
+    if (!stats_outfile.empty()) {
+      std::ofstream stats_of(stats_outfile.c_str(), std::ios::binary);
+      stats_of << (reads_file2.empty() ?
+                    se_stats.tostring() : pe_stats.tostring());
+    }
   }
   catch (const runtime_error &e) {
     cerr << e.what() << endl;
