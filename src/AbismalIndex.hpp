@@ -36,7 +36,7 @@ namespace seed {
   static const uint32_t key_weight = 26;
 
   // window in which we select the best k-mer
-  static const uint32_t window_size = 25;
+  static const uint32_t window_size = 15;
 
   // number of positions to sort within buckets
   static const uint32_t n_sorting_positions = 128;
@@ -221,7 +221,7 @@ struct kmer_loc {
 };
 
 inline void
-add_kmer(const kmer_loc new_pos,
+add_kmer(const kmer_loc new_pos, const size_t window_size,
          std::deque<kmer_loc> &window_kmers) {
   // remove k-mers that will no longer be minimizers because they
   // have higher value than the new entry
@@ -231,7 +231,7 @@ add_kmer(const kmer_loc new_pos,
   window_kmers.push_back(new_pos);
 
   // removes k-mers outside of the sliding window
-  while (window_kmers.front().loc + seed::window_size <= new_pos.loc)
+  while (window_kmers.front().loc + window_size <= new_pos.loc)
     window_kmers.pop_front();
 
   //assert(is_sorted(begin(window_kmers), end(window_kmers)));
