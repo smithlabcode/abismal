@@ -207,6 +207,7 @@ AbismalAlign<scr_fun, indel_pen>::align(const std::vector<uint8_t> &qseq,
   // locate the end of the alignment as max score
   size_t the_row = 0, the_col = 0;
   const score_t r = get_best_score(table, bw, t_shift, the_row, the_col);
+  if (r == 0) return r;
 
   // soft clip "S" at the start of the (reverse) uncompressed cigar
   auto c_itr(std::begin(cigar_scratch));
@@ -271,7 +272,7 @@ namespace simple_aln {
   // edit distance as a function of aln_score and len
   inline score_t edit_distance(const score_t scr, const uint32_t len,
                                const std::string &cigar) {
-    if (scr == 0) return std::numeric_limits<score_t>::max();
+    if (scr == 0) return len;
     const score_t ins = count_insertions(cigar);
     const score_t del = count_deletions(cigar);
 

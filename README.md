@@ -74,15 +74,14 @@ $ abismal [options] -i <index-file> -o <output-file> <read_1.fq> <read_2.fq>
 |:-----|:------------|:--------|------:|:--------------------------------------------------|
 | -i   | -index      | string  |                   | genome index file [required]          |
 | -o   | -outfile    | string  | stdout            | output SAM file                       |
-| -m   | -mapstats   | string  | [outfile].mapstats| mapping statistics output file        |
 | -t   | -threads    | integer | 1                 | number of mapping threads             |
 | -b   | -batch      | integer | 20,000            | number of reads to load at once       |
-| -c   | -candidates | integer | 0                 | maximum candidates for comparison     |
+| -c   | -candidates | integer | 0 (automatic)     | maximum candidates for comparison     |
 | -p   | -max-mates  | integer | 20                | max number of candidates for mating   |
 | -l   | -min-frag   | integer | 32                | minimum fragment length (PE mode)     |
 | -L   | -max-frag   | integer | 3,000             | maximum fragment length (PE mode)     |
 | -M   | -max-error  | double  | 0.1               | max relative number of errors         |
-| -s   | -sensitive  |         |                   | run abismal on max sensitivity mode   |
+| -s   | -mapstats   | string  |                   | mapping statistics output file        |
 | -a   | -ambig      |         |                   | report a position for ambiguous reads |
 | -P   | -pbat       |         |                   | input follows the PBAT protocol       |
 | -R   | -random-pbat|         |                   | input follows the random PBAT protocol|
@@ -104,7 +103,18 @@ truncated at the first whitespace character.
 
 To map reads to human genome hg38:
 ```
-$ abismal -i hg38.abismalidx -o reads.mr reads.fq
+$ abismal -i hg38.abismalidx -o reads.sam reads.fq
+```
+
+To map reads in BAM format (requires [samtools](https://www.htslib.org))
+```
+$ abismal -i hg38.abismalidx reads.fq | samtools view -b >reads.bam
+```
+
+To map reads to human genome without requiring a separate index file
+(i.e. run both indexing and mapping simultaneously):
+```
+$ abismal -g hg38.fa -o reads.sam reads.fq
 ```
 
 Mapping results are reported in SAM format. Some choices in the output
@@ -122,10 +132,11 @@ are explicitly highlighted below:
 ### Contacts ###
 
 ***Andrew D Smith*** *andrewds@usc.edu*
+***Guilherme Sena*** *desenabr@usc.edu*
 
 ### Copyright ###
 
-Copyright (C) 2018-2020 Andrew D. Smith and Guilherme de Sena Brandine
+Copyright (C) 2018-2021 Andrew D. Smith and Guilherme de Sena Brandine
 
 Authors: Andrew D. Smith and Guilherme de Sena Brandine
 
