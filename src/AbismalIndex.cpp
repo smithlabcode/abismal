@@ -270,6 +270,49 @@ write_internal_identifier(FILE *out) {
     throw runtime_error("failed writing index identifier");
 }
 
+void seed::read(FILE* in) {
+  static const std::string error_msg("failed to read seed data");
+  uint32_t _key_weight;
+  uint32_t _window_size;
+  uint32_t _n_sorting_positions;
+
+  // key_weight
+  if (fread((char*)&_key_weight, sizeof(uint32_t), 1, in) != 1)
+    throw runtime_error(error_msg);
+
+  if(_key_weight != key_weight) {
+    throw runtime_error("inconsistent k-mer size. Expected: " +
+        to_string(key_weight) + ", got: " + to_string(_key_weight));
+  }
+
+  // window_size
+  if (fread((char*)&_window_size, sizeof(uint32_t), 1, in) != 1)
+    throw runtime_error(error_msg);
+
+  if (_window_size != window_size) {
+    throw runtime_error("inconsistent window size size. Expected: " +
+        to_string(window_size) + ", got: " + to_string(_window_size));
+  }
+
+  // n_sorting_positions
+  if (fread((char*)&_n_sorting_positions, sizeof(uint32_t), 1, in) != 1)
+    throw runtime_error(error_msg);
+
+  if (_n_sorting_positions != n_sorting_positions) {
+    throw runtime_error("inconsistent sorting size size. Expected: " +
+        to_string(n_sorting_positions) + ", got: " +
+        to_string(_n_sorting_positions));
+  }
+}
+
+void seed::write(FILE*out) {
+  static const std::string error_msg("failed to write seed data");
+  if (fwrite((char*)&seed::key_weight, sizeof(uint32_t), 1, out) != 1 ||
+      fwrite((char*)&seed::window_size, sizeof(uint32_t), 1, out) != 1 ||
+      fwrite((char*)&seed::n_sorting_positions, sizeof(uint32_t), 1, out) != 1)
+    throw runtime_error(error_msg);
+}
+
 void
 AbismalIndex::write(const string &index_file) const {
 
@@ -278,6 +321,7 @@ AbismalIndex::write(const string &index_file) const {
     throw runtime_error("cannot open output file " + index_file);
 
   write_internal_identifier(out);
+  seed::write(out);
   cl.write(out);
 
   if (fwrite((char*)&genome[0], sizeof(size_t), genome.size(), out) != genome.size() ||
@@ -303,6 +347,7 @@ check_internal_identifier(FILE *in) {
   return (id_found == AbismalIndex::internal_identifier);
 }
 
+
 void
 AbismalIndex::read(const string &index_file) {
 
@@ -315,6 +360,7 @@ AbismalIndex::read(const string &index_file) {
   if (!check_internal_identifier(in))
     throw runtime_error("index file format problem: " + index_file);
 
+  seed::read(in);
   cl.read(in);
 
   const size_t genome_to_read = (cl.get_genome_size() + 15)/16;

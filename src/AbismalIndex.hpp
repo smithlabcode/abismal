@@ -52,6 +52,9 @@ namespace seed {
   // the (unlikely) case that a read maps partly off either end of the
   // genome.
   static const size_t padding_size = 1024;
+
+  void read(FILE* in);
+  void write(FILE* out);
 };
 
 struct ChromLookup {
