@@ -78,6 +78,17 @@ AbismalIndex::encode_genome(const vector<uint8_t> &input_genome) {
   encode_dna_four_bit(begin(input_genome), end(input_genome), begin(genome));
 }
 
+double
+estimate_ram(const size_t counter_size,
+             const size_t bases_indexed,
+             const size_t genome_size) {
+  size_t num_bytes =
+    sizeof(size_t)*(genome_size) +
+    sizeof(uint32_t)*(counter_size + bases_indexed);
+           
+  return num_bytes/(1024.0*1024.0*1024.0);
+}
+
 void
 AbismalIndex::get_bucket_sizes(vector<bool> &keep) {
   counter.clear();
@@ -115,7 +126,6 @@ AbismalIndex::get_bucket_sizes(vector<bool> &keep) {
 
   double mean = 0;
   size_t count = 0;
-  double stdev = 0;
   if (VERBOSE)
     cerr << "[calculating bucket count statistics]\n";
 
@@ -126,15 +136,7 @@ AbismalIndex::get_bucket_sizes(vector<bool> &keep) {
     count += (*it != 0);
   }
 
-  // stdev
   mean = mean/static_cast<double>(count);
-  for (auto it(begin(counter)); it != counter_end; ++it) {
-    const double diff = (mean - static_cast<double>(*it));
-    stdev += (*it != 0)*diff*diff;
-  }
-  stdev = stdev/static_cast<double>(count - 1);
-  stdev = sqrt(stdev);
-
   vector<uint32_t> copy_of_counter;
   copy(begin(counter), end(counter), std::back_inserter(copy_of_counter));
 
@@ -146,10 +148,12 @@ AbismalIndex::get_bucket_sizes(vector<bool> &keep) {
 
   if (VERBOSE) {
     const size_t bases_indexed = std::accumulate(begin(counter), end(counter), 0ULL);
-    cerr << "[bases indexed: " << bases_indexed
-         << ". mean: " << mean
-         << ", stdev: " << stdev
-         << ", max_candidates: " << max_candidates << "]" << endl;
+    cerr << std::fixed << std::setprecision(3)
+         << "[bases indexed: " << bases_indexed/1000000 << "M"
+         << ", mean: " << static_cast<size_t>(mean)
+         << ", required RAM: "
+         << estimate_ram(counter.size(), bases_indexed, genome.size()) << " GB"
+         << ", k-mer cutoff: " << max_candidates << "]" << endl;
   }
 }
 
