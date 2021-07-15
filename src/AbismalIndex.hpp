@@ -33,17 +33,17 @@ static inline char random_base() {return "ACGT"[rand() & 3];}
 
 namespace seed {
   // number of positions in the hashed portion of the seed
-  static const uint32_t key_weight = 26;
+  static const uint32_t key_weight = 24;
 
   // window in which we select the best k-mer
-  static const uint32_t window_size = 15;
+  static const uint32_t window_size = 13;
 
   // number of positions to sort within buckets
   static const uint32_t n_sorting_positions = 128;
 
   // maximum number of candidates per seed as function of
   // overrepresented k-mers
-  static const double overrep_kmer_quantile = 1e-6;
+  static const double overrep_kmer_quantile = 1e-5;
 
   static const size_t hash_mask = (1ull << seed::key_weight) - 1;
 
