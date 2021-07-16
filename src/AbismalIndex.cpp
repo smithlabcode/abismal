@@ -153,7 +153,8 @@ AbismalIndex::get_bucket_sizes(vector<bool> &keep) {
          << ", mean: " << static_cast<size_t>(mean)
          << ", required RAM: "
          << estimate_ram(counter.size(), bases_indexed, genome.size()) << " GB"
-         << ", k-mer cutoff: " << max_candidates << "]" << endl;
+         << ", max count: " << copy_of_counter.back()
+         << ", cutoff: " << max_candidates << "]" << endl;
   }
 }
 
