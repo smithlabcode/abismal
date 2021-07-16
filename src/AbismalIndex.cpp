@@ -127,7 +127,7 @@ AbismalIndex::get_bucket_sizes(vector<bool> &keep) {
   double mean = 0;
   size_t count = 0;
   if (VERBOSE)
-    cerr << "[calculating bucket count statistics]\n";
+    cerr << "[calculating index statistics]\n";
 
   // mean
   auto counter_end(end(counter));
@@ -202,9 +202,9 @@ AbismalIndex::compress_minimizers(vector<bool> &keep) {
   const size_t genome_st = seed::padding_size;
   const size_t lim = cl.get_genome_size() - seed::key_weight - seed::padding_size;
 
-  ProgressBar progress(lim, "selecting (" +
+  ProgressBar progress(lim, "indexing (" +
     to_string(seed::window_size) + "," + to_string(seed::key_weight) +
-    ") minimizers"
+    ") mins"
   );
 
   // start building up the hash key
@@ -232,7 +232,8 @@ AbismalIndex::compress_minimizers(vector<bool> &keep) {
     add_kmer(kmer_loc(hash_key, i), seed::window_size, window_kmers);
   }
 
-  keep[window_kmers.front().loc] = true;
+  for (auto it(begin(window_kmers)); it != end(window_kmers) && *it == window_kmers.front(); ++it)
+    keep[it->loc] = true;
 
   if (VERBOSE)
     progress.report(cerr, lim);
