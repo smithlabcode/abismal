@@ -1601,7 +1601,7 @@ int main(int argc, const char **argv) {
     opt_parse.add_opt("genome", 'g', "genome file (FASTA)", false, genome_file);
     opt_parse.add_opt("outfile", 'o', "output file (SAM) [stdout]", false, outfile);
     opt_parse.add_opt("stats", 's',
-                      "map statistics file [stderr]",
+                      "map statistics file",
                       false, stats_outfile);
     opt_parse.add_opt("threads", 't', "number of threads", false, n_threads);
     opt_parse.add_opt("candidates", 'c', "max candidates for full comparison",
@@ -1674,9 +1674,7 @@ int main(int argc, const char **argv) {
       else
         cerr << "[output file: " << outfile << "]" << endl;
 
-      if (stats_outfile.empty())
-        cerr << "[printing map statistics to stderr]\n";
-      else
+      if (!stats_outfile.empty())
         cerr << "[stats output file: " << stats_outfile << "]" << endl;
     }
 
