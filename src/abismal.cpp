@@ -189,8 +189,7 @@ valid(const se_element s, const uint32_t readlen) {
 inline bool
 valid_pair(const se_element s1, const se_element s2,
            const uint32_t readlen1, const uint32_t readlen2) {
-  return (s1.diffs + s2.diffs) <=
-    static_cast<score_t>(se_element::valid_frac*(readlen1 + readlen2));
+  return (valid(s1, readlen1) && valid(s2, readlen2));
 }
 
 inline bool
@@ -452,14 +451,19 @@ inline double pct(const double a, const double b) {return 100.0*a/b;}
 
 struct se_map_stats {
   se_map_stats() :
-    tot_rds(0), uniq_rds(0), ambig_rds(0), unmapped_rds(0), skipped_rds(0) {}
+    tot_rds(0), uniq_rds(0), ambig_rds(0), unmapped_rds(0), skipped_rds(0),
+    edit_distance(0), total_bases(0) {}
   uint32_t tot_rds;
   uint32_t uniq_rds;
   uint32_t ambig_rds;
   uint32_t unmapped_rds;
   uint32_t skipped_rds;
 
-  void update(const se_element &s, const bool skipped) {
+  size_t edit_distance;
+  size_t total_bases;
+
+  void update(const se_element &s, const bool skipped,
+              const string &cigar) {
     ++tot_rds;
     const bool valid = !s.empty();
     const bool ambig = s.ambig();
@@ -467,6 +471,14 @@ struct se_map_stats {
     ambig_rds += (valid && ambig);
     unmapped_rds += !valid;
     skipped_rds += skipped;
+
+    if (valid && !ambig)
+      update_error_rate(s.diffs, cigar);
+  }
+
+  void update_error_rate(const score_t diffs, const string &cigar) {
+    edit_distance += diffs;
+    total_bases += cigar_qseq_ops(cigar);
   }
 
   string tostring(const size_t n_tabs = 0) const {
@@ -484,6 +496,10 @@ struct se_map_stats {
         << t+tab << "percent_unique: "
         << pct(uniq_rds, tot_rds == 0 ? 1 : tot_rds) << endl
         << t+tab << "ambiguous: " << ambig_rds << endl
+        << t+tab << "unique_error:" << endl
+        << t+tab+tab << "edits: " << edit_distance << endl
+        << t+tab+tab << "total_bases: " << total_bases << endl
+        << t+tab+tab << "error_rate: " << pct(edit_distance, total_bases) << endl
         << t     << "unmapped: " << unmapped_rds << endl
         << t     << "skipped: " << skipped_rds << endl;
     return oss.str();
@@ -493,19 +509,22 @@ struct se_map_stats {
 struct pe_map_stats {
   pe_map_stats() :
     tot_pairs(0), uniq_pairs(0), ambig_pairs(0),
-    unmapped_pairs(0), discordant(0) {}
+    unmapped_pairs(0), discordant(0), edit_distance(0), total_bases(0) {}
   uint32_t tot_pairs;
   uint32_t uniq_pairs;
   uint32_t ambig_pairs;
   uint32_t unmapped_pairs;
   uint32_t discordant;
   uint32_t min_dist;
+
+  size_t edit_distance;
+  size_t total_bases;
   se_map_stats end1_stats;
   se_map_stats end2_stats;
 
   void update(const bool allow_ambig, const pe_element &p,
-              const se_element &s1, const bool skipped_se1,
-              const se_element &s2, const bool skipped_se2) {
+              const se_element &s1, const bool skipped_se1, const string &cig1,
+              const se_element &s2, const bool skipped_se2, const string &cig2) {
     const bool valid = !p.empty();
     const bool ambig = p.ambig();
     ++tot_pairs;
@@ -515,9 +534,19 @@ struct pe_map_stats {
 
     if (p.empty() || (!allow_ambig && p.ambig())) {
       ++unmapped_pairs;
-      end1_stats.update(s1, skipped_se1);
-      end2_stats.update(s2, skipped_se2);
+      end1_stats.update(s1, skipped_se1, cig1);
+      end2_stats.update(s2, skipped_se2, cig2);
     }
+    else
+      update_error_rate(p.r1.diffs, p.r2.diffs, cig1, cig2);
+  }
+
+  void update_error_rate(const score_t d1, const score_t d2,
+                         const string &cig1, const string &cig2) {
+    if (d1 > 100 || d2 > 100)
+      cerr << "problematic diffs: " << d1 << " " << d2 << "\n";
+    edit_distance += d1 + d2;
+    total_bases += cigar_qseq_ops(cig1) + cigar_qseq_ops(cig2);
   }
 
   string tostring() const {
@@ -532,6 +561,10 @@ struct pe_map_stats {
         << t+t << "num_unique: " << uniq_pairs << endl
         << t+t << "percent_unique: " << pct(uniq_pairs, tot_pairs) << endl
         << t+t << "ambiguous: " << ambig_pairs << endl
+        << t << "unique_error:" << endl
+        << t+t << "edits: " << edit_distance << endl
+        << t+t << "total_bases: " << total_bases << endl
+        << t+t << "error_rate: " << pct(edit_distance, total_bases) << endl
         << t   << "unmapped: " << unmapped_pairs << endl
         << t   << "percent_unmapped: " << pct(unmapped_pairs, tot_pairs) << endl
         << t   << "discordant: " << discordant << endl
@@ -648,8 +681,9 @@ check_hits(const uint32_t offset,
 inline size_t
 estimate_window_size(const uint32_t readlen) {
   return max(static_cast<size_t>(seed::window_size),
+             static_cast<size_t>(readlen/5));
              // GS: used in bowtie2
-             static_cast<size_t>(1 + 2.3*sqrt(readlen)));
+             /*static_cast<size_t>(1 + 2.3*sqrt(readlen))*/
 }
 
 static void
@@ -963,7 +997,7 @@ map_single_ended(const bool VERBOSE, const bool allow_ambig,
         if (format_se(allow_ambig, bests[i], abismal_index.cl, reads[i],
               names[i], cigar[i], out) == map_unmapped)
           bests[i].reset();
-        se_stats.update(bests[i], reads[i].length() == 0);
+        se_stats.update(bests[i], reads[i].length() == 0, cigar[i]);
       }
     }
 #pragma omp critical
@@ -1061,7 +1095,7 @@ map_single_ended_rand(const bool VERBOSE, const bool allow_ambig,
         if (format_se(allow_ambig, bests[i], abismal_index.cl, reads[i],
               names[i], cigar[i], out) == map_unmapped)
           bests[i].reset(reads[i].size());
-        se_stats.update(bests[i], reads[i].length() == 0);
+        se_stats.update(bests[i], reads[i].length() == 0, cigar[i]);
       }
     }
 #pragma omp critical
@@ -1343,8 +1377,8 @@ map_paired_ended(const bool VERBOSE,
         );
         pe_stats.update(
           allow_ambig, bests[i],
-          bests_se1[i], reads1[i].length() == 0,
-          bests_se2[i], reads2[i].length() == 0
+          bests_se1[i], reads1[i].length() == 0, cigar1[i],
+          bests_se2[i], reads2[i].length() == 0, cigar2[i]
         );
       }
     }
@@ -1487,9 +1521,11 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
           bests[i], bests_se1[i], bests_se2[i], out
         );
 
-        pe_stats.update(allow_ambig, bests[i],
-                        bests_se1[i], reads1[i].length() == 0,
-                        bests_se2[i], reads2[i].length() == 0);
+        pe_stats.update(
+          allow_ambig, bests[i],
+          bests_se1[i], reads1[i].length() == 0, cigar1[i],
+          bests_se2[i], reads2[i].length() == 0, cigar2[i]
+        );
       }
     }
 #pragma omp critical
