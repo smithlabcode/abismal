@@ -490,18 +490,21 @@ struct se_map_stats {
     oss << t     << "total_reads: " << tot_rds << endl
         << t     << "mapped: " << endl
         << t+tab << "num_mapped: " << uniq_rds+ambig_rds << endl
+        << t+tab << "num_unique: " << uniq_rds << endl
+        << t+tab << "num_ambiguous: " << ambig_rds << endl
         << t+tab << "percent_mapped: "
         << pct(uniq_rds+ambig_rds, tot_rds == 0 ? 1 : tot_rds) << endl
-        << t+tab << "num_unique: " << uniq_rds << endl
         << t+tab << "percent_unique: "
         << pct(uniq_rds, tot_rds == 0 ? 1 : tot_rds) << endl
-        << t+tab << "ambiguous: " << ambig_rds << endl
+        << t+tab << "percent_ambiguous: " << pct(ambig_rds, tot_rds) << endl
         << t+tab << "unique_error:" << endl
         << t+tab+tab << "edits: " << edit_distance << endl
         << t+tab+tab << "total_bases: " << total_bases << endl
         << t+tab+tab << "error_rate: " << pct(edit_distance, total_bases) << endl
-        << t     << "unmapped: " << unmapped_rds << endl
-        << t     << "skipped: " << skipped_rds << endl;
+        << t     << "num_unmapped: " << unmapped_rds << endl
+        << t     << "num_skipped: " << skipped_rds << endl
+        << t     << "percent_unmapped: " << pct(unmapped_rds, tot_rds) << endl
+        << t     << "percent_skipped: " << pct(skipped_rds, tot_rds) << endl;
     return oss.str();
   }
 };
@@ -533,7 +536,7 @@ struct pe_map_stats {
     discordant += (!valid && !s1.empty() && !s2.empty());
 
     if (p.empty() || (!allow_ambig && p.ambig())) {
-      ++unmapped_pairs;
+      unmapped_pairs += p.empty();
       end1_stats.update(s1, skipped_se1, cig1);
       end2_stats.update(s2, skipped_se2, cig2);
     }
@@ -553,21 +556,22 @@ struct pe_map_stats {
     std::ostringstream oss;
     static const string t = "    ";
     oss << "pairs:" << endl
-        << t   << "total_read_pairs: " << tot_pairs << endl
+        << t   << "total_pairs: " << tot_pairs << endl
         << t   << "mapped:" << endl
         << t+t << "num_mapped: " << uniq_pairs + ambig_pairs << endl
+        << t+t << "num_unique: " << uniq_pairs << endl
+        << t+t << "num_ambiguous: " << ambig_pairs << endl
         << t+t << "percent_mapped: "
         << pct(uniq_pairs + ambig_pairs, tot_pairs) << endl
-        << t+t << "num_unique: " << uniq_pairs << endl
         << t+t << "percent_unique: " << pct(uniq_pairs, tot_pairs) << endl
-        << t+t << "ambiguous: " << ambig_pairs << endl
-        << t << "unique_error:" << endl
-        << t+t << "edits: " << edit_distance << endl
-        << t+t << "total_bases: " << total_bases << endl
-        << t+t << "error_rate: " << pct(edit_distance, total_bases) << endl
-        << t   << "unmapped: " << unmapped_pairs << endl
+        << t+t << "percent_ambiguous: " << pct(ambig_pairs, tot_pairs) << endl
+        << t+t<< "unique_error:" << endl
+        << t+t+t<< "edits: " << edit_distance << endl
+        << t+t+t<< "total_bases: " << total_bases << endl
+        << t+t+t<< "error_rate: " << pct(edit_distance, total_bases) << endl
+        << t   << "num_unmapped: " << unmapped_pairs << endl
+        << t   << "num_discordant: " << discordant << endl
         << t   << "percent_unmapped: " << pct(unmapped_pairs, tot_pairs) << endl
-        << t   << "discordant: " << discordant << endl
         << t   << "percent_discordant: " << pct(discordant, tot_pairs) << endl
         << "mate1:" << endl << end1_stats.tostring(1)
         << "mate2:" << endl << end2_stats.tostring(1);
