@@ -911,7 +911,7 @@ align_se_candidates(const Read &pread_t, const Read &pread_t_rc,
         best = s; // GS: ambig is unset on s
         best_len = len;
         best_score = scr;
-        cigar = cand_cigar;
+        cigar = std::move(cand_cigar);
       }
 
       /* GS: need to check != here in case alignment caused the pos
@@ -1192,8 +1192,8 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
             const score_t scr = scr1 + scr2;
             if (scr > aln_score) {
               aln_score = scr;
-              cig1 = cand_cig1;
-              cig2 = cand_cig2;
+              cig1 = std::move(cand_cig1);
+              cig2 = std::move(cand_cig2);
 
               // GS: unsets ambig
               best.update(swap_ends ? s2 : s1, swap_ends ? s1 : s2);
