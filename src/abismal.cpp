@@ -22,6 +22,7 @@
 #include <vector>
 #include <stdexcept>
 #include <deque>
+#include <chrono>
 
 #include "smithlab_os.hpp"
 #include "smithlab_utils.hpp"
@@ -53,6 +54,7 @@ using std::end;
 using std::deque;
 using std::push_heap;
 using std::pop_heap;
+using std::chrono::system_clock;
 
 typedef uint16_t flags_t; // every bit is a flag
 typedef int16_t score_t; // aln score, edit distance, hamming distance
@@ -60,6 +62,14 @@ typedef vector<uint8_t> Read; //4-bit encoding of reads
 typedef vector<size_t> PackedRead; //4-bit encoding of reads
 
 enum conversion_type { t_rich = false, a_rich = true };
+
+static inline void
+print_with_time(const string &s) {
+  auto tmp = system_clock::to_time_t(system_clock::now());
+  string time_fmt(std::ctime(&tmp));
+  time_fmt.pop_back();
+  cerr << "[" << time_fmt << "] " << s << endl;
+}
 
 constexpr conversion_type
 flip_conv(const conversion_type conv) {
@@ -769,7 +779,6 @@ process_seeds(const uint32_t max_candidates,
   const auto packed_read_start(begin(packed_read));
   const auto packed_read_end(end(packed_read));
 
-
   // specific step: look for exact matches, which can be at most
   // w_index bases apart
   size_t k = 0;
@@ -872,7 +881,7 @@ align_read(const Read &pread, se_element &res,
     simple_aln::make_default_cigar(readlen, cigar);
     len = readlen;
 
-    // the score without indels
+    // the score without indels or soft-clipping
     return simple_aln::default_score(readlen, res.diffs);
   }
   const score_t ans = aln.align(pread, res.pos, len, cigar);
@@ -1138,10 +1147,8 @@ run_single_ended(const bool VERBOSE,
       map_single_ended<conv>(VERBOSE, allow_ambig, max_candidates,
           abismal_index, rl, se_stats, out, progress);
   }
-  if (VERBOSE) {
-    cerr << "[total mapping time: " << omp_get_wtime() - start_time << "]"
-         << endl;
-  }
+  if (VERBOSE)
+    print_with_time("total mapping time: " + to_string(omp_get_wtime() - start_time) + "s");
 }
 static void
 best_single(const pe_candidates &pres, se_candidates &res) {
@@ -1574,10 +1581,8 @@ run_paired_ended(const bool VERBOSE,
           abismal_index, rl1, rl2, pe_stats, out, progress);
   }
 
-  if (VERBOSE) {
-    cerr << "[total mapping time: " << omp_get_wtime() - start_time
-         << "]" << endl;
-  }
+  if (VERBOSE)
+    print_with_time("total mapping time: " + to_string(omp_get_wtime() - start_time) + "s");
 }
 
 int main(int argc, const char **argv) {
@@ -1668,18 +1673,14 @@ int main(int argc, const char **argv) {
 
     if (VERBOSE) {
       if (paired_end)
-        cerr << "[mapping paired end: " << reads_file << " "
-             << reads_file2 << "]\n";
+        print_with_time("input (PE): " + reads_file + ", " + reads_file2);
       else
-        cerr << "[mapping single end: " << reads_file << "]\n";
+        print_with_time("input (SE): " + reads_file);
 
-      if (outfile.empty())
-        cerr << "[printing SAM output to stdout]\n";
-      else
-        cerr << "[output file: " << outfile << "]" << endl;
+      print_with_time("output (SAM): " + (outfile.empty() ? "[stdout]" : outfile));
 
       if (!stats_outfile.empty())
-        cerr << "[stats output file: " << stats_outfile << "]" << endl;
+        print_with_time("map statistics (YAML): " + stats_outfile);
     }
 
     AbismalIndex abismal_index;
@@ -1687,20 +1688,18 @@ int main(int argc, const char **argv) {
     const double start_time = omp_get_wtime();
     if (!index_file.empty()) {
       if (VERBOSE)
-        cerr << "[loading abismal index: " << index_file << "]" << endl;
+        print_with_time("loading index " + index_file);
       abismal_index.read(index_file);
 
       if (VERBOSE)
-        cerr << "[loading time: " << (omp_get_wtime() - start_time)
-             << "]" << endl;
+        print_with_time("loading time: " + to_string(omp_get_wtime() - start_time) + "s");
     }
     else {
       if (VERBOSE)
-        cerr << "[indexing genome: " << genome_file << "]\n";
+        print_with_time("indexing genome " + genome_file);
       abismal_index.create_index(genome_file);
       if (VERBOSE)
-        cerr << "[indexing time: " << (omp_get_wtime() - start_time)
-             << "]" << endl;
+        print_with_time("indexing time: " + to_string(omp_get_wtime() - start_time) + "s");
     }
 
     if (max_candidates == 0)
