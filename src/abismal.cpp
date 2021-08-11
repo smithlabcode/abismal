@@ -1167,40 +1167,42 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
   auto j1 = begin(res1.v);
   const auto j1_end = j1 + res1.sz;
   const auto j2_end = begin(res2.v) + res2.sz;
+  const uint32_t readlen1 = pread1.size();
+  const uint32_t readlen2 = pread1.size();
 
   uint32_t len1 = 0, len2 = 0;
+  score_t scr, scr2;
   se_element s1, s2;
   string cand_cig1, cand_cig2;
 
   for (auto j2(begin(res2.v)); j2 != j2_end && !best.sure_ambig(); ++j2) {
     s2 = *j2;
-    if (valid_hit(s2, pread2.size())) {
-      const uint32_t unaligned_lim = s2.pos + pread2.size();
+    if (valid_hit(s2, readlen2)) {
+      uint32_t lim = s2.pos + pread2.size();
       for (j1 = begin(res1.v); j1 != j1_end &&
-           j1->pos + pe_element::max_dist < unaligned_lim; ++j1);
+           j1->pos + pe_element::max_dist < lim; ++j1);
 
-      score_t scr2 = 0;
-      uint32_t aligned_lim = 0;
-      while (j1 != j1_end && j1->pos + pe_element::min_dist <= unaligned_lim
+      scr2 = 0;
+      while (j1 != j1_end && j1->pos + pe_element::min_dist <= lim
              && !best.sure_ambig()) {
         s1 = *j1;
-        if (valid_hit(s1, pread1.size())) {
-          const score_t scr1 = align_read(pread1, s1, len1, cand_cig1, aln);
-
+        if (valid_hit(s1, readlen1)) {
           // GS: guarantees that j2 is aligned only once
           if (scr2 == 0) {
             scr2 = align_read(pread2, s2, len2, cand_cig2, aln);
-            aligned_lim = s2.pos + cigar_rseq_ops(cand_cig2);
+            lim = s2.pos + cigar_rseq_ops(cand_cig2);
           }
+          scr = scr2 + align_read(pread1, s1, len1, cand_cig1, aln);
+
           // GS: only accept if length post alignment is still within limits
           if (valid_pair(s1, s2, len1, len2) &&
-              (s1.pos + pe_element::max_dist >= aligned_lim) &&
-              (s1.pos + pe_element::min_dist <= aligned_lim)) {
-            const score_t scr = scr1 + scr2;
+              (s1.pos + pe_element::max_dist >= lim) &&
+              (s1.pos + pe_element::min_dist <= lim)) {
             if (scr > aln_score) {
               aln_score = scr;
               cig1 = std::move(cand_cig1);
-              cig2 = std::move(cand_cig2);
+              if (!cand_cig2.empty())
+                cig2 = std::move(cand_cig2);
 
               // GS: unsets ambig
               best.update(swap_ends ? s2 : s1, swap_ends ? s1 : s2);
