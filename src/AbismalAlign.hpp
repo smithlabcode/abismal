@@ -51,7 +51,7 @@ struct AbismalAlign {
   const size_t q_sz_max;
   const size_t bw;
 
-  static const uint16_t max_off_diag = 3;
+  static const uint16_t max_off_diag = 4;
 };
 
 template <score_t (*scr_fun)(const uint8_t, const uint8_t),
@@ -91,18 +91,13 @@ get_traceback(const size_t n_col,
               std::vector<uint8_t>::iterator &c_itr,
               size_t &the_row, size_t &the_col) {
   score_t score = table[the_row*n_col + the_col];
-  while (score > 0) {
+  while (score != 0) {
     const uint8_t the_arrow = traceback[the_row*n_col + the_col];
-    if (is_deletion(the_arrow)) {
-      --the_row;
-      ++the_col;
-    }
-    else if (is_insertion(the_arrow)) {
-      --the_col;
-    }
-    else { // match or mismatch
-      --the_row;
-    } // should not go into uninitialized cells
+    const bool is_del = is_deletion(the_arrow);
+    const bool is_ins = is_insertion(the_arrow);
+    the_row -= !is_ins;
+    the_col -= is_ins;
+    the_col += is_del;
     *c_itr = the_arrow;
     ++c_itr;
     score = table[the_row*n_col + the_col];
@@ -114,7 +109,7 @@ static score_t
 get_best_score(const std::vector<score_t> &table, const size_t n_col,
                const size_t t_shift,
                size_t &best_i, size_t &best_j) {
-  auto best_cell_itr = std::max_element(begin(table), end(table));
+  const auto best_cell_itr = std::max_element(begin(table), end(table));
   const size_t best_cell = std::distance(std::begin(table), best_cell_itr);
   best_i = best_cell/n_col;
   best_j = best_cell % n_col;
@@ -127,11 +122,9 @@ void
 from_diag(T next_row, const T next_row_end, T cur_row,
           QueryConstItr query_seq, uint8_t ref_base, U traceback) {
   while (next_row != next_row_end) {
-    auto score = scr_fun(*query_seq, ref_base) + *cur_row;
-    if (score > *next_row) {
-      *next_row = score;
-      *traceback = diag_symbol;
-    }
+    const score_t score = scr_fun(*query_seq, ref_base) + *cur_row;
+    *next_row = std::max(score, *next_row);
+    *traceback = (*next_row == score) ? (diag_symbol) : (*traceback);
     ++next_row; ++traceback; ++query_seq; ++cur_row;
   }
 }
@@ -140,11 +133,9 @@ template <score_t indel_pen, class T, class U>
 void
 from_above(T above_itr, const T above_end, T target, U traceback) {
   while (above_itr != above_end) {
-    auto score = *above_itr + indel_pen;
-    if (score > *target) {
-      *target = score;
-      *traceback = above_symbol;
-    }
+    const score_t score = *above_itr + indel_pen;
+    *target = std::max(score, *target);
+    *traceback = (*target == score) ? (above_symbol) : (*traceback);
     ++above_itr; ++target; ++traceback;
   }
 }
@@ -155,12 +146,9 @@ template <score_t indel_pen, class T, class U>
 void
 from_left(T left_itr, T target, const T target_end, U traceback) {
   while (target != target_end) {
-    auto score = *left_itr + indel_pen;
-    if (score > *target) {
-
-      *target = score;
-      *traceback = left_symbol;
-    }
+    const score_t score = *left_itr + indel_pen;
+    *target = std::max(score, *target);
+    *traceback = (*target == score) ? (left_symbol) : (*traceback);
     ++left_itr; ++target; ++traceback;
   }
 }
@@ -207,6 +195,8 @@ AbismalAlign<scr_fun, indel_pen>::align(const std::vector<uint8_t> &qseq,
   // locate the end of the alignment as max score
   size_t the_row = 0, the_col = 0;
   const score_t r = get_best_score(table, bw, t_shift, the_row, the_col);
+
+  // GS: unlikely, but possible, case where the score = 0
   if (r == 0) return r;
 
   // soft clip "S" at the start of the (reverse) uncompressed cigar
