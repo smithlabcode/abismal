@@ -1275,8 +1275,9 @@ map_fragments(const string &read1, const string &read2,
     );
   }
 
-  select_maps<swap_ends>(pread1, pread2, aln_score, cigar1, cigar2,
-                         res1, res2, res_se1, res_se2, aln, best);
+  if (!read1.empty() && !read2.empty())
+    select_maps<swap_ends>(pread1, pread2, aln_score, cigar1, cigar2,
+                           res1, res2, res_se1, res_se2, aln, best);
 }
 
 template <const conversion_type conv>
