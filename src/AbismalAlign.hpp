@@ -109,7 +109,11 @@ static score_t
 get_best_score(const std::vector<score_t> &table, const size_t n_col,
                const size_t t_shift,
                size_t &best_i, size_t &best_j) {
-  const auto best_cell_itr = std::max_element(begin(table), end(table));
+  auto best_cell_itr = std::max_element(begin(table), end(table));
+  // get the rightmost element that has max score (largest alignment)
+  for (auto it(best_cell_itr); it != end(table); ++it)
+    best_cell_itr = (*it == *best_cell_itr) ? (it) : (best_cell_itr);
+
   const size_t best_cell = std::distance(std::begin(table), best_cell_itr);
   best_i = best_cell/n_col;
   best_j = best_cell % n_col;
