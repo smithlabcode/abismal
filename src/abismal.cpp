@@ -892,9 +892,6 @@ align_se_candidates(const Read &pread_t, const Read &pread_t_rc,
                     se_candidates &res, se_element &best,
                     string &cigar,
                     AbismalAlignSimple &aln) {
-  /* GS: this is faster, but potentially prevents ends to be
-   * soft-clipped, which is helpful on reads with bad ends that were
-   * not trimmed prior to alignment */
   const score_t readlen = static_cast<score_t>(pread_t.size());
   score_t best_score = 0;
   uint32_t len = 0;
