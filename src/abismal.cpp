@@ -193,12 +193,12 @@ struct se_element { //assert(sizeof(se_element) == 8)
 };
 
 inline bool
-valid(const se_element s, const uint32_t readlen) {
+valid(const se_element &s, const uint32_t readlen) {
   return s.diffs <= static_cast<score_t>(se_element::valid_frac*readlen);
 }
 
 inline bool
-valid_pair(const se_element s1, const se_element s2,
+valid_pair(const se_element &s1, const se_element &s2,
            const uint32_t readlen1, const uint32_t readlen2) {
   return (valid(s1, readlen1) && valid(s2, readlen2));
 }
@@ -452,7 +452,7 @@ struct pe_candidates {
   static const uint32_t max_size;
 };
 
-const uint32_t pe_candidates::max_size = 100;
+const uint32_t pe_candidates::max_size = 200;
 
 inline double pct(const double a, const double b) {return ((b == 0) ? 0.0 : 100.0*a/b);}
 
@@ -674,16 +674,17 @@ check_hits(const uint32_t offset,
       &(*(genome_st + ((*(start_idx + 10) - offset) >> 4)))
     );
     const uint32_t the_pos = *start_idx - offset;
+    const score_t cutoff = res.get_cutoff();
     /* GS: the_pos & 15u tells if the position is a multiple of 16, in
      * which case it is aligned with the genome. Otherwise we need to
      * use the unaligned comparison function that offsets genome
      * position by the_pos (mod 16). Multiplied by 4 because each base
      * uses 4 bits */
     const score_t diffs = full_compare(
-      res.get_cutoff(), read_end, ((the_pos & 15u) << 2),
+      cutoff, read_end, ((the_pos & 15u) << 2),
       read_st, genome_st + (the_pos >> 4)
     );
-    if (diffs < res.get_cutoff())
+    if (diffs < cutoff)
       res.update(the_pos, diffs, strand_code);
   }
 }
@@ -1167,7 +1168,7 @@ best_single(const pe_candidates &pres, se_candidates &res) {
 template <const bool swap_ends>
 static void
 best_pair(const pe_candidates &res1, const pe_candidates &res2,
-          Read &pread1, Read &pread2,
+          const Read &pread1, const Read &pread2,
           score_t &aln_score, string &cig1, string &cig2,
           AbismalAlignSimple &aln, pe_element &best) {
   vector<se_element>::const_iterator j1 = begin(res1.v);
@@ -1181,7 +1182,12 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
   se_element s1, s2;
   string cand_cig1, cand_cig2;
 
-  for (vector<se_element>::const_iterator j2(begin(res2.v)); j2 != j2_end && !best.sure_ambig(); ++j2) {
+  // GS: upper bound on cigar size
+  cand_cig1.reserve(2*readlen1);
+  cand_cig2.reserve(2*readlen2);
+
+  for (vector<se_element>::const_iterator j2(begin(res2.v));
+      j2 != j2_end && !best.sure_ambig(); ++j2) {
     s2 = *j2;
     if (valid_hit(s2, readlen2)) {
       uint32_t lim = s2.pos + pread2.size();
@@ -1190,7 +1196,7 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
 
       scr2 = 0;
       while (j1 != j1_end && j1->pos + pe_element::min_dist <= lim
-             && !best.sure_ambig()) {
+             && !best.sure_ambig() && (scr2 == 0 || valid(s2, readlen2))) {
         s1 = *j1;
         if (valid_hit(s1, readlen1)) {
           // GS: guarantees that j2 is aligned only once
@@ -1201,7 +1207,7 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
           scr = scr2 + align_read(pread1, s1, len1, cand_cig1, aln);
 
           // GS: only accept if length post alignment is still within limits
-          if (valid_pair(s1, s2, len1, len2) &&
+          if (valid_pair(s1, s2, readlen1, readlen2) &&
               (s1.pos + pe_element::max_dist >= lim) &&
               (s1.pos + pe_element::min_dist <= lim)) {
             if (scr > aln_score) {
