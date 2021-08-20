@@ -14,7 +14,7 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 # General Public License for more details.
 
-EXTRA_DIST = README.md
+EXTRA_DIST = README.md LICENSE
 ACLOCAL_AMFLAGS = -I m4
 
 SUBDIRS := src/smithlab_cpp
