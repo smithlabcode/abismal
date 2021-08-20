@@ -28,7 +28,6 @@
 #include <iterator>
 #include <algorithm>
 #include <deque>
-#include <parallel/algorithm>
 
 using std::string;
 using std::vector;
@@ -140,7 +139,7 @@ AbismalIndex::get_bucket_sizes(vector<bool> &keep) {
   vector<uint32_t> copy_of_counter;
   copy(begin(counter), end(counter), std::back_inserter(copy_of_counter));
 
-  __gnu_parallel::sort(begin(copy_of_counter), end(copy_of_counter));
+  sort(begin(copy_of_counter), end(copy_of_counter));
   max_candidates = copy_of_counter[
     static_cast<size_t>((1 - seed::overrep_kmer_quantile)*
     static_cast<double>(counter.size()))
