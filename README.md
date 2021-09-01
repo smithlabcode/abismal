@@ -1,5 +1,12 @@
 ## abismal ##
 
+
+
+[![DOI](https://zenodo.org/badge/228294373.svg)](https://zenodo.org/badge/latestdoi/228294373)
+[![Install with Conda](https://anaconda.org/bioconda/abismal/badges/installer/conda.svg)](https://anaconda.org/bioconda/abismal)
+[![Install with Conda](https://anaconda.org/bioconda/abismal/badges/platforms.svg)](https://anaconda.org/bioconda/abismal)
+[![Install with Conda](https://anaconda.org/bioconda/abismal/badges/downloads.svg)](https://anaconda.org/bioconda/abismal)
+
 **A**nother **Bis**ulfite **M**apping **Al**gorithm (abismal) is
 a read mapping program for bisulfite sequencing in DNA methylation
 studies.
