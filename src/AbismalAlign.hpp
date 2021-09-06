@@ -41,6 +41,10 @@ struct AbismalAlign {
 
   AbismalAlign(const genome_iterator &target_start,
                const size_t max_read_length);
+  score_t trim_ends(const score_t diffs,
+                    const std::vector<uint8_t> &query,
+                    uint32_t &t_pos,
+                    uint32_t &len, std::string &cigar);
   score_t align(const std::vector<uint8_t> &query, uint32_t &t_pos,
                 uint32_t &len, std::string &cigar);
 
@@ -51,7 +55,7 @@ struct AbismalAlign {
   const size_t q_sz_max;
   const size_t bw;
 
-  static const uint16_t max_off_diag = 3;
+  static const uint16_t max_off_diag = 4;
 };
 
 template <score_t (*scr_fun)(const uint8_t, const uint8_t),
@@ -153,6 +157,63 @@ from_left(T left_itr, T target, const T target_end, U traceback) {
   }
 }
 
+inline void
+make_default_cigar(const uint32_t len, std::string &cigar) {
+  cigar = std::to_string(len) + 'M';
+}
+
+// if number of mismatches is small,  check if they are in the end
+// to trim them
+template <score_t (*scr_fun)(const uint8_t, const uint8_t), score_t indel_pen>
+score_t
+AbismalAlign<scr_fun, indel_pen>::trim_ends(
+    const score_t diffs,
+    const std::vector<uint8_t> &qseq,
+    uint32_t &t_pos, uint32_t &len, std::string &cigar) {
+  genome_iterator t_beg = target + t_pos;
+
+  const size_t lim = qseq.size();
+  const std::vector<uint8_t>::const_iterator q_beg(begin(qseq));
+
+  // exact match
+  if (diffs == 0) {
+    len = lim;
+    make_default_cigar(len, cigar);
+    return lim - diffs;
+  }
+
+  // check if errors are in the 5' end
+  score_t cur = 0;
+  for (cur = 0; cur < diffs &&
+      ((*(t_beg + cur) & *(q_beg + cur)) == 0); ++cur);
+  if (cur == diffs){
+    t_pos += diffs;
+    len = lim - diffs;
+    cigar = std::to_string(diffs) + 'S' +
+            std::to_string(lim - diffs) + 'M';
+    return lim - diffs; // all diffs were soft clipped
+  }
+
+  // check if errors are in the 3' end
+  cur = 0;
+  for (size_t i = lim - diffs; cur < diffs &&
+      ((*(t_beg + i) & *(q_beg + i)) == 0); ++cur, ++i);
+
+  if (cur == diffs){
+    t_pos += diffs;
+    len = lim - diffs;
+
+    cigar = std::to_string(lim - diffs) + 'M' +
+            std::to_string(diffs) + 'S';
+    return lim - diffs; // all diffs were soft clipped
+  }
+
+  // accept Hamming distance and do not align
+  len = lim;
+  make_default_cigar(len, cigar);
+  return lim - 2*diffs;
+}
+
 template <score_t (*scr_fun)(const uint8_t, const uint8_t), score_t indel_pen>
 score_t
 AbismalAlign<scr_fun, indel_pen>::align(const std::vector<uint8_t> &qseq,
@@ -230,7 +291,7 @@ namespace simple_aln {
   static const score_t match = 1;
   static const score_t mismatch = -1;
   static const score_t indel = -1;
-  static const score_t min_diffs_to_align = 1;
+  static const score_t min_diffs_to_align = 3;
   static const std::array<score_t, 2> score_lookup = {match, mismatch};
 
   inline score_t default_score(const uint32_t len, const score_t diffs) {
@@ -273,9 +334,6 @@ namespace simple_aln {
     const score_t mism = (match*(len - ins) - A)/(match - mismatch);
 
     return mism + ins + del;
-  }
-  inline void make_default_cigar(const uint32_t len, std::string &cigar) {
-    cigar = std::to_string(len) + 'M';
   }
 };
 

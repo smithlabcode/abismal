@@ -267,7 +267,7 @@ struct se_candidates {
   static const uint32_t max_size;
 };
 
-const uint32_t se_candidates::max_size = 20;
+const uint32_t se_candidates::max_size = 30;
 
 inline bool
 chrom_and_posn(const ChromLookup &cl, const string &cig, const uint32_t p,
@@ -452,7 +452,7 @@ struct pe_candidates {
   static const uint32_t max_size;
 };
 
-const uint32_t pe_candidates::max_size = 200;
+const uint32_t pe_candidates::max_size = 100;
 
 inline double pct(const double a, const double b) {return ((b == 0) ? 0.0 : 100.0*a/b);}
 
@@ -627,6 +627,14 @@ the_comp(const char a, const char b) {
   return (a & b) == 0;
 }
 
+inline score_t
+popcount64(size_t x) {
+  x = (x & 0x5555555555555555ULL) + ((x >> 1) & 0x5555555555555555ULL);
+  x = (x & 0x3333333333333333ULL) + ((x >> 2) & 0x3333333333333333ULL);
+  x = (x & 0x0F0F0F0F0F0F0F0FULL) + ((x >> 4) & 0x0F0F0F0F0F0F0F0FULL);
+  return (x * 0x0101010101010101ULL) >> 56;
+}
+
 /* GS: this function counts mismatches between read and genome when
  * they are packed as 64-bit integers, with 16 characters per integer.
  * The number of ones in the AND operation is the number of matches,
@@ -648,7 +656,7 @@ full_compare(const score_t cutoff, const PackedRead::const_iterator read_end,
   static const score_t max_matches = static_cast<score_t>(16);
   score_t d = 0;
   while (d < cutoff && read_itr != read_end) {
-    d += max_matches - __builtin_popcountll(
+    d += max_matches - popcount64(
       (*read_itr) & /*16 bases from the read*/
 
       /*16 bases from the padded genome*/
@@ -874,14 +882,9 @@ static score_t
 align_read(const Read &pread, se_element &res,
          uint32_t &len, string &cigar, AbismalAlignSimple &aln) {
   const score_t readlen = static_cast<score_t>(pread.size());
-  if (res.diffs < simple_aln::min_diffs_to_align || res.diffs == readlen) {
-    simple_aln::make_default_cigar(readlen, cigar);
-    len = readlen;
-
-    // the score without indels or soft-clipping
-    return simple_aln::default_score(readlen, res.diffs);
-  }
-  const score_t ans = aln.align(pread, res.pos, len, cigar);
+  const score_t ans = ((res.diffs < simple_aln::min_diffs_to_align || res.diffs == readlen) ?
+    aln.trim_ends(res.diffs, pread, res.pos, len, cigar) :
+    aln.align(pread, res.pos, len, cigar));
   res.diffs = simple_aln::edit_distance(ans, len, cigar);
   return ans;
 }
