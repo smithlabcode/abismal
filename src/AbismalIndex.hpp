@@ -33,7 +33,7 @@ static inline char random_base() {return "ACGT"[rand() & 3];}
 
 namespace seed {
   // number of positions in the hashed portion of the seed
-  static const uint32_t key_weight = 26;
+  static const uint32_t key_weight = 25;
 
   // window in which we select the best k-mer
   static const uint32_t window_size = 13;
@@ -43,7 +43,7 @@ namespace seed {
 
   // maximum number of candidates per seed as function of
   // overrepresented k-mers
-  static const double overrep_kmer_quantile = 2e-6;
+  static const double overrep_kmer_quantile = 1e-5;
 
   static const size_t hash_mask = (1ull << seed::key_weight) - 1;
 
@@ -140,11 +140,13 @@ struct AbismalIndex {
   static bool VERBOSE;
 
   size_t counter_size; // number of kmers indexed
+  size_t kmer_ranks_size; // k-mer ranks kept for mapping
   size_t index_size; // size of the index
   size_t max_candidates; // the estimated max_candidates from k-mer statistics
 
   std::vector<uint32_t> index; // genome positions for each k-mer
   std::vector<uint32_t> counter; // offset of each k-mer in "index"
+  std::vector<uint32_t> kmer_ranks; // rank of each 2^k k-mer, less is favored
   Genome genome; // the genome
   ChromLookup cl;
 
@@ -152,6 +154,12 @@ struct AbismalIndex {
 
   /* count how many positions must be stored for each hash value */
   void get_bucket_sizes(std::vector<bool> &keep);
+
+  /* get index statistics used in mapping */
+  void create_index_stats();
+
+  /* uses counter vector to construct a rank to each k-mer*/
+  void build_kmer_ranks();
 
   /* select genome positions using minimizers*/
   void compress_minimizers(std::vector<bool> &keep);
@@ -199,11 +207,14 @@ get_1bit_hash(T r, size_t &k) {
 struct kmer_loc {
   uint32_t kmer;
   uint32_t loc;
+  uint32_t rank;
+  static std::vector<uint32_t>::const_iterator ranks_st;
 
-  kmer_loc(const uint32_t k, const uint32_t l) : kmer(k), loc(l) {};
+  kmer_loc(const uint32_t k, const uint32_t l) :
+    kmer(k), loc(l), rank(*(ranks_st + k)) {};
 
   inline uint32_t cost() const {
-    return (kmer^random_mask);
+    return rank;
   }
   bool operator<(const kmer_loc &rhs) const {
     return cost() < rhs.cost();
@@ -217,10 +228,7 @@ struct kmer_loc {
    bool operator!=(const kmer_loc &rhs) const {
     return loc != rhs.loc;
   }
-  // this mask is a k-mer that does not exist in
-  // the human genome, with bit pattern
-  // 0b11011000110011001011011010
-  static const uint32_t random_mask = 56832730u;
+
 };
 
 inline void
@@ -232,6 +240,11 @@ add_kmer(const kmer_loc new_pos, const size_t window_size,
     window_kmers.pop_back();
 
   window_kmers.push_back(new_pos);
+
+  // removes k-mers to the left whose cost equals the current k-mer
+  while ((window_kmers.size() > 1) &&
+         (window_kmers[0].cost() == window_kmers[1].cost()))
+    window_kmers.pop_front();
 
   // removes k-mers outside of the sliding window
   while (window_kmers.front().loc + window_size <= new_pos.loc)
