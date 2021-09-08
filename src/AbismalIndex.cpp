@@ -87,12 +87,12 @@ estimate_ram(const size_t counter_size,
     //64-bit words
     sizeof(size_t)*(
       packed_genome_size
-    )
+    ) +
 
     // 32-bit words
     sizeof(uint32_t)*(
-      counter_size
-      kmer_rank_size
+      counter_size +
+      kmer_rank_size +
       bases_indexed
     );
            
@@ -132,7 +132,7 @@ AbismalIndex::create_index_stats() {
   median = copy_of_counter[first_non_zero + static_cast<size_t>(0.5*len)];
   uq = copy_of_counter[    first_non_zero + static_cast<size_t>(0.75*len)];
 
-  max_candidates = copy_of_counter[first_non_zero
+  max_candidates = copy_of_counter[first_non_zero +
     static_cast<size_t>((1 - seed::overrep_kmer_quantile)*len)
   ];
 
@@ -167,7 +167,7 @@ AbismalIndex::get_bucket_sizes(vector<bool> &keep) {
 
   const size_t genome_st = seed::padding_size;
   const size_t lim = cl.get_genome_size() - seed::key_weight - seed::padding_size;
-  ProgressBar progress(lim, "counting " + to_string(seed::key_weight)
+  ProgressBar progress(lim, "counting " + to_string(seed::key_weight) +
                             "-bit words");
 
   if (VERBOSE)
@@ -191,7 +191,6 @@ AbismalIndex::get_bucket_sizes(vector<bool> &keep) {
   }
   if (VERBOSE)
     progress.report(cerr, lim);
-
 }
 
 void
@@ -302,8 +301,8 @@ AbismalIndex::compress_minimizers(vector<bool> &keep) {
   const size_t genome_st = seed::padding_size;
   const size_t lim = cl.get_genome_size() - seed::key_weight - seed::padding_size;
 
-  ProgressBar progress(lim, "indexing ("
-    to_string(seed::window_size) + "," + to_string(seed::key_weight)
+  ProgressBar progress(lim, "indexing (" +
+    to_string(seed::window_size) + "," + to_string(seed::key_weight) +
     ") mins"
   );
 
@@ -387,7 +386,7 @@ void seed::read(FILE* in) {
     throw runtime_error(error_msg);
 
   if(_key_weight != key_weight) {
-    throw runtime_error("inconsistent k-mer size. Expected: "
+    throw runtime_error("inconsistent k-mer size. Expected: " +
         to_string(key_weight) + ", got: " + to_string(_key_weight));
   }
 
@@ -396,7 +395,7 @@ void seed::read(FILE* in) {
     throw runtime_error(error_msg);
 
   if (_window_size != window_size) {
-    throw runtime_error("inconsistent window size size. Expected: "
+    throw runtime_error("inconsistent window size size. Expected: " +
         to_string(window_size) + ", got: " + to_string(_window_size));
   }
 
@@ -405,8 +404,8 @@ void seed::read(FILE* in) {
     throw runtime_error(error_msg);
 
   if (_n_sorting_positions != n_sorting_positions) {
-    throw runtime_error("inconsistent sorting size size. Expected: "
-        to_string(n_sorting_positions) + ", got: "
+    throw runtime_error("inconsistent sorting size size. Expected: " +
+        to_string(n_sorting_positions) + ", got: " +
         to_string(_n_sorting_positions));
   }
 }
