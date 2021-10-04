@@ -111,10 +111,15 @@ load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
   cl.starts.push_back(genome.size());
 
   std::string line;
+  size_t num_n = 0;
   while (getline(in, line))
     if (line[0] != '>') {
-      for (auto it(begin(line)); it != end(line); ++it)
-        if (*it == 'N' || *it == 'n') *it = random_base();
+      for (auto it(begin(line)); it != end(line); ++it) {
+        if (*it == 'N' || *it == 'n') {
+          *it = random_base();
+          ++num_n;
+        }
+      }
 
       copy(std::begin(line), std::end(line), std::back_inserter(genome));
     }
@@ -128,7 +133,8 @@ load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
   cl.starts.push_back(genome.size());
   for (size_t i = 0; i < seed::padding_size; ++i)
     genome.push_back('Z');
-
+  std::cerr << "num N: " << num_n << "\n";
+  std::cerr << "pct N: " << 100.0*num_n/static_cast<double>(genome.size()) << "\n";
   cl.starts.push_back(genome.size());
 }
 
@@ -147,6 +153,7 @@ struct AbismalIndex {
   std::vector<uint32_t> index; // genome positions for each k-mer
   std::vector<uint32_t> counter; // offset of each k-mer in "index"
   std::vector<uint32_t> kmer_ranks; // rank of each 2^k k-mer, less is favored
+  std::vector<uint32_t> pos_prob; // rank of each 2^k k-mer, less is favored
   Genome genome; // the genome
   ChromLookup cl;
 
@@ -166,10 +173,6 @@ struct AbismalIndex {
 
   /* put genome positions in the appropriate buckets */
   void hash_genome(std::vector<bool> &keep);
-
-  /* Sort each bucket, if the seed length is more than 26, then use
-   * binary search for the rest part of the seed */
-  void sort_buckets();
 
   /* convert the genome to 4-bit encoding */
   void encode_genome(const std::vector<uint8_t> &input_genome);
@@ -216,11 +219,17 @@ struct kmer_loc {
   inline uint32_t cost() const {
     return rank;
   }
+  inline uint32_t mer() const {
+    return kmer ^ random_mask;
+  }
+
   bool operator<(const kmer_loc &rhs) const {
-    return cost() < rhs.cost();
+    return (cost() < rhs.cost())
+           || (cost() == rhs.cost() && mer() < rhs.mer());
   };
   bool operator>(const kmer_loc &rhs) const {
-    return cost() > rhs.cost();
+    return (cost() > rhs.cost()) ||
+           (cost() == rhs.cost() && mer() > rhs.mer());
   };
   bool operator==(const kmer_loc &rhs) const {
     return loc == rhs.loc;
@@ -228,7 +237,7 @@ struct kmer_loc {
    bool operator!=(const kmer_loc &rhs) const {
     return loc != rhs.loc;
   }
-
+  static const uint32_t random_mask = 0b1011000110011001011011010;
 };
 
 inline void
@@ -241,16 +250,11 @@ add_kmer(const kmer_loc new_pos, const size_t window_size,
 
   window_kmers.push_back(new_pos);
 
-  // removes k-mers to the left whose cost equals the current k-mer
-  while ((window_kmers.size() > 1) &&
-         (window_kmers[0].cost() == window_kmers[1].cost()))
-    window_kmers.pop_front();
-
   // removes k-mers outside of the sliding window
   while (window_kmers.front().loc + window_size <= new_pos.loc)
     window_kmers.pop_front();
 
   //assert(is_sorted(begin(window_kmers), end(window_kmers)));
-  //assert(window_kmers.size() <= window_size)
+  //assert(window_kmers.size() <= window_size);
 }
 #endif

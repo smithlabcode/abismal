@@ -697,14 +697,6 @@ check_hits(const uint32_t offset,
   }
 }
 
-inline size_t
-estimate_window_size(const uint32_t readlen) {
-  return max(static_cast<size_t>(seed::window_size),
-             static_cast<size_t>(readlen/4));
-             // GS: used in bowtie2
-             /*static_cast<size_t>(1 + 2.3*sqrt(readlen))*/
-}
-
 static void
 get_minimizer_offsets(const uint32_t readlen,
                       Read::const_iterator read_start,
@@ -721,7 +713,7 @@ get_minimizer_offsets(const uint32_t readlen,
   get_1bit_hash(read_start, kmer);
   read_start += seed::key_weight;
 
-  const size_t window_size = estimate_window_size(readlen);
+  static const size_t window_size = seed::window_size;
   for (; shift <= window_size; ++shift) {
     add_kmer(kmer_loc(kmer, shift), window_size, window_kmers);
     shift_hash_key(*read_start++, kmer);
@@ -784,40 +776,19 @@ process_seeds(const uint32_t max_candidates,
   const PackedRead::const_iterator packed_read_start(begin(packed_read));
   const PackedRead::const_iterator packed_read_end(end(packed_read));
 
-  // specific step: look for exact matches, which can be at most
-  // w_index bases apart
-  size_t k = 0;
-  get_1bit_hash(read_start, k);
-  for (size_t j = 0; j < seed::window_size; ++j) {
-    vector<uint32_t>::const_iterator s_idx(index_st + *(counter_st + k));
-    vector<uint32_t>::const_iterator e_idx(index_st + *(counter_st + k + 1));
-    if (s_idx < e_idx) {
-      find_candidates<seed::n_sorting_positions>(
-        read_start + j, genome_st, readlen - j, s_idx, e_idx
-      );
-      if (e_idx - s_idx <= max_candidates) {
-        check_hits<strand_code>(
-          j, packed_read_start, packed_read_end,
-          genome_st.itr, e_idx, s_idx, res
-        );
-      }
-    }
-    // GS: this needs to be more readable
-    shift_hash_key(*(read_start + seed::key_weight + j), k);
-  }
-
-  if (res.sure_ambig()) return;
   // sensitive step: get positions using minimizers
   get_minimizer_offsets(readlen, read_start, offsets, window_kmers);
 
-  const vector<kmer_loc>::const_iterator offset_end = end(offsets);
-  for (vector<kmer_loc>::const_iterator it(begin(offsets)); it != offset_end; ++it) {
-    const vector<uint32_t>::const_iterator s_idx(index_st + *(counter_st + it->kmer));
-    const vector<uint32_t>::const_iterator e_idx(index_st + *(counter_st + it->kmer + 1));
+  const size_t lim = offsets.size();
+  const size_t max_mers = readlen/seed::window_size;
+  const size_t shift = max(1ul, lim/max_mers);
+  for (size_t i = 0, j = 0; i < lim && j < max_mers; i += shift, ++j) {
+    const vector<uint32_t>::const_iterator s_idx(index_st + *(counter_st + offsets[i].kmer));
+    const vector<uint32_t>::const_iterator e_idx(index_st + *(counter_st + offsets[i].kmer + 1));
     if (s_idx < e_idx) {
       if (e_idx - s_idx <= max_candidates) {
         check_hits<strand_code>(
-          it->loc, packed_read_start, packed_read_end,
+          offsets[i].loc, packed_read_start, packed_read_end,
           genome_st.itr, e_idx, s_idx, res
         );
       }
@@ -1154,8 +1125,10 @@ run_single_ended(const bool VERBOSE,
       map_single_ended<conv>(VERBOSE, allow_ambig, max_candidates,
           abismal_index, rl, se_stats, out, progress);
   }
-  if (VERBOSE)
+  if (VERBOSE) {
+    cerr << "\n";
     print_with_time("total mapping time: " + to_string(omp_get_wtime() - start_time) + "s");
+  }
 }
 static void
 best_single(const pe_candidates &pres, se_candidates &res) {
@@ -1600,8 +1573,10 @@ run_paired_ended(const bool VERBOSE,
           abismal_index, rl1, rl2, pe_stats, out, progress);
   }
 
-  if (VERBOSE)
+  if (VERBOSE) {
+    cerr << "\n";
     print_with_time("total mapping time: " + to_string(omp_get_wtime() - start_time) + "s");
+  }
 }
 
 int main(int argc, const char **argv) {
@@ -1769,6 +1744,9 @@ int main(int argc, const char **argv) {
       stats_of << (reads_file2.empty() ?
                     se_stats.tostring() : pe_stats.tostring());
     }
+    cerr << "===> NUM COMPARISONS (M): " << num_comparisons /static_cast<double>(1000000.0) << endl;
+    cerr << "===> NUM MERS (M): " << num_mers /static_cast<double>(1000000.0) << endl;
+    cerr << "===> NUM COMPS/MERS (M): " << num_comparisons /static_cast<double>(num_mers) << endl;
   }
   catch (const runtime_error &e) {
     cerr << e.what() << endl;
