@@ -28,6 +28,8 @@
 #include <bitset>
 #include <cassert>
 
+#include "smithlab_utils.hpp"
+
 typedef std::vector<size_t> Genome;
 static inline char random_base() {return "ACGT"[rand() & 3];}
 
@@ -113,7 +115,7 @@ load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
   while (getline(in, line))
     if (line[0] != '>') {
       for (auto it(begin(line)); it != end(line); ++it) {
-        if (*it == 'N' || *it == 'n') {
+        if (base2int(*it) == 4) {
           *it = random_base();
           ++num_n;
         }
