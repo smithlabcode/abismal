@@ -33,17 +33,15 @@ static inline char random_base() {return "ACGT"[rand() & 3];}
 
 namespace seed {
   // number of positions in the hashed portion of the seed
-  static const uint32_t key_weight = 25;
+  static const uint32_t key_weight = 26u;
 
-  // window in which we select the best k-mer
-  static const uint32_t window_size = 13;
+  // window in which we select the best k-mer. The longer it is,
+  // the longer the minimum read length that guarantees an exact
+  // match will be mapped
+  static const uint32_t window_size = 10u;
 
   // number of positions to sort within buckets
-  static const uint32_t n_sorting_positions = 128;
-
-  // maximum number of candidates per seed as function of
-  // overrepresented k-mers
-  static const double overrep_kmer_quantile = 1e-5;
+  static const uint32_t n_sorting_positions = 200u;
 
   static const size_t hash_mask = (1ull << seed::key_weight) - 1;
 
@@ -51,7 +49,7 @@ namespace seed {
   // concatenated genome is so that later we can avoid having to check
   // the (unlikely) case that a read maps partly off either end of the
   // genome.
-  static const size_t padding_size = 1024;
+  static const size_t padding_size = 1024ull;
 
   void read(FILE* in);
   void write(FILE* out);
@@ -145,15 +143,13 @@ struct AbismalIndex {
 
   static bool VERBOSE;
 
+  uint32_t expand_hits; // number of hits at which seeds are expanded
   size_t counter_size; // number of kmers indexed
-  size_t kmer_ranks_size; // k-mer ranks kept for mapping
   size_t index_size; // size of the index
-  size_t max_candidates; // the estimated max_candidates from k-mer statistics
 
   std::vector<uint32_t> index; // genome positions for each k-mer
   std::vector<uint32_t> counter; // offset of each k-mer in "index"
-  std::vector<uint32_t> kmer_ranks; // rank of each 2^k k-mer, less is favored
-  std::vector<uint32_t> pos_prob; // rank of each 2^k k-mer, less is favored
+  std::vector<uint32_t> pos_prob; // full counter vector
   Genome genome; // the genome
   ChromLookup cl;
 
@@ -165,14 +161,15 @@ struct AbismalIndex {
   /* get index statistics used in mapping */
   void create_index_stats();
 
-  /* uses counter vector to construct a rank to each k-mer*/
-  void build_kmer_ranks();
-
-  /* select genome positions using minimizers*/
-  void compress_minimizers(std::vector<bool> &keep);
+  /* select genome positions by dp*/
+  void compress_dp(std::vector<bool> &keep);
 
   /* put genome positions in the appropriate buckets */
   void hash_genome(std::vector<bool> &keep);
+
+  /* Sort each bucket, if the seed length is more than 26, then use
+   * binary search for the rest part of the seed */
+  void sort_buckets();
 
   /* convert the genome to 4-bit encoding */
   void encode_genome(const std::vector<uint8_t> &input_genome);
@@ -189,7 +186,7 @@ inline uint32_t
 get_bit(const uint8_t nt) {return (nt & 5) == 0;}
 
 inline void
-shift_hash_key(const uint8_t c, size_t &hash_key) {
+shift_hash_key(const uint8_t c, uint32_t &hash_key) {
   hash_key = (((hash_key << 1) | get_bit(c)) & seed::hash_mask);
 }
 
@@ -197,7 +194,7 @@ shift_hash_key(const uint8_t c, size_t &hash_key) {
 // and the encoding for the function above
 template <class T>
 inline void
-get_1bit_hash(T r, size_t &k) {
+get_1bit_hash(T r, uint32_t &k) {
   const auto lim = r + seed::key_weight;
   k = 0;
   while (r != lim) {
@@ -206,55 +203,4 @@ get_1bit_hash(T r, size_t &k) {
   }
 }
 
-/****** MINIMIZER FUNCTIONS ******/
-struct kmer_loc {
-  uint32_t kmer;
-  uint32_t loc;
-  uint32_t rank;
-  static std::vector<uint32_t>::const_iterator ranks_st;
-
-  kmer_loc(const uint32_t k, const uint32_t l) :
-    kmer(k), loc(l), rank(*(ranks_st + k)) {};
-
-  inline uint32_t cost() const {
-    return rank;
-  }
-  inline uint32_t mer() const {
-    return kmer ^ random_mask;
-  }
-
-  bool operator<(const kmer_loc &rhs) const {
-    return (cost() < rhs.cost())
-           || (cost() == rhs.cost() && mer() < rhs.mer());
-  };
-  bool operator>(const kmer_loc &rhs) const {
-    return (cost() > rhs.cost()) ||
-           (cost() == rhs.cost() && mer() > rhs.mer());
-  };
-  bool operator==(const kmer_loc &rhs) const {
-    return loc == rhs.loc;
-  }
-   bool operator!=(const kmer_loc &rhs) const {
-    return loc != rhs.loc;
-  }
-  static const uint32_t random_mask = 0b1011000110011001011011010;
-};
-
-inline void
-add_kmer(const kmer_loc new_pos, const size_t window_size,
-         std::deque<kmer_loc> &window_kmers) {
-  // remove k-mers that will no longer be minimizers because they
-  // have higher value than the new entry
-  while(!window_kmers.empty() && window_kmers.back() > new_pos)
-    window_kmers.pop_back();
-
-  window_kmers.push_back(new_pos);
-
-  // removes k-mers outside of the sliding window
-  while (window_kmers.front().loc + window_size <= new_pos.loc)
-    window_kmers.pop_front();
-
-  //assert(is_sorted(begin(window_kmers), end(window_kmers)));
-  //assert(window_kmers.size() <= window_size);
-}
 #endif

@@ -2,14 +2,14 @@
  *
  * Authors: Andrew D. Smith
  *
- * This file is part of ABISMAL.
+ * This file is part of abismal.
  *
- * ABISMAL is free software: you can redistribute it and/or modify it
+ * abismal is free software: you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
- * ABISMAL is distributed in the hope that it will be useful, but
+ * abismal is distributed in the hope that it will be useful, but
  * WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * General Public License for more details.
@@ -23,20 +23,19 @@
 
 #include <iostream>
 #include <fstream>
-#include <unordered_set>
 #include <stdexcept>
 #include <iterator>
 #include <algorithm>
 #include <deque>
 #include <fstream>
-#include <bitset>
+#include <utility>
 
+using std::pair;
+using std::make_pair;
 using std::ofstream;
-using std::bitset;
 using std::ifstream;
 using std::string;
 using std::vector;
-using std::unordered_set;
 using std::cerr;
 using std::endl;
 using std::runtime_error;
@@ -46,9 +45,9 @@ using std::min;
 using std::deque;
 using std::fill;
 using std::to_string;
+using std::max;
 
 bool AbismalIndex::VERBOSE = false;
-vector<uint32_t>::const_iterator kmer_loc::ranks_st {};
 string AbismalIndex::internal_identifier = "AbismalIndex";
 
 using genome_iterator = genome_four_bit_itr;
@@ -70,8 +69,9 @@ AbismalIndex::create_index(const string &genome_file) {
 
   pos_prob = vector<uint32_t>(1u << seed::key_weight, 0u);
 
-  compress_minimizers(pos_to_keep);
+  compress_dp(pos_to_keep);
   hash_genome(pos_to_keep);
+  sort_buckets();
 }
 
 
@@ -86,7 +86,6 @@ AbismalIndex::encode_genome(const vector<uint8_t> &input_genome) {
 
 double
 estimate_ram(const size_t counter_size,
-             const size_t kmer_rank_size,
              const size_t bases_indexed,
              const size_t packed_genome_size) {
   size_t num_bytes =
@@ -98,20 +97,10 @@ estimate_ram(const size_t counter_size,
     // 32-bit words
     sizeof(uint32_t)*(
       counter_size +
-      kmer_rank_size +
       bases_indexed
     );
            
   return num_bytes/(1024.0*1024.0*1024.0);
-}
-
-void
-write_counts_to_disk(const string outfile, const vector<uint32_t> &counts) {
-  const uint32_t lim = (1 << seed::key_weight);
-
-  ofstream of(outfile);
-  for (size_t i = 0; i < lim; ++i)
-    of << bitset<seed::key_weight>(i) << '\t' << counts[i] << '\n';
 }
 
 void
@@ -132,7 +121,6 @@ AbismalIndex::create_index_stats() {
     count += (counter[i] != 0);
   }
 
-  const double mean = sum/static_cast<double>(count);
   const double z = sum_sq/(sum*sum);
   const double h = sum_sq/(sum);
   vector<uint32_t> copy_of_counter = counter;
@@ -152,30 +140,25 @@ AbismalIndex::create_index_stats() {
   median = copy_of_counter[first_non_zero + static_cast<size_t>(0.5*len)];
   uq = copy_of_counter[    first_non_zero + static_cast<size_t>(0.75*len)];
 
-  max_candidates = copy_of_counter[first_non_zero +
-    static_cast<size_t>((1 - seed::overrep_kmer_quantile)*len)
-  ];
-
+  const uint32_t q_four = copy_of_counter[first_non_zero +
+          static_cast<size_t>((1 - 1.0e-4)*len)
+            ];
+  expand_hits = max(q_four, 100u);
   if (VERBOSE) {
     const size_t bases_indexed = std::accumulate(begin(counter), end(counter), 0ULL);
     cerr << std::fixed << std::setprecision(3)
          << "  bases:\t" << bases_indexed/1000000.0 << "M\n"
-         << "  c_obs:\t" << bases_indexed/static_cast<double>(cl.get_genome_size()) << "\n"
-         << "  c_exp:\t" << 2.0/static_cast<double>(seed::window_size + 1) << "\n"
+         << "  sparsity:\t" << static_cast<double>(cl.get_genome_size())/bases_indexed << "\n"
          << "  Z:\t\t" << z*1000000.0 << "\n"
          << "  H:\t\t" << h << "\n"
-         << "  k_obs:\t" << counter.size() - first_non_zero << "\n"
-         << "  k_not:\t" << first_non_zero << "\n"
          << "  quantiles:\n"
          << "    q00:\t" << static_cast<size_t>(min_ct) << "\n"
          << "    q25:\t" << static_cast<size_t>(lq) << "\n"
          << "    q50:\t" << static_cast<size_t>(median) << "\n"
          << "    q75:\t" << static_cast<size_t>(uq) << "\n"
          << "    q100:\t" << copy_of_counter.back() << "\n"
-         << "  mean:\t\t" << static_cast<size_t>(mean) << "\n"
-         << "  max_c:\t" << max_candidates << "\n"
          << "  req_ram_est:\t"
-         << estimate_ram(counter.size(), kmer_ranks.size(), bases_indexed, genome.size())
+         << estimate_ram(counter.size(), bases_indexed, genome.size())
          << "GB" << endl;
   }
 
@@ -203,7 +186,7 @@ AbismalIndex::get_bucket_sizes(vector<bool> &keep) {
   gi = gi + genome_st;
 
   const auto gi_lim(gi + (seed::key_weight - 1));
-  size_t hash_key = 0;
+  uint32_t hash_key = 0;
   while (gi != gi_lim)
     shift_hash_key(*gi++, hash_key);
 
@@ -242,7 +225,7 @@ AbismalIndex::hash_genome(vector<bool> &keep) {
   gi = gi + genome_st;
 
   const auto gi_lim(gi + (seed::key_weight - 1));
-  size_t hash_key = 0;
+  uint32_t hash_key = 0;
   while (gi != gi_lim)
     shift_hash_key(*gi++, hash_key);
 
@@ -258,125 +241,149 @@ AbismalIndex::hash_genome(vector<bool> &keep) {
     progress.report(cerr, lim);
 }
 
-inline size_t
-mer_shuffle(const uint32_t mer, const uint32_t count) {
-  return (count == 0) ? (std::numeric_limits<uint32_t>::max()):(mer^kmer_loc::random_mask);
-}
-
-inline size_t
-freq_based_hash(const uint32_t mer, const uint32_t count) {
-  return (count == 0) ? (std::numeric_limits<uint32_t>::max()) : (count);
-}
-
-inline size_t
-jain_hash(const uint32_t mer, const uint32_t count) {
-  size_t hash = mer_shuffle(mer, count);
-  const vector<uint32_t> cutoffs = {100, 500, 1000, 5000, 10000, 50000, 100000};
-
-  size_t bit_pos = 0;
-
-  // bins high-frequency k-mers together
-  for (size_t j = 0; j < cutoffs.size(); ++j)
-    bit_pos += (count > cutoffs[j]);
-
-   hash = (hash | (bit_pos << (seed::key_weight)));
-   return hash;
-}
-
-void
-AbismalIndex::build_kmer_ranks() {
-  if (VERBOSE)
-    cerr << "[building k-mer ranks]" << endl;
-
-  const uint32_t num_kmers = (1u << seed::key_weight);
-
-  struct kmer_hash {
-    uint32_t mer;
-    size_t hash;
-    kmer_hash() : mer(0), hash(0.0) {}
-    bool operator < (const kmer_hash &rhs) {
-      return (hash < rhs.hash) ||
-             (hash == rhs.hash &&
-              (mer_shuffle(mer, 1) < mer_shuffle(rhs.mer, 1)));
-    }
-  };
-
-  vector<kmer_hash> v(num_kmers);
-  for (uint32_t i = 0; i < num_kmers; ++i)
-    v[i].mer = i;
-
-  // select a hash for a k-mer
-  for (uint32_t i = 0; i < num_kmers; ++i) {
-    // 3 different hashing strategies to compare
-    //size_t hash = freq_based_hash(i, counter[i]);
-    //size_t hash = mer_shuffle(i, counter[i]);
-    //size_t hash = jain_hash(i, counter[i]);
-
-    v[i].hash = freq_based_hash(i, counter[i]);
+struct dp_sol {
+  size_t cost;
+  uint32_t prev;
+  dp_sol() {
+    reset();
   }
 
-  sort(begin(v), end(v));
+  void reset() {
+    cost = std::numeric_limits<uint32_t>::max();
+    prev = std::numeric_limits<uint32_t>::max();
+  }
 
-  kmer_ranks.resize(num_kmers);
-  kmer_ranks_size = kmer_ranks.size();
+  dp_sol(const uint32_t c) {}
+  dp_sol(const uint32_t c, const uint32_t p) : cost(c), prev(p) {}
+};
 
-  // rank of kmer v[i].mer is its position in the sorted vector
-  for (uint32_t i = 0; i < num_kmers; ++i)
-    kmer_ranks[v[i].mer] = i;
+typedef pair<dp_sol, uint32_t> helper_sol;
+
+void
+add_sol(deque<helper_sol> &helper, const uint32_t pos, const dp_sol cand) {
+  while (!helper.empty() && helper.back().first.cost > cand.cost)
+    helper.pop_back();
+
+  helper.push_back(make_pair(cand, pos));
+
+  while(helper.front().second + seed::window_size < pos)
+    helper.pop_front();
+
+  //assert(helper.size() <= seed::window_size + 1);
+  //assert(!helper.empty());
 }
 
 void
-AbismalIndex::compress_minimizers(vector<bool> &keep) {
+AbismalIndex::compress_dp(vector<bool> &keep) {
   // first get bucket sizes and build ranks
   get_bucket_sizes(keep);
-  build_kmer_ranks();
-  kmer_loc::ranks_st = begin(kmer_ranks);
+
+  // GS: has to be more efficient
+  pos_prob = counter;
 
   fill(begin(keep), end(keep), false);
-  deque<kmer_loc> window_kmers;
 
-  const size_t genome_st = seed::padding_size;
-  const size_t lim = cl.get_genome_size() - seed::key_weight - seed::padding_size;
+  const size_t lim = cl.get_genome_size();
 
-  ProgressBar progress(lim, "indexing (" +
-    to_string(seed::window_size) + "," + to_string(seed::key_weight) +
-    ") mins"
-  );
+  ProgressBar progress(lim, "solving dp");
 
   // start building up the hash key
   genome_iterator gi(begin(genome));
-  gi = gi + genome_st;
   const auto gi_lim(gi + (seed::key_weight - 1));
-  size_t hash_key = 0;
+  uint32_t hash_key = 0;
   while (gi != gi_lim)
     shift_hash_key(*gi++, hash_key);
 
-  for (size_t i = 0; i < pos_prob.size(); ++i)
-    pos_prob[i] = 0;
+  // the dp memory allocation
+  static const size_t BLOCK_SIZE = 10000000;
+  static const size_t w = seed::window_size;
+  deque<helper_sol> helper;
+  vector<dp_sol> opt(BLOCK_SIZE);
 
-  // get the first W minimizers
-  for (size_t i = genome_st; i < genome_st + seed::window_size; ++i) {
-    shift_hash_key(*gi++, hash_key);
-    add_kmer(kmer_loc(hash_key, i), seed::window_size, window_kmers);
+  size_t beg = 0;
+  while (beg < lim) {
+    // the position up to which we will solve
+    const size_t fin = min(beg + BLOCK_SIZE, lim);
+
+    // the problem size
+    const size_t sz = fin - beg;
+    helper.clear();
+
+    // resets without needing to reallocate
+    for (size_t i = 0; i < sz; ++i)
+      opt[i].reset();
+
+    // get the first w positions
+    for (size_t i = 0; i < min(w - 1, sz); ++i) {
+      shift_hash_key(*gi++, hash_key);
+      add_sol(helper, i, dp_sol(counter[hash_key]));
+    }
+
+    for (size_t i = w - 1; i < sz; ++i) {
+      if (VERBOSE && progress.time_to_report(beg + i))
+        progress.report(cerr, beg + i);
+
+      // update minimizers using k-mer from current base
+      shift_hash_key(*gi++, hash_key);
+      add_sol(helper, i, dp_sol(counter[hash_key]));
+
+      // index position
+      opt[i].cost = helper.front().first.cost + counter[hash_key];
+      opt[i].prev = helper.front().second;
+    }
+
+    // get the final solution
+    size_t opt_ans = std::numeric_limits<size_t>::max();
+    uint32_t tb = std::numeric_limits<uint32_t>::max();
+    for (size_t i = 0; i < min(w, sz); ++i) {
+      const size_t cand = opt[sz - i - 1].cost;
+      if (cand < opt_ans) {
+        opt_ans = cand;
+        tb = sz - i - 1;
+      }
+    }
+
+    // build traceback
+    while (tb != std::numeric_limits<uint32_t>::max()) {
+      keep[beg + tb] = true;
+      tb = opt[tb].prev;
+    }
+
+    beg = min(beg + BLOCK_SIZE, lim);
   }
-
-  for (size_t i = genome_st + seed::window_size; i < lim; ++i) {
-    if (VERBOSE && progress.time_to_report(i))
-      progress.report(cerr, i);
-
-    // index position
-    keep[window_kmers.front().loc] = true;
-    ++pos_prob[window_kmers.front().kmer];
-
-    // update minimizers using k-mer from current base
-    shift_hash_key(*gi++, hash_key);
-    add_kmer(kmer_loc(hash_key, i), seed::window_size, window_kmers);
-  }
-
-  keep[window_kmers.front().loc] = true;
 
   if (VERBOSE)
     progress.report(cerr, lim);
+
+}
+
+struct BucketLess {
+  BucketLess(const Genome &g) : g_start(begin(g)) {}
+  bool operator()(const uint32_t a, const uint32_t b) const {
+    auto idx1(g_start + a + seed::key_weight);
+    auto lim1(g_start + a + seed::n_sorting_positions);
+    auto idx2(g_start + b + seed::key_weight);
+    while (idx1 != lim1) {
+      const char c1 = get_bit(*(idx1++));
+      const char c2 = get_bit(*(idx2++));
+      if (c1 != c2) return c1 < c2;
+    }
+    return false;
+  }
+  const genome_iterator g_start;
+};
+
+void
+AbismalIndex::sort_buckets() {
+  if (VERBOSE)
+    cerr << "[sorting buckets]" << endl;
+  const vector<uint32_t>::iterator b(begin(index));
+  const BucketLess bucket_less(genome);
+#pragma omp parallel for
+  for (size_t i = 0; i < counter_size; ++i)
+    if (counter[i + 1] > counter[i] + 1) {
+      sort(b + counter[i], b + counter[i + 1], bucket_less);
+    }
 }
 
 static void
@@ -442,14 +449,11 @@ AbismalIndex::write(const string &index_file) const {
   cl.write(out);
 
   if (fwrite((char*)&genome[0], sizeof(size_t), genome.size(), out) != genome.size() ||
-      fwrite((char*)&max_candidates, sizeof(size_t), 1, out) != 1 ||
+      fwrite((char*)&expand_hits, sizeof(size_t), 1, out) != 1 ||
       fwrite((char*)&counter_size, sizeof(size_t), 1, out) != 1 ||
-      fwrite((char*)&kmer_ranks_size, sizeof(size_t), 1, out) != 1 ||
       fwrite((char*)&index_size, sizeof(size_t), 1, out) != 1 ||
       fwrite((char*)(&counter[0]), sizeof(uint32_t),
              counter_size + 1, out) != (counter_size + 1) ||
-      fwrite((char*)(&kmer_ranks[0]), sizeof(uint32_t),
-             kmer_ranks_size, out) != (kmer_ranks_size) ||
       fwrite((char*)(&index[0]), sizeof(uint32_t),
              index_size, out) != index_size)
     throw runtime_error("failed writing index");
@@ -489,13 +493,12 @@ AbismalIndex::read(const string &index_file) {
   if (fread((char*)&genome[0], sizeof(size_t), genome_to_read, in) != genome_to_read)
     throw runtime_error(error_msg);
 
-  // read max candidates cut-off
-  if (fread((char*)&max_candidates, sizeof(size_t), 1, in) != 1)
+  // read the cut-off to expand seeds
+  if (fread((char*)&expand_hits, sizeof(size_t), 1, in) != 1)
     throw runtime_error(error_msg);
 
   // read the sizes of counter and index vectors
   if (fread((char*)&counter_size, sizeof(size_t), 1, in) != 1 ||
-      fread((char*)&kmer_ranks_size, sizeof(size_t), 1, in) != 1 ||
       fread((char*)&index_size, sizeof(size_t), 1, in) != 1)
     throw runtime_error(error_msg);
 
@@ -504,13 +507,6 @@ AbismalIndex::read(const string &index_file) {
   if (fread((char*)(&counter[0]), sizeof(uint32_t),
             (counter_size + 1), in) != (counter_size + 1))
     throw runtime_error(error_msg);
-
-// allocate then read the counter vector
-  kmer_ranks = vector<uint32_t>(kmer_ranks_size);
-  if (fread((char*)(&kmer_ranks[0]), sizeof(uint32_t),
-            (kmer_ranks_size), in) != (kmer_ranks_size))
-    throw runtime_error(error_msg);
-  kmer_loc::ranks_st = begin(kmer_ranks);
 
   // allocate the read the index vector
   index = vector<uint32_t>(index_size);
