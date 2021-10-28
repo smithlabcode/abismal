@@ -51,7 +51,7 @@ namespace seed {
   // concatenated genome is so that later we can avoid having to check
   // the (unlikely) case that a read maps partly off either end of the
   // genome.
-  static const size_t padding_size = 1024ull;
+  static const size_t padding_size = (1ull << 20);
 
   void read(FILE* in);
   void write(FILE* out);
