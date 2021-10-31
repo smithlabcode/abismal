@@ -1702,9 +1702,6 @@ int main(int argc, const char **argv) {
     }
 
     abismal_index.calc_mapping_parameters(sensitive);
-    cerr << "pe size small: " << abismal_index.pe_max_candidates_small << "\n";
-    cerr << "pe size large: " << abismal_index.pe_max_candidates_large << "\n";
-    cerr << "max candidates: " << abismal_index.max_candidates << "\n";
 
     // avoiding opening the stats output file until mapping is done
     se_map_stats se_stats;
