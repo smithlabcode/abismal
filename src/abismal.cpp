@@ -113,6 +113,12 @@ struct ReadLoader {
         names.push_back(line.substr(1, line.find_first_of(" \t") - 1));
       }
       else if (line_count % 4 == 1) {
+        // read too long, may pass end of the genome
+        if (line.size() >= seed::padding_size)
+          throw runtime_error("read too long. Size = " +
+              to_string(line.size()) + ". Max read size accepted by abismal = "
+              + to_string(seed::padding_size));
+
         if (count_if(begin(line), end(line),
                      [](const char c) {return c != 'N';}) < min_read_length)
           line.clear();
@@ -215,7 +221,9 @@ double se_element::valid_frac = 0.1;
 const double se_element::invalid_hit_frac = 0.4;
 
 struct se_candidates {
-  se_candidates () : sz(1), best(se_element()), v(vector<se_element>(max_size)) {}
+  se_candidates () :
+    max_size(max_size_small), sz(1), best(se_element()),
+    v(vector<se_element>(max_size_large*100/ReadLoader::min_read_length)) {}
   inline bool full() const { return sz == max_size; };
   void update_exact_match(const uint32_t p, const score_t d, const flags_t s) {
     const se_element cand(p, d, s);
@@ -228,14 +236,13 @@ struct se_candidates {
 
   void update_cand(const uint32_t p, const score_t d, const flags_t s) {
     if (full()) {
-      pop_heap(begin(v), end(v));
-      v.back() = se_element(p, d, s);
-      push_heap(begin(v), end(v));
+      pop_heap(begin(v), begin(v) + sz);
+      v[sz - 1] = se_element(p, d, s);
     }
     else {
       v[sz++] = se_element(p, d, s);
-      push_heap(begin(v), begin(v) + sz);
     }
+    push_heap(begin(v), begin(v) + sz);
   }
 
   void update(const uint32_t p, const score_t d, const flags_t s) {
@@ -252,6 +259,13 @@ struct se_candidates {
     v.front().reset(readlen);
     sz = 1;
     best.reset(readlen);
+    max_size = max_size_small;
+  }
+
+  // increases heap size to accommodate more candidates.
+  // lower read lengths will likely require more candidates
+  void expand(const uint32_t readlen) {
+    max_size = max_size_large*100/readlen;
   }
 
   void prepare_for_alignments() {
@@ -264,13 +278,14 @@ struct se_candidates {
 
   score_t get_cutoff() const { return v.front().diffs; }
 
+  uint32_t max_size;
   uint32_t sz;
   se_element best;
   vector<se_element> v;
-  static const uint32_t max_size;
-};
 
-const uint32_t se_candidates::max_size = 30;
+  static const uint32_t max_size_small = 10;
+  static const uint32_t max_size_large = 100;
+};
 
 inline bool
 chrom_and_posn(const ChromLookup &cl, const string &cig, const uint32_t p,
@@ -424,22 +439,31 @@ format_pe(const bool allow_ambig,
 }
 
 struct pe_candidates {
-  pe_candidates() : v(vector<se_element>(max_size)), sz(1) {}
-  bool full() const {return sz == max_size;}
+  pe_candidates(const uint32_t s, const uint32_t l) :
+    max_size_small(s), max_size_large(l), max_size (s),
+    v(vector<se_element>(max_size_large*100/ReadLoader::min_read_length)), sz(1) {}
+  bool full() const { return sz == max_size; }
+
+
+  void expand(const uint32_t readlen) {
+    max_size = max_size_large*100/readlen;
+  }
   inline void reset(const uint32_t readlen) {
-    v.front().reset(readlen); sz = 1;
+    max_size = max_size_small;
+    v.front().reset(readlen);
+    sz = 1;
   }
   score_t get_cutoff() const { return v.front().diffs; }
+
   void update(const uint32_t p, const score_t d, const flags_t s) {
     if (full()) {
-      pop_heap(begin(v), end(v));
-      v.back() = se_element(p, d, s);
-      push_heap(begin(v), end(v));
+      pop_heap(begin(v), begin(v) + sz);
+      v[sz - 1] = se_element(p, d, s);
     }
     else {
       v[sz++] = se_element(p, d, s);
-      push_heap(begin(v), begin(v) + sz);
     }
+    push_heap(begin(v), begin(v) + sz);
   }
   inline bool sure_ambig() const {
     return full() && (v.front().diffs == 0);
@@ -450,12 +474,13 @@ struct pe_candidates {
          [](const se_element &a, const se_element &b) {return a.pos < b.pos;});
     sz = unique(begin(v), begin(v) + sz) - begin(v);
   }
+
+  const uint32_t max_size_small;
+  const uint32_t max_size_large;
+  uint32_t max_size;
   vector<se_element> v;
   uint32_t sz;
-  static const uint32_t max_size;
 };
-
-const uint32_t pe_candidates::max_size = 200;
 
 inline double pct(const double a, const double b) {return ((b == 0) ? 0.0 : 100.0*a/b);}
 
@@ -699,30 +724,42 @@ struct compare_bases {
   const genome_iterator g;
 };
 
-static bool
-find_candidates(const uint32_t expand_hits,
-                const Read::const_iterator read_start,
+template<const uint32_t pos_start, const uint32_t pos_end>
+static void
+find_candidates(const Read::const_iterator read_start,
                 const genome_iterator gi,
                 const uint32_t read_lim,
                 vector<uint32_t>::const_iterator &low,
                 vector<uint32_t>::const_iterator &high) {
-  uint32_t p = seed::key_weight;
-  for (; p != read_lim &&
-         (static_cast<uint32_t>(high - low) > expand_hits); ++p) {
+  uint32_t p = pos_start;
+  auto prev_low = low;
+  auto prev_high = high;
+  for (uint32_t i = pos_start;
+      i < pos_end && p != read_lim && low < high; ++p, ++i) {
+    // keep last interval with >0 candidates
+    prev_low = low;
+    prev_high = high;
+
     // pointer to first 1 in the range
     const vector<uint32_t>::const_iterator first_1 =
       lower_bound(low, high, 1, compare_bases(gi + p));
+
     const bool the_bit = get_bit(*(read_start + p));
     high = ((the_bit) ? (high) : (first_1));
     low = ((the_bit) ? (first_1) : (low));
   }
 
-  return (static_cast<uint32_t>(high - low) > expand_hits);
+  // some bit narrows it down to 0 candidates, roll back to when we
+  // had some
+  if (low == high) {
+    low = prev_low;
+    high = prev_high;
+  }
 }
 
 template <const uint16_t strand_code, class result_type>
 void
-process_seeds(const uint32_t expand_hits,
+process_seeds(const uint32_t max_candidates,
               const vector<uint32_t>::const_iterator counter_st,
               const vector<uint32_t>::const_iterator index_st,
               const genome_iterator genome_st,
@@ -743,20 +780,34 @@ process_seeds(const uint32_t expand_hits,
     vector<uint32_t>::const_iterator s_idx(index_st + *(counter_st + k));
     vector<uint32_t>::const_iterator e_idx(index_st + *(counter_st + k + 1));
 
-    // expand seed until number of hits is below threshold
-    if (static_cast<size_t>(e_idx - s_idx) > expand_hits)
-      read_lim =
-       (find_candidates(
-          expand_hits, read_start + i, genome_st, readlen - i, s_idx, e_idx
-        ) && (read_lim == lim)) ?
-       (min(lim, i + seed::window_size - 1)) : (read_lim);
-
-    if (s_idx < e_idx)
-      check_hits<strand_code>(
-        i, packed_read_start, packed_read_end,
-        genome_st.itr, e_idx, s_idx, res
+    if (s_idx < e_idx) {
+      find_candidates<seed::key_weight, seed::n_seed_positions>(
+        read_start + i, genome_st, readlen - i, s_idx, e_idx
       );
+      if (e_idx - s_idx <= max_candidates)
+        check_hits<strand_code>(
+          i, packed_read_start, packed_read_end,
+          genome_st.itr, e_idx, s_idx, res
+        );
+    }
 
+    if (i < seed::window_size) {
+      find_candidates<seed::n_seed_positions, seed::n_sorting_positions>(
+        read_start + i, genome_st, readlen - i, s_idx, e_idx
+      );
+      if (s_idx < e_idx) {
+        // too many candidates using the whole read, need to store
+        // more candidates
+        if (e_idx - s_idx > max_candidates)
+          res.expand(readlen);
+        check_hits<strand_code>(
+          i, packed_read_start, packed_read_end,
+          genome_st.itr, e_idx, s_idx, res
+        );
+      }
+    }
+
+    if (res.sure_ambig()) return;
     shift_hash_key(*(read_start + seed::key_weight + i), k);
   }
 }
@@ -877,7 +928,7 @@ map_single_ended(const bool VERBOSE, const bool allow_ambig,
   const vector<uint32_t>::const_iterator counter_st(begin(abismal_index.counter));
   const vector<uint32_t>::const_iterator index_st(begin(abismal_index.index));
   const genome_iterator genome_st(begin(abismal_index.genome));
-  const uint32_t expand_hits = abismal_index.expand_hits;
+  const uint32_t max_candidates = abismal_index.max_candidates;
 
   // batch variables used in reporting the SAM entry
   vector<string> names;
@@ -925,7 +976,7 @@ map_single_ended(const bool VERBOSE, const bool allow_ambig,
         prep_read<conv>(reads[i], pread);
         pack_read(pread, packed_pread);
         process_seeds<get_strand_code('+', conv)>(
-          expand_hits, counter_st, index_st, genome_st, pread,
+          max_candidates, counter_st, index_st, genome_st, pread,
           packed_pread, res
         );
 
@@ -933,7 +984,7 @@ map_single_ended(const bool VERBOSE, const bool allow_ambig,
         prep_read<!conv>(read_rc, pread_rc);
         pack_read(pread_rc, packed_pread);
         process_seeds<get_strand_code('-', conv)>(
-          expand_hits, counter_st, index_st, genome_st, pread_rc,
+          max_candidates, counter_st, index_st, genome_st, pread_rc,
           packed_pread, res
         );
         align_se_candidates(
@@ -964,7 +1015,7 @@ map_single_ended_rand(const bool VERBOSE, const bool allow_ambig,
                       ProgressBar &progress) {
   const vector<uint32_t>::const_iterator counter_st(begin(abismal_index.counter));
   const vector<uint32_t>::const_iterator index_st(begin(abismal_index.index));
-  const uint32_t expand_hits = abismal_index.expand_hits;
+  const uint32_t max_candidates = abismal_index.max_candidates;
 
   const genome_iterator genome_st(begin(abismal_index.genome));
 
@@ -1011,14 +1062,14 @@ map_single_ended_rand(const bool VERBOSE, const bool allow_ambig,
         prep_read<t_rich>(reads[i], pread_t);
         pack_read(pread_t, packed_pread);
         process_seeds<get_strand_code('+', t_rich)>(
-          expand_hits, counter_st, index_st, genome_st, pread_t,
+          max_candidates, counter_st, index_st, genome_st, pread_t,
           packed_pread, res
         );
 
         prep_read<a_rich>(reads[i], pread_a);
         pack_read(pread_a, packed_pread);
         process_seeds<get_strand_code('+', a_rich)>(
-          expand_hits, counter_st, index_st, genome_st, pread_a,
+          max_candidates, counter_st, index_st, genome_st, pread_a,
           packed_pread, res
         );
 
@@ -1026,14 +1077,14 @@ map_single_ended_rand(const bool VERBOSE, const bool allow_ambig,
         prep_read<t_rich>(read_rc, pread_t_rc);
         pack_read(pread_t_rc, packed_pread);
         process_seeds<get_strand_code('-', a_rich)>(
-          expand_hits, counter_st, index_st, genome_st, pread_t_rc,
+          max_candidates, counter_st, index_st, genome_st, pread_t_rc,
           packed_pread, res
         );
 
         prep_read<a_rich>(read_rc, pread_a_rc);
         pack_read(pread_a_rc, packed_pread);
         process_seeds<get_strand_code('-', t_rich)>(
-          expand_hits, counter_st, index_st, genome_st, pread_a_rc,
+          max_candidates, counter_st, index_st, genome_st, pread_a_rc,
           packed_pread, res
         );
 
@@ -1183,7 +1234,7 @@ select_maps(Read &pread1, Read &pread2,
 template <const bool cmp, const bool swap_ends,
           const uint16_t strand_code1, const uint16_t strand_code2>
 void
-map_fragments(const uint32_t expand_hits,
+map_fragments(const uint32_t max_candidates,
               const string &read1, const string &read2,
               const vector<uint32_t>::const_iterator counter_st,
               const vector<uint32_t>::const_iterator index_st,
@@ -1200,7 +1251,7 @@ map_fragments(const uint32_t expand_hits,
   if (!read1.empty()) {
     prep_read<cmp>(read1, pread1);
     pack_read(pread1, packed_pread);
-    process_seeds<strand_code1>(expand_hits, counter_st,
+    process_seeds<strand_code1>(max_candidates, counter_st,
       index_st, genome_st, pread1, packed_pread, res1
     );
   }
@@ -1209,7 +1260,7 @@ map_fragments(const uint32_t expand_hits,
     const string read_rc(revcomp(read2));
     prep_read<cmp>(read_rc, pread2);
     pack_read(pread2, packed_pread);
-    process_seeds<strand_code2>(expand_hits, counter_st,
+    process_seeds<strand_code2>(max_candidates, counter_st,
       index_st, genome_st, pread2, packed_pread, res2
     );
   }
@@ -1229,7 +1280,7 @@ map_paired_ended(const bool VERBOSE,
                  ProgressBar &progress) {
   const vector<uint32_t>::const_iterator counter_st(begin(abismal_index.counter));
   const vector<uint32_t>::const_iterator index_st(begin(abismal_index.index));
-  const uint32_t expand_hits = abismal_index.expand_hits;
+  const uint32_t max_candidates = abismal_index.max_candidates;
 
   const genome_iterator genome_st(begin(abismal_index.genome));
 
@@ -1257,8 +1308,10 @@ map_paired_ended(const bool VERBOSE,
   score_t aln_score;
   Read pread1, pread1_rc, pread2, pread2_rc;
   PackedRead packed_pread;
-  pe_candidates res1;
-  pe_candidates res2;
+  pe_candidates res1(abismal_index.pe_max_candidates_small,
+                     abismal_index.pe_max_candidates_large);
+  pe_candidates res2(abismal_index.pe_max_candidates_small,
+                     abismal_index.pe_max_candidates_large);
   se_candidates res_se1;
   se_candidates res_se2;
 
@@ -1297,7 +1350,7 @@ map_paired_ended(const bool VERBOSE,
       map_fragments<conv, false,
                    get_strand_code('+',conv),
                    get_strand_code('-', flip_conv(conv))>(
-        expand_hits, reads1[i], reads2[i], counter_st,
+        max_candidates, reads1[i], reads2[i], counter_st,
         index_st, genome_st, pread1, pread2_rc, packed_pread, aln_score,
         cigar1[i], cigar2[i], aln, res1, res2,
         res_se1, res_se2, bests[i]
@@ -1306,7 +1359,7 @@ map_paired_ended(const bool VERBOSE,
       map_fragments<!conv, true,
                    get_strand_code('+', flip_conv(conv)),
                    get_strand_code('-', conv)>(
-        expand_hits, reads2[i], reads1[i], counter_st,
+        max_candidates, reads2[i], reads1[i], counter_st,
         index_st, genome_st, pread2, pread1_rc, packed_pread, aln_score,
         cigar2[i], cigar1[i], aln, res2, res1,
         res_se2, res_se1, bests[i]
@@ -1353,7 +1406,7 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
                       ProgressBar &progress) {
   const vector<uint32_t>::const_iterator counter_st(begin(abismal_index.counter));
   const vector<uint32_t>::const_iterator index_st(begin(abismal_index.index));
-  const uint32_t expand_hits = abismal_index.expand_hits;
+  const uint32_t max_candidates = abismal_index.max_candidates;
 
   const genome_iterator genome_st(begin(abismal_index.genome));
 
@@ -1380,8 +1433,10 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
   Read pread1_t, pread1_t_rc, pread2_t, pread2_t_rc;
   Read pread1_a, pread1_a_rc, pread2_a, pread2_a_rc;
   PackedRead packed_pread;
-  pe_candidates res1;
-  pe_candidates res2;
+  pe_candidates res1(abismal_index.pe_max_candidates_small,
+                     abismal_index.pe_max_candidates_large);
+  pe_candidates res2(abismal_index.pe_max_candidates_small,
+                     abismal_index.pe_max_candidates_large);
   se_candidates res_se1;
   se_candidates res_se2;
 
@@ -1423,7 +1478,7 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
       map_fragments<t_rich, false,
                    get_strand_code('+', t_rich),
                    get_strand_code('-', a_rich)>(
-        expand_hits, reads1[i], reads2[i], counter_st,
+        max_candidates, reads1[i], reads2[i], counter_st,
         index_st, genome_st, pread1_t, pread2_a_rc, packed_pread, aln_score,
         cigar1[i], cigar2[i], aln, res1, res2,
         res_se1, res_se2, bests[i]
@@ -1433,7 +1488,7 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
       map_fragments<a_rich, true,
                    get_strand_code('+', a_rich),
                    get_strand_code('-', t_rich)>(
-        expand_hits, reads2[i], reads1[i], counter_st,
+        max_candidates, reads2[i], reads1[i], counter_st,
         index_st, genome_st, pread2_a, pread1_t_rc, packed_pread, aln_score,
         cigar2[i], cigar1[i], aln, res2, res1,
         res_se2, res_se1, bests[i]
@@ -1443,7 +1498,7 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
       map_fragments<a_rich, false,
                    get_strand_code('+', a_rich),
                    get_strand_code('-', t_rich)>(
-        expand_hits, reads1[i], reads2[i], counter_st,
+        max_candidates, reads1[i], reads2[i], counter_st,
         index_st, genome_st, pread1_a, pread2_t_rc, packed_pread, aln_score,
         cigar1[i], cigar2[i], aln, res1, res2,
         res_se1, res_se2, bests[i]
@@ -1453,7 +1508,7 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
       map_fragments<t_rich, true,
                    get_strand_code('+', t_rich),
                    get_strand_code('-', a_rich)>(
-        expand_hits, reads2[i], reads1[i], counter_st,
+        max_candidates, reads2[i], reads1[i], counter_st,
         index_st, genome_st, pread2_t, pread1_a_rc, packed_pread, aln_score,
         cigar2[i], cigar1[i], aln, res2, res1,
         res_se2, res_se1, bests[i]
@@ -1536,6 +1591,7 @@ int main(int argc, const char **argv) {
     bool allow_ambig = false;
     bool pbat_mode = false;
     bool random_pbat = false;
+    bool sensitive = false;
     int n_threads = 1;
     string index_file = "";
     string genome_file = "";
@@ -1552,6 +1608,7 @@ int main(int argc, const char **argv) {
     opt_parse.add_opt("outfile", 'o', "output file (SAM) [stdout]", false, outfile);
     opt_parse.add_opt("stats", 's', "map statistics file (YAML)",
                       false, stats_outfile);
+    opt_parse.add_opt("sensitive", 'x', "run abismal in sensitive mode", false, sensitive);
     opt_parse.add_opt("threads", 't', "number of threads", false, n_threads);
     opt_parse.add_opt("min-frag", 'l', "min fragment size (pe mode)",
                       false, pe_element::min_dist);
@@ -1644,6 +1701,10 @@ int main(int argc, const char **argv) {
         print_with_time("indexing time: " + to_string(omp_get_wtime() - start_time) + "s");
     }
 
+    abismal_index.calc_mapping_parameters(sensitive);
+    cerr << "pe size small: " << abismal_index.pe_max_candidates_small << "\n";
+    cerr << "pe size large: " << abismal_index.pe_max_candidates_large << "\n";
+    cerr << "max candidates: " << abismal_index.max_candidates << "\n";
 
     // avoiding opening the stats output file until mapping is done
     se_map_stats se_stats;

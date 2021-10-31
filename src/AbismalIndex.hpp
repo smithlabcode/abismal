@@ -35,12 +35,13 @@ static inline char random_base() {return "ACGT"[rand() & 3];}
 
 namespace seed {
   // number of positions in the hashed portion of the seed
-  static const uint32_t key_weight = 26u;
+  static const uint32_t key_weight = 23u;
+  static const uint32_t n_seed_positions = 28u;
 
   // window in which we select the best k-mer. The longer it is,
   // the longer the minimum read length that guarantees an exact
   // match will be mapped
-  static const uint32_t window_size = 10u;
+  static const uint32_t window_size = 13u;
 
   // number of positions to sort within buckets
   static const uint32_t n_sorting_positions = 200u;
@@ -51,7 +52,7 @@ namespace seed {
   // concatenated genome is so that later we can avoid having to check
   // the (unlikely) case that a read maps partly off either end of the
   // genome.
-  static const size_t padding_size = 1024ull;
+  static const size_t padding_size = 1048576ull; // 2^20
 
   void read(FILE* in);
   void write(FILE* out);
@@ -111,16 +112,12 @@ load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
   cl.starts.push_back(genome.size());
 
   std::string line;
-  size_t num_n = 0;
   while (getline(in, line))
     if (line[0] != '>') {
       for (auto it(begin(line)); it != end(line); ++it) {
-        if (base2int(*it) == 4) {
+        if (base2int(*it) == 4) // non-acgts become random bases
           *it = random_base();
-          ++num_n;
-        }
       }
-
       copy(std::begin(line), std::end(line), std::back_inserter(genome));
     }
     else {
@@ -133,8 +130,6 @@ load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
   cl.starts.push_back(genome.size());
   for (size_t i = 0; i < seed::padding_size; ++i)
     genome.push_back('Z');
-  std::cerr << "num N: " << num_n << "\n";
-  std::cerr << "pct N: " << 100.0*num_n/static_cast<double>(genome.size()) << "\n";
   cl.starts.push_back(genome.size());
 }
 
@@ -145,23 +140,34 @@ struct AbismalIndex {
 
   static bool VERBOSE;
 
-  uint32_t expand_hits; // number of hits at which seeds are expanded
+  uint32_t max_candidates; // number of hits at which seeds are expanded
+
+  // the default PE heap size estimated from the genome k-mer
+  // frequencies
+  uint32_t pe_max_candidates_small; // number of candidates kept on PE reads
+
+  // the PE heap size if it needs to be expanded. This happens if too
+  // many candidates are retrieved even when the whole read is used as
+  // seed
+  uint32_t pe_max_candidates_large; // number of candidates kept on PE repeats
   size_t counter_size; // number of kmers indexed
   size_t index_size; // size of the index
 
   std::vector<uint32_t> index; // genome positions for each k-mer
   std::vector<uint32_t> counter; // offset of each k-mer in "index"
-  std::vector<uint32_t> pos_prob; // full counter vector
   Genome genome; // the genome
   ChromLookup cl;
 
   void create_index(const std::string &genome_file);
 
   /* count how many positions must be stored for each hash value */
-  void get_bucket_sizes(std::vector<bool> &keep);
+  void get_bucket_sizes(std::vector<bool> &keep, const uint32_t word_size);
 
   /* get index statistics used in mapping */
-  void create_index_stats();
+  void calc_mapping_parameters(const bool sensitive);
+
+  /* how much RAM is needed to map reads*/
+  double estimate_ram();
 
   /* select genome positions by dp*/
   void compress_dp(std::vector<bool> &keep);
