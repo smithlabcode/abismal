@@ -113,12 +113,12 @@ struct ReadLoader {
         names.push_back(line.substr(1, line.find_first_of(" \t") - 1));
       }
       else if (line_count % 4 == 1) {
-        // read too long, may pass end of the genome
-        if (line.size() >= seed::padding_size)
-          throw runtime_error("read too long. Size = " +
-              to_string(line.size()) + ". Max read size accepted by abismal = "
-              + to_string(seed::padding_size));
-
+        // read too long, may pass the end of the genome
+        if (line.size() >= seed::padding_size) {
+          throw runtime_error("found a read of size " + to_string(line.size()) +
+              ", which is too long. Maximum allowed read size = " +
+              to_string(seed::padding_size));
+        }
         if (count_if(begin(line), end(line),
                      [](const char c) {return c != 'N';}) < min_read_length)
           line.clear();
