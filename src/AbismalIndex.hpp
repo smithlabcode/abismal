@@ -35,13 +35,13 @@ static inline char random_base() {return "ACGT"[rand() & 3];}
 
 namespace seed {
   // number of positions in the hashed portion of the seed
-  static const uint32_t key_weight = 23u;
-  static const uint32_t n_seed_positions = 28u;
+  static const uint32_t key_weight = 25u;
+  static const uint32_t n_dp_positions = 30u;
 
   // window in which we select the best k-mer. The longer it is,
   // the longer the minimum read length that guarantees an exact
   // match will be mapped
-  static const uint32_t window_size = 13u;
+  static const uint32_t window_size = 10u;
 
   // number of positions to sort within buckets
   static const uint32_t n_sorting_positions = 200u;
@@ -144,12 +144,8 @@ struct AbismalIndex {
 
   // the default PE heap size estimated from the genome k-mer
   // frequencies
-  uint32_t pe_max_candidates_small; // number of candidates kept on PE reads
+  uint32_t pe_heap_size; // number of candidates kept on PE reads
 
-  // the PE heap size if it needs to be expanded. This happens if too
-  // many candidates are retrieved even when the whole read is used as
-  // seed
-  uint32_t pe_max_candidates_large; // number of candidates kept on PE repeats
   size_t counter_size; // number of kmers indexed
   size_t index_size; // size of the index
 
@@ -164,7 +160,7 @@ struct AbismalIndex {
   void get_bucket_sizes(std::vector<bool> &keep, const uint32_t word_size);
 
   /* get index statistics used in mapping */
-  void calc_mapping_parameters(const bool sensitive);
+  void calc_mapping_parameters(const bool sens);
 
   /* how much RAM is needed to map reads*/
   double estimate_ram();

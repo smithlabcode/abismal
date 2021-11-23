@@ -113,7 +113,7 @@ get_quantile(const vector<uint32_t> &v, const double q) {
 }
 
 void
-AbismalIndex::calc_mapping_parameters(const bool sensitive) {
+AbismalIndex::calc_mapping_parameters(const bool sens) {
   if (VERBOSE)
     cerr << "[calculating mapping parameters from index]\n";
 
@@ -129,35 +129,35 @@ AbismalIndex::calc_mapping_parameters(const bool sensitive) {
   sort(begin(copy_of_counter), end(copy_of_counter));
 
   // cut-off to skip k-mers in sensitive step
-  static const double cand_cutoff_sensitive = 1.0 - 1.0e-5;
-  static const double cand_cutoff_default = 1.0 - 1.0e-3;
-  max_candidates = get_quantile(
-                     copy_of_counter,
-                     (sensitive ? cand_cutoff_sensitive : cand_cutoff_default)
-                   );
+  static const double cand_q_sensitive = 1.0 - 1.0e-5;
+  static const double cand_q = 1.0 - 1e-3;
+  max_candidates =
+    get_quantile(copy_of_counter, sens ? cand_q_sensitive : cand_q);
+
 
   // GS: this definitely has to be more sophisticated and involve
   // some analysis on dead zones. For now it is estimated based on
   // k-mer quantiles as they are somewhat correlated to repeat
   // frequencies.
-  static const double heap_quantile_default = 1.0 - 1.0e-2;
-  static const double heap_quantile_sensitive = 1.0 - 5.0e-3;
-  static const double heap_quantile_large = 1.0 - 1.0e-3;
-  static const uint32_t min_heap_size = 20u;
-  pe_max_candidates_small = max(get_quantile(
-                                  copy_of_counter,
-                                  sensitive ? heap_quantile_sensitive : heap_quantile_default
-                                ), min_heap_size);
+  static const double heap_q = 1.0 - 1.0e-3;
+  static const double heap_q_sensitive = 1.0 - 1.0e-4;
+  pe_heap_size =
+    get_quantile(copy_of_counter, sens ? heap_q_sensitive : heap_q);
 
-  pe_max_candidates_large = max(get_quantile(
-                                  copy_of_counter,
-                                  heap_quantile_large),
-                                  min_heap_size);
+  cerr << "max candidates: " << max_candidates << endl;
+  cerr << "pe heap size " << pe_heap_size << endl;
+}
+
+inline void
+shift_dp_key(const char c, uint32_t &hash) {
+  static const uint32_t mask = (1u << seed::n_dp_positions) - 1;
+  hash = ((hash << 1) | get_bit(c)) & mask;
 }
 
 void
 AbismalIndex::get_bucket_sizes(vector<bool> &keep, const uint32_t word_size) {
   counter.clear();
+  const bool do_dp = (word_size == seed::n_dp_positions);
 
   // the "counter" has an additional entry for convenience
   counter_size = (1ull << word_size);
@@ -178,13 +178,19 @@ AbismalIndex::get_bucket_sizes(vector<bool> &keep, const uint32_t word_size) {
   const auto gi_lim(gi + (word_size - 1));
   uint32_t hash_key = 0;
   while (gi != gi_lim)
-    shift_hash_key(*gi++, hash_key);
+    if (do_dp)
+      shift_dp_key(*gi++, hash_key);
+    else
+      shift_hash_key(*gi++, hash_key);
 
   for (size_t i = genome_st; i < lim; ++i) {
     if (VERBOSE && progress.time_to_report(i))
       progress.report(cerr, i);
 
-    shift_hash_key(*gi++, hash_key);
+    if (do_dp)
+      shift_dp_key(*gi++, hash_key);
+    else
+      shift_hash_key(*gi++, hash_key);
     counter[hash_key] += keep[i];
   }
   if (VERBOSE)
@@ -265,7 +271,7 @@ add_sol(deque<helper_sol> &helper, const uint32_t pos, const dp_sol cand) {
 void
 AbismalIndex::compress_dp(vector<bool> &keep) {
   // first get bucket sizes and build ranks
-  get_bucket_sizes(keep, seed::n_seed_positions);
+  get_bucket_sizes(keep, seed::n_dp_positions);
 
   fill(begin(keep), end(keep), false);
 
@@ -275,14 +281,14 @@ AbismalIndex::compress_dp(vector<bool> &keep) {
 
   // start building up the hash key
   genome_iterator gi(begin(genome));
-  const auto gi_lim(gi + (seed::n_seed_positions - 1));
+  const auto gi_lim(gi + (seed::n_dp_positions - 1));
   uint32_t hash_key = 0;
   while (gi != gi_lim)
-    shift_hash_key(*gi++, hash_key);
+    shift_dp_key(*gi++, hash_key);
 
   // the dp memory allocation
   static const size_t BLOCK_SIZE = 10000000;
-  static const size_t w = seed::window_size;
+  static const size_t w = seed::n_dp_positions;
   deque<helper_sol> helper;
   vector<dp_sol> opt(BLOCK_SIZE);
 
@@ -301,7 +307,7 @@ AbismalIndex::compress_dp(vector<bool> &keep) {
 
     // get the first w positions
     for (size_t i = 0; i < min(w - 1, sz); ++i) {
-      shift_hash_key(*gi++, hash_key);
+      shift_dp_key(*gi++, hash_key);
       add_sol(helper, i, dp_sol(counter[hash_key]));
     }
 
@@ -310,7 +316,7 @@ AbismalIndex::compress_dp(vector<bool> &keep) {
         progress.report(cerr, beg + i);
 
       // update minimizers using k-mer from current base
-      shift_hash_key(*gi++, hash_key);
+      shift_dp_key(*gi++, hash_key);
       add_sol(helper, i, dp_sol(counter[hash_key]));
 
       // index position

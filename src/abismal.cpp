@@ -201,6 +201,9 @@ struct se_element { //assert(sizeof(se_element) == 8)
   static const double invalid_hit_frac;
 };
 
+double se_element::valid_frac = 0.1;
+const double se_element::invalid_hit_frac = 0.4;
+
 inline bool
 valid(const se_element &s, const uint32_t readlen) {
   return s.diffs <= static_cast<score_t>(se_element::valid_frac*readlen);
@@ -209,7 +212,9 @@ valid(const se_element &s, const uint32_t readlen) {
 inline bool
 valid_pair(const se_element &s1, const se_element &s2,
            const uint32_t readlen1, const uint32_t readlen2) {
-  return (valid(s1, readlen1) && valid(s2, readlen2));
+  const score_t d = s1.diffs + s2.diffs;
+  const uint32_t len = readlen1 + readlen2;
+  return d <= static_cast<score_t>(se_element::valid_frac*len);
 }
 
 inline bool
@@ -217,13 +222,10 @@ valid_hit(const se_element s, const uint32_t readlen) {
   return s.diffs < static_cast<score_t>(se_element::invalid_hit_frac*readlen);
 }
 
-double se_element::valid_frac = 0.1;
-const double se_element::invalid_hit_frac = 0.4;
-
 struct se_candidates {
   se_candidates () :
-    max_size(max_size_small), sz(1), best(se_element()),
-    v(vector<se_element>(max_size_large*100/ReadLoader::min_read_length)) {}
+    sz(1), max_size(min_size), best(se_element()),
+    v(vector<se_element>(expand_size)) {}
   inline bool full() const { return sz == max_size; };
   void update_exact_match(const uint32_t p, const score_t d, const flags_t s) {
     const se_element cand(p, d, s);
@@ -251,6 +253,10 @@ struct se_candidates {
     update_cand(p, d, s);
   }
 
+  inline void expand() {
+    max_size = expand_size;
+  }
+
   inline bool sure_ambig() const {
     return best.sure_ambig();
   }
@@ -259,13 +265,7 @@ struct se_candidates {
     v.front().reset(readlen);
     sz = 1;
     best.reset(readlen);
-    max_size = max_size_small;
-  }
-
-  // increases heap size to accommodate more candidates.
-  // lower read lengths will likely require more candidates
-  void expand(const uint32_t readlen) {
-    max_size = max_size_large*100/readlen;
+    max_size = min_size;
   }
 
   void prepare_for_alignments() {
@@ -278,13 +278,13 @@ struct se_candidates {
 
   score_t get_cutoff() const { return v.front().diffs; }
 
-  uint32_t max_size;
   uint32_t sz;
+  uint32_t max_size;
   se_element best;
   vector<se_element> v;
 
-  static const uint32_t max_size_small = 10;
-  static const uint32_t max_size_large = 100;
+  static const uint32_t min_size = 10u;
+  static const uint32_t expand_size = 100u;
 };
 
 inline bool
@@ -326,26 +326,48 @@ format_se(const bool allow_ambig, const se_element &res, const ChromLookup &cl,
 }
 
 struct pe_element {
-  pe_element() : r1(se_element()), r2(se_element()) {}
-  pe_element(const se_element s1, const se_element s2) : r1(s1), r2(s2) {}
+  pe_element() :
+    aln_score(0), r1(se_element()), r2(se_element()) {}
 
   score_t diffs() const { return r1.diffs + r2.diffs; }
+  void reset(const uint32_t readlen1, const uint32_t readlen2) {
+    aln_score = 0;
+    r1.reset(readlen1);
+    r2.reset(readlen2);
+    max_aln_score = simple_aln::best_pair_score(readlen1, readlen2);
+  }
   void reset() {
+    aln_score = 0;
     r1.reset();
     r2.reset();
   }
-  inline void update(const se_element s1, const se_element s2) {
-    r1 = s1;
-    r2 = s2;
+
+  bool update(const score_t scr,
+      const se_element s1, const se_element s2) {
+
+    if (scr > aln_score) {
+      r1 = s1;
+      r2 = s2;
+      aln_score = scr;
+      return true;
+    }
+    else if (scr == aln_score)
+      r1.set_ambig();
+
+    return false;
   }
 
+  inline bool should_report(const bool allow_ambig) const {
+    return !empty() && (allow_ambig || !ambig());
+  }
   inline bool ambig() const { return r1.ambig(); }
   inline bool empty() const { return r1.empty(); }
   inline bool sure_ambig() const {
-    return ambig() && r1.diffs == 0 && r2.diffs == 0;
+    return ambig() && (aln_score == max_aln_score);
   }
-  inline void set_ambig() { r1.set_ambig(); }
 
+  score_t aln_score;
+  score_t max_aln_score;
   se_element r1;
   se_element r2;
 
@@ -439,20 +461,18 @@ format_pe(const bool allow_ambig,
 }
 
 struct pe_candidates {
-  pe_candidates(const uint32_t s, const uint32_t l) :
-    max_size_small(s), max_size_large(l), max_size (s),
-    v(vector<se_element>(max_size_large*100/ReadLoader::min_read_length)), sz(1) {}
+  pe_candidates(const uint32_t s) :
+    sz(1), min_size (s),
+    max_size(min_size),
+    v(vector<se_element>(max(s, pe_element::max_dist - pe_element::min_dist + 1))) {}
   bool full() const { return sz == max_size; }
 
-
-  void expand(const uint32_t readlen) {
-    max_size = max_size_large*100/readlen;
-  }
   inline void reset(const uint32_t readlen) {
-    max_size = max_size_small;
     v.front().reset(readlen);
     sz = 1;
+    max_size = min_size;
   }
+
   score_t get_cutoff() const { return v.front().diffs; }
 
   void update(const uint32_t p, const score_t d, const flags_t s) {
@@ -465,8 +485,13 @@ struct pe_candidates {
     }
     push_heap(begin(v), begin(v) + sz);
   }
+
   inline bool sure_ambig() const {
     return full() && (v.front().diffs == 0);
+  }
+
+  inline void expand() {
+    max_size = pe_element::max_dist - pe_element::min_dist + 1;
   }
 
   void prepare_for_mating() {
@@ -475,11 +500,10 @@ struct pe_candidates {
     sz = unique(begin(v), begin(v) + sz) - begin(v);
   }
 
-  const uint32_t max_size_small;
-  const uint32_t max_size_large;
+  uint32_t sz;
+  const uint32_t min_size;
   uint32_t max_size;
   vector<se_element> v;
-  uint32_t sz;
 };
 
 inline double pct(const double a, const double b) {return ((b == 0) ? 0.0 : 100.0*a/b);}
@@ -497,23 +521,24 @@ struct se_map_stats {
   size_t edit_distance;
   size_t total_bases;
 
-  void update(const se_element &s, const bool skipped,
-              const string &cigar) {
+  void update(const bool allow_ambig,
+              const string &read, const string &cigar,
+              const se_element s) {
     ++tot_rds;
     const bool valid = !s.empty();
     const bool ambig = s.ambig();
     uniq_rds += (valid && !ambig);
     ambig_rds += (valid && ambig);
     unmapped_rds += !valid;
-    skipped_rds += skipped;
+    skipped_rds += read.empty();
 
-    if (valid && !ambig)
+    if (valid && (allow_ambig || !ambig))
       update_error_rate(s.diffs, cigar);
   }
 
   void update_error_rate(const score_t diffs, const string &cigar) {
     edit_distance += diffs;
-    total_bases += cigar_qseq_ops(cigar);
+    total_bases += cigar_rseq_ops(cigar);
   }
 
   string tostring(const size_t n_tabs = 0) const {
@@ -547,45 +572,48 @@ struct se_map_stats {
 struct pe_map_stats {
   pe_map_stats() :
     tot_pairs(0), uniq_pairs(0), ambig_pairs(0),
-    unmapped_pairs(0), discordant(0), edit_distance(0), total_bases(0) {}
+    unmapped_pairs(0), skipped_pairs(0), edit_distance(0), total_bases(0) {}
   uint32_t tot_pairs;
   uint32_t uniq_pairs;
   uint32_t ambig_pairs;
   uint32_t unmapped_pairs;
-  uint32_t discordant;
-  uint32_t min_dist;
+  uint32_t skipped_pairs;
 
   size_t edit_distance;
   size_t total_bases;
+
   se_map_stats end1_stats;
   se_map_stats end2_stats;
 
-  void update(const bool allow_ambig, const pe_element &p,
-              const se_element &s1, const bool skipped_se1, const string &cig1,
-              const se_element &s2, const bool skipped_se2, const string &cig2) {
+  void update(const bool allow_ambig,
+              const string &reads1, const string &reads2,
+              const string &cig1, const string &cig2,
+              const pe_element &p,
+              const se_element s1, const se_element s2) {
     const bool valid = !p.empty();
     const bool ambig = p.ambig();
     ++tot_pairs;
     ambig_pairs += (valid && ambig);
     uniq_pairs += (valid && !ambig);
-    discordant += (!valid && !s1.empty() && !s2.empty());
+    unmapped_pairs += !valid;
+    skipped_pairs += (reads1.empty() || reads2.empty());
 
-    if (p.empty() || (!allow_ambig && p.ambig())) {
-      unmapped_pairs += p.empty();
-      end1_stats.update(s1, skipped_se1, cig1);
-      end2_stats.update(s2, skipped_se2, cig2);
-    }
-    else
+    if (p.should_report(allow_ambig)) {
       update_error_rate(p.r1.diffs, p.r2.diffs, cig1, cig2);
+    }
+    else {
+      end1_stats.update(false, reads1, cig1, s1);
+      end2_stats.update(false, reads1, cig2, s2);
+    }
   }
 
   void update_error_rate(const score_t d1, const score_t d2,
                          const string &cig1, const string &cig2) {
     edit_distance += d1 + d2;
-    total_bases += cigar_qseq_ops(cig1) + cigar_qseq_ops(cig2);
+    total_bases += cigar_rseq_ops(cig1) + cigar_rseq_ops(cig2);
   }
 
-  string tostring() const {
+  string tostring(const bool allow_ambig) const {
     ostringstream oss;
     static const string t = "    ";
     oss << "pairs:" << endl
@@ -603,17 +631,21 @@ struct pe_map_stats {
         << t+t+t<< "total_bases: " << total_bases << endl
         << t+t+t<< "error_rate: " << pct(edit_distance, total_bases) << endl
         << t   << "num_unmapped: " << unmapped_pairs << endl
-        << t   << "num_discordant: " << discordant << endl
+        << t   << "num_skipped: " << skipped_pairs << endl
         << t   << "percent_unmapped: " << pct(unmapped_pairs, tot_pairs) << endl
-        << t   << "percent_discordant: " << pct(discordant, tot_pairs) << endl
-        << "mate1:" << endl << end1_stats.tostring(1)
-        << "mate2:" << endl << end2_stats.tostring(1);
+        << t   << "percent_skipped: " << pct(skipped_pairs, tot_pairs) << endl;
+
+    if (!allow_ambig)
+      oss << "mate1:" << endl << end1_stats.tostring(1)
+          << "mate2:" << endl << end2_stats.tostring(1);
     return oss.str();
   }
 };
 
 static void
-select_output(const bool allow_ambig, const ChromLookup &cl,
+select_output(const bool allow_ambig,
+              const score_t scr1, const score_t scr2,
+              const ChromLookup &cl,
               const string &read1, const string &name1,
               const string &read2, const string &name2,
               const string &cig1, const string &cig2,
@@ -624,16 +656,21 @@ select_output(const bool allow_ambig, const ChromLookup &cl,
                                          name2, cig1, cig2, out);
   if (pe_map_type == map_unmapped ||
       (!allow_ambig && pe_map_type == map_ambig)) {
+
     // GS: do not report in mapstats a read that was not reported
     if (pe_map_type == map_unmapped)
       best.reset();
 
-    if (format_se(allow_ambig, se1, cl, read1, name1, cig1, out) ==
+    const bool report_se1 = (se2.ambig() || scr1 >= scr2);
+    if (!report_se1 ||
+        format_se(allow_ambig, se1, cl, read1, name1, cig1, out) ==
         map_unmapped)
       se1.reset();
 
-    if (format_se(allow_ambig, se2, cl, read2, name2, cig2, out) ==
-        map_unmapped)
+    const bool report_se2 = (se1.ambig() || scr2 >= scr1);
+    if (!report_se2 ||
+        format_se(allow_ambig, se2, cl, read2, name2, cig2, out) ==
+                        map_unmapped)
       se2.reset();
   }
 }
@@ -683,8 +720,6 @@ full_compare(const score_t cutoff, const PackedRead::const_iterator read_end,
   return d;
 }
 
-
-
 template <const uint16_t strand_code, class result_type>
 inline void
 check_hits(const uint32_t offset,
@@ -724,18 +759,16 @@ struct compare_bases {
   const genome_iterator g;
 };
 
-template<const uint32_t pos_start, const uint32_t pos_end>
 static void
 find_candidates(const Read::const_iterator read_start,
                 const genome_iterator gi,
                 const uint32_t read_lim,
                 vector<uint32_t>::const_iterator &low,
                 vector<uint32_t>::const_iterator &high) {
-  uint32_t p = pos_start;
+  uint32_t p = seed::key_weight;
   auto prev_low = low;
   auto prev_high = high;
-  for (uint32_t i = pos_start;
-      i < pos_end && p != read_lim && low < high; ++p, ++i) {
+  for (; p != read_lim && low < high; ++p) {
     // keep last interval with >0 candidates
     prev_low = low;
     prev_high = high;
@@ -772,34 +805,29 @@ process_seeds(const uint32_t max_candidates,
   const Read::const_iterator read_start(begin(read_seed));
 
   uint32_t k = 0u;
-  get_1bit_hash(read_start, k);
 
   const uint32_t lim = readlen - seed::key_weight + 1;
   uint32_t read_lim = lim;
+
+  get_1bit_hash(read_start, k);
   for (uint32_t i = 0; i < read_lim; ++i) {
     vector<uint32_t>::const_iterator s_idx(index_st + *(counter_st + k));
     vector<uint32_t>::const_iterator e_idx(index_st + *(counter_st + k + 1));
 
-    if (s_idx < e_idx) {
-      find_candidates<seed::key_weight, seed::n_seed_positions>(
-        read_start + i, genome_st, readlen - i, s_idx, e_idx
+    // sensitive step with small seeds
+    if (s_idx < e_idx && (e_idx - s_idx <= max_candidates))
+      check_hits<strand_code>(
+        i, packed_read_start, packed_read_end,
+        genome_st.itr, e_idx, s_idx, res
       );
-      if (e_idx - s_idx <= max_candidates)
-        check_hits<strand_code>(
-          i, packed_read_start, packed_read_end,
-          genome_st.itr, e_idx, s_idx, res
-        );
-    }
 
-    if (i < seed::window_size) {
-      find_candidates<seed::n_seed_positions, seed::n_sorting_positions>(
+    // specific step with whole read as seed
+    if (i <= seed::window_size) {
+      find_candidates(
         read_start + i, genome_st, readlen - i, s_idx, e_idx
       );
+      if (e_idx - s_idx > max_candidates) res.expand();
       if (s_idx < e_idx) {
-        // too many candidates using the whole read, need to store
-        // more candidates
-        if (e_idx - s_idx > max_candidates)
-          res.expand(readlen);
         check_hits<strand_code>(
           i, packed_read_start, packed_read_end,
           genome_st.itr, e_idx, s_idx, res
@@ -863,20 +891,19 @@ pack_read(const Read &pread, PackedRead &packed_pread) {
 
 using AbismalAlignSimple =
       AbismalAlign<simple_aln::mismatch_score, simple_aln::indel>;
-//using AbismalAlignSimple = AbismalAlignKSW;
 
 static score_t
 align_read(const Read &pread, se_element &res,
          uint32_t &len, string &cigar, AbismalAlignSimple &aln) {
   const score_t readlen = static_cast<score_t>(pread.size());
   const score_t ans = ((res.diffs < simple_aln::min_diffs_to_align || res.diffs == readlen) ?
-    aln.trim_ends(res.diffs, pread, res.pos, len, cigar) :
-    aln.align(pread, res.pos, len, cigar));
+    aln.trim_ends(pread, res.pos, len, cigar) :
+    aln.align    (pread, res.pos, len, cigar));
   res.diffs = simple_aln::edit_distance(ans, len, cigar);
   return ans;
 }
 
-static void
+static score_t
 align_se_candidates(const Read &pread_t, const Read &pread_t_rc,
                     const Read &pread_a, const Read &pread_a_rc,
                     se_candidates &res, se_element &best,
@@ -890,9 +917,11 @@ align_se_candidates(const Read &pread_t, const Read &pread_t_rc,
   string cand_cigar;
 
   res.prepare_for_alignments();
-
   const vector<se_element>::const_iterator lim(begin(res.v) + res.sz);
-  for (vector<se_element>::const_iterator it(begin(res.v)); it != lim; ++it) {
+
+  vector<se_element>::const_iterator it(begin(res.v));
+  for (; it != lim && it->empty(); ++it);
+  for (; it != lim; ++it) {
     s = *it;
     if (valid_hit(s, readlen)) {
       const score_t scr = align_read(
@@ -916,7 +945,11 @@ align_se_candidates(const Read &pread_t, const Read &pread_t_rc,
         best.set_ambig();
     }
   }
-  if (!valid(best, best_len)) best.reset();
+
+  if (!valid(best, best_len))
+    best.reset();
+
+  return best_score;
 }
 
 template <const  conversion_type conv>
@@ -1000,7 +1033,7 @@ map_single_ended(const bool VERBOSE, const bool allow_ambig,
     {
       out.write(out_stream.str().c_str(), out_stream.str().size());
       for (size_t i = 0; i < n_reads; ++i)
-        se_stats.update(bests[i], reads[i].length() == 0, cigar[i]);
+        se_stats.update(allow_ambig, reads[i], cigar[i], bests[i]);
 
       if (VERBOSE && progress.time_to_report(the_byte))
         progress.report(cerr, the_byte);
@@ -1093,14 +1126,15 @@ map_single_ended_rand(const bool VERBOSE, const bool allow_ambig,
         );
         if (format_se(allow_ambig, bests[i], abismal_index.cl, reads[i],
               names[i], cigar[i], out_stream) == map_unmapped)
-          bests[i].reset(reads[i].size());
+          bests[i].reset();
       }
     }
 #pragma omp critical
     {
       out.write(out_stream.str().c_str(), out_stream.str().size());
       for (size_t i = 0; i < n_reads; ++i)
-        se_stats.update(bests[i], reads[i].length() == 0, cigar[i]);
+        se_stats.update(allow_ambig, reads[i], cigar[i], bests[i]);
+
       if (VERBOSE && progress.time_to_report(the_byte))
         progress.report(cerr, the_byte);
     }
@@ -1139,10 +1173,12 @@ run_single_ended(const bool VERBOSE,
     print_with_time("total mapping time: " + to_string(omp_get_wtime() - start_time) + "s");
   }
 }
+
 static void
 best_single(const pe_candidates &pres, se_candidates &res) {
   const vector<se_element>::const_iterator lim(begin(pres.v) + pres.sz);
-  for (vector<se_element>::const_iterator i(begin(pres.v)); i != lim && !res.sure_ambig(); ++i) {
+  for (vector<se_element>::const_iterator i(begin(pres.v));
+      i != lim && !res.sure_ambig(); ++i) {
     res.update(i->pos, i->diffs, i->flags);
   }
 }
@@ -1151,13 +1187,17 @@ template <const bool swap_ends>
 static void
 best_pair(const pe_candidates &res1, const pe_candidates &res2,
           const Read &pread1, const Read &pread2,
-          score_t &aln_score, string &cig1, string &cig2,
+          string &cig1, string &cig2,
           AbismalAlignSimple &aln, pe_element &best) {
-  vector<se_element>::const_iterator j1 = begin(res1.v);
+  const vector<se_element>::const_iterator j1_beg(begin(res1.v));
+  vector<se_element>::const_iterator j1(j1_beg);
+  vector<se_element>::const_iterator j2(begin(res2.v));
   const vector<se_element>::const_iterator j1_end = j1 + res1.sz;
-  const vector<se_element>::const_iterator j2_end = begin(res2.v) + res2.sz;
+  const vector<se_element>::const_iterator j2_end = j2 + res2.sz;
+  // skips the empty elements for faster nested loops
+
   const uint32_t readlen1 = pread1.size();
-  const uint32_t readlen2 = pread1.size();
+  const uint32_t readlen2 = pread2.size();
 
   uint32_t len1 = 0, len2 = 0;
   score_t scr, scr2;
@@ -1168,46 +1208,44 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
   cand_cig1.reserve(2*readlen1);
   cand_cig2.reserve(2*readlen2);
 
-  for (vector<se_element>::const_iterator j2(begin(res2.v));
-      j2 != j2_end && !best.sure_ambig(); ++j2) {
+  for (; j2 != j2_end; ++j2) {
     s2 = *j2;
     if (valid_hit(s2, readlen2)) {
-      uint32_t lim = s2.pos + pread2.size();
-      for (j1 = begin(res1.v); j1 != j1_end &&
-           j1->pos + pe_element::max_dist < lim; ++j1);
+      uint32_t lim = s2.pos + readlen2;
+
+      // rewind to first concordant position. Needed in case of
+      // many-to-many equivalence between pairs.
+      for (; j1 != j1_beg && j1->pos + pe_element::max_dist >= lim; --j1);
+      for (; j1 != j1_end && j1->pos + pe_element::max_dist < lim; ++j1);
 
       scr2 = 0;
-      while (j1 != j1_end && j1->pos + pe_element::min_dist <= lim
-             && !best.sure_ambig() && (scr2 == 0 || valid(s2, readlen2))) {
+      for (; j1 != j1_end && j1->pos + pe_element::min_dist <= lim; ++j1) {
         s1 = *j1;
         if (valid_hit(s1, readlen1)) {
           // GS: guarantees that j2 is aligned only once
           if (scr2 == 0) {
             scr2 = align_read(pread2, s2, len2, cand_cig2, aln);
-            lim = s2.pos + cigar_rseq_ops(cand_cig2);
+            lim = s2.pos + len2;
           }
           scr = scr2 + align_read(pread1, s1, len1, cand_cig1, aln);
-
           // GS: only accept if length post alignment is still within limits
-          if (valid_pair(s1, s2, readlen1, readlen2) &&
+          if (valid_pair(s1, s2, len1, len2) &&
               (s1.pos + pe_element::max_dist >= lim) &&
               (s1.pos + pe_element::min_dist <= lim)) {
-            if (scr > aln_score) {
-              aln_score = scr;
+
+            const se_element r1 = (swap_ends ? s2 : s1);
+            const se_element r2 = (swap_ends ? s1 : s2);
+            if (best.update(scr, r1, r2)) {
               cig1 = std::move(cand_cig1);
               if (!cand_cig2.empty())
                 cig2 = std::move(cand_cig2);
 
-              // GS: unsets ambig
-              best.update(swap_ends ? s2 : s1, swap_ends ? s1 : s2);
+              // found 2 exact matches, enough to stop mating
+              if (best.sure_ambig())
+                return;
             }
-            else if ((scr == aln_score) &&
-                     (((swap_ends ? s2 : s1) != best.r1) ||
-                      ((swap_ends ? s1 : s2) != best.r2)))
-              best.set_ambig();
           }
         }
-        ++j1;
       }
     }
   }
@@ -1216,20 +1254,17 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
 template <const bool swap_ends>
 void
 select_maps(Read &pread1, Read &pread2,
-            score_t &aln_score, string &cig1, string &cig2,
+            string &cig1, string &cig2,
             pe_candidates &res1, pe_candidates &res2,
             se_candidates &res_se1, se_candidates &res_se2,
             AbismalAlignSimple &aln,  pe_element &best) {
   res1.prepare_for_mating();
   res2.prepare_for_mating();
-
-  best_pair<swap_ends>(
-    res1, res2, pread1, pread2, aln_score, cig1, cig2, aln, best
-  );
-
+  best_pair<swap_ends>(res1, res2, pread1, pread2, cig1, cig2, aln, best);
   best_single(res1, res_se1);
   best_single(res2, res_se2);
 }
+
 
 template <const bool cmp, const bool swap_ends,
           const uint16_t strand_code1, const uint16_t strand_code2>
@@ -1240,7 +1275,7 @@ map_fragments(const uint32_t max_candidates,
               const vector<uint32_t>::const_iterator index_st,
               const genome_iterator genome_st,
               Read &pread1, Read &pread2, PackedRead &packed_pread,
-              score_t &aln_score, string &cigar1, string &cigar2,
+              string &cigar1, string &cigar2,
               AbismalAlignSimple &aln,
               pe_candidates &res1, pe_candidates &res2,
               se_candidates &res_se1, se_candidates &res_se2,
@@ -1248,26 +1283,23 @@ map_fragments(const uint32_t max_candidates,
   res1.reset(read1.size());
   res2.reset(read2.size());
 
-  if (!read1.empty()) {
+  if (!read1.empty() && !read2.empty()) {
     prep_read<cmp>(read1, pread1);
     pack_read(pread1, packed_pread);
     process_seeds<strand_code1>(max_candidates, counter_st,
       index_st, genome_st, pread1, packed_pread, res1
     );
-  }
 
-  if (!read2.empty()) {
     const string read_rc(revcomp(read2));
     prep_read<cmp>(read_rc, pread2);
     pack_read(pread2, packed_pread);
     process_seeds<strand_code2>(max_candidates, counter_st,
       index_st, genome_st, pread2, packed_pread, res2
     );
-  }
 
-  if (!read1.empty() && !read2.empty())
-    select_maps<swap_ends>(pread1, pread2, aln_score, cigar1, cigar2,
-                           res1, res2, res_se1, res_se2, aln, best);
+    select_maps<swap_ends>(pread1, pread2, cigar1, cigar2,
+      res1, res2, res_se1, res_se2, aln, best);
+  }
 }
 
 template <const conversion_type conv>
@@ -1305,20 +1337,20 @@ map_paired_ended(const bool VERBOSE,
 
   // GS: pre-allocated variables used once per read
   // and not used for reporting
-  score_t aln_score;
   Read pread1, pread1_rc, pread2, pread2_rc;
   PackedRead packed_pread;
-  pe_candidates res1(abismal_index.pe_max_candidates_small,
-                     abismal_index.pe_max_candidates_large);
-  pe_candidates res2(abismal_index.pe_max_candidates_small,
-                     abismal_index.pe_max_candidates_large);
+  pe_candidates res1(abismal_index.pe_heap_size);
+  pe_candidates res2(abismal_index.pe_heap_size);
   se_candidates res_se1;
   se_candidates res_se2;
+  score_t scr1;
+  score_t scr2;
 
   size_t the_byte;
   string out_str;
   out_str.reserve(ReadLoader::batch_size*500);
   ostringstream out_stream(out_str);
+
   while (rl1.good() && rl2.good()) {
 #pragma omp critical
     {
@@ -1337,21 +1369,26 @@ map_paired_ended(const bool VERBOSE,
     out_stream.clear();
     out_stream.str("");
     for (size_t i = 0 ; i < n_reads; ++i) {
-      res1.reset(reads1[i].size());
-      res2.reset(reads2[i].size());
-      res_se1.reset(reads1[i].size());
-      res_se2.reset(reads2[i].size());
+      const uint32_t readlen1 = reads1[i].size();
+      const uint32_t readlen2 = reads2[i].size();
 
-      bests[i].reset();
-      bests_se1[i].reset();
-      bests_se2[i].reset();
-      aln_score = 0;
+      res1.reset(readlen1);
+      res2.reset(readlen2);
+      res_se1.reset(readlen1);
+      res_se2.reset(readlen2);
+
+      bests[i].reset(readlen1, readlen2);
+      bests_se1[i].reset(readlen1);
+      bests_se2[i].reset(readlen2);
+
+      scr1 = 0;
+      scr2 = 0;
 
       map_fragments<conv, false,
                    get_strand_code('+',conv),
                    get_strand_code('-', flip_conv(conv))>(
         max_candidates, reads1[i], reads2[i], counter_st,
-        index_st, genome_st, pread1, pread2_rc, packed_pread, aln_score,
+        index_st, genome_st, pread1, pread2_rc, packed_pread,
         cigar1[i], cigar2[i], aln, res1, res2,
         res_se1, res_se2, bests[i]
       );
@@ -1360,37 +1397,29 @@ map_paired_ended(const bool VERBOSE,
                    get_strand_code('+', flip_conv(conv)),
                    get_strand_code('-', conv)>(
         max_candidates, reads2[i], reads1[i], counter_st,
-        index_st, genome_st, pread2, pread1_rc, packed_pread, aln_score,
+        index_st, genome_st, pread2, pread1_rc, packed_pread,
         cigar2[i], cigar1[i], aln, res2, res1,
         res_se2, res_se1, bests[i]
       );
+      if (!bests[i].should_report(allow_ambig)) {
+        scr1 = align_se_candidates(pread1, pread1_rc, pread1, pread1_rc,
+                            res_se1, bests_se1[i], cigar1[i], aln);
 
-      if (bests[i].empty() || (!allow_ambig && bests[i].ambig())) {
-        align_se_candidates(
-          pread1, pread1_rc, pread1, pread1_rc,
-          res_se1, bests_se1[i], cigar1[i], aln
-        );
-        align_se_candidates(
-          pread2, pread2_rc, pread2, pread2_rc,
-          res_se2, bests_se2[i], cigar2[i], aln
-        );
+        scr2 = align_se_candidates(pread2, pread2_rc, pread2, pread2_rc,
+                            res_se2, bests_se2[i], cigar2[i], aln);
       }
-      select_output(
-        allow_ambig, abismal_index.cl, reads1[i], names1[i],
-        reads2[i], names2[i], cigar1[i], cigar2[i],
-        bests[i], bests_se1[i], bests_se2[i], out_stream
-      );
+
+      select_output(allow_ambig, scr1, scr2, abismal_index.cl,
+          reads1[i], names1[i],reads2[i], names2[i], cigar1[i], cigar2[i],
+          bests[i], bests_se1[i], bests_se2[i], out_stream);
     }
 
 #pragma omp critical
     {
       out.write(out_stream.str().c_str(), out_stream.str().size());
       for (size_t i = 0; i < n_reads; ++i) {
-        pe_stats.update(
-          allow_ambig, bests[i],
-          bests_se1[i], reads1[i].length() == 0, cigar1[i],
-          bests_se2[i], reads2[i].length() == 0, cigar2[i]
-        );
+        pe_stats.update(allow_ambig, reads1[i], reads2[i],
+            cigar1[i], cigar2[i], bests[i], bests_se1[i], bests_se2[i]);
       }
       if (VERBOSE && progress.time_to_report(the_byte))
         progress.report(cerr, the_byte);
@@ -1429,17 +1458,15 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
   bests_se1.resize(ReadLoader::batch_size);
   bests_se2.resize(ReadLoader::batch_size);
 
-  score_t aln_score;
   Read pread1_t, pread1_t_rc, pread2_t, pread2_t_rc;
   Read pread1_a, pread1_a_rc, pread2_a, pread2_a_rc;
   PackedRead packed_pread;
-  pe_candidates res1(abismal_index.pe_max_candidates_small,
-                     abismal_index.pe_max_candidates_large);
-  pe_candidates res2(abismal_index.pe_max_candidates_small,
-                     abismal_index.pe_max_candidates_large);
+  pe_candidates res1(abismal_index.pe_heap_size);
+  pe_candidates res2(abismal_index.pe_heap_size);
   se_candidates res_se1;
   se_candidates res_se2;
-
+  score_t scr1;
+  score_t scr2;
 
   size_t the_byte;
   string out_str;
@@ -1464,24 +1491,26 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
     out_stream.clear();
     out_stream.str("");
     for (size_t i = 0 ; i < n_reads; ++i) {
-      res1.reset(reads1[i].size());
-      res2.reset(reads2[i].size());
-      res_se1.reset(reads1[i].size());
-      res_se2.reset(reads2[i].size());
+      const uint32_t readlen1 = reads1[i].size();
+      const uint32_t readlen2 = reads1[i].size();
 
-      bests[i].reset();
-      bests_se1[i].reset();
-      bests_se2[i].reset();
-      aln_score = 0;
+      res1.reset(readlen1);
+      res2.reset(readlen2);
+      res_se1.reset(readlen1);
+      res_se2.reset(readlen2);
+      bests[i].reset(readlen1, readlen2);
+      bests_se1[i].reset(readlen1);
+      bests_se2[i].reset(readlen2);
+      scr1 = 0;
+      scr2 = 0;
 
       // GS: (1) T/A-rich +/- strand
       map_fragments<t_rich, false,
                    get_strand_code('+', t_rich),
                    get_strand_code('-', a_rich)>(
         max_candidates, reads1[i], reads2[i], counter_st,
-        index_st, genome_st, pread1_t, pread2_a_rc, packed_pread, aln_score,
-        cigar1[i], cigar2[i], aln, res1, res2,
-        res_se1, res_se2, bests[i]
+        index_st, genome_st, pread1_t, pread2_a_rc, packed_pread,
+        cigar1[i], cigar2[i], aln, res1, res2, res_se1, res_se2, bests[i]
       );
 
       // GS: (2) T/A-rich, -/+ strand
@@ -1489,9 +1518,8 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
                    get_strand_code('+', a_rich),
                    get_strand_code('-', t_rich)>(
         max_candidates, reads2[i], reads1[i], counter_st,
-        index_st, genome_st, pread2_a, pread1_t_rc, packed_pread, aln_score,
-        cigar2[i], cigar1[i], aln, res2, res1,
-        res_se2, res_se1, bests[i]
+        index_st, genome_st, pread2_a, pread1_t_rc, packed_pread,
+        cigar2[i], cigar1[i], aln, res2, res1, res_se2, res_se1, bests[i]
       );
 
       // GS: (3) A/T-rich +/- strand
@@ -1499,9 +1527,8 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
                    get_strand_code('+', a_rich),
                    get_strand_code('-', t_rich)>(
         max_candidates, reads1[i], reads2[i], counter_st,
-        index_st, genome_st, pread1_a, pread2_t_rc, packed_pread, aln_score,
-        cigar1[i], cigar2[i], aln, res1, res2,
-        res_se1, res_se2, bests[i]
+        index_st, genome_st, pread1_a, pread2_t_rc, packed_pread,
+        cigar1[i], cigar2[i], aln, res1, res2, res_se1, res_se2, bests[i]
       );
 
       // GS: (4) A/T-rich, -/+ strand
@@ -1509,38 +1536,33 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
                    get_strand_code('+', t_rich),
                    get_strand_code('-', a_rich)>(
         max_candidates, reads2[i], reads1[i], counter_st,
-        index_st, genome_st, pread2_t, pread1_a_rc, packed_pread, aln_score,
-        cigar2[i], cigar1[i], aln, res2, res1,
-        res_se2, res_se1, bests[i]
+        index_st, genome_st, pread2_t, pread1_a_rc, packed_pread,
+        cigar2[i], cigar1[i], aln, res2, res1, res_se2, res_se1, bests[i]
       );
 
       // GS: align best SE candidates if no concordant pairs found
-      if (bests[i].empty() || (!allow_ambig && bests[i].ambig())) {
-        align_se_candidates(
+      if (!bests[i].should_report(allow_ambig)) {
+        scr1 = align_se_candidates(
           pread1_t, pread1_t_rc, pread1_a, pread1_a_rc,
           res_se1, bests_se1[i], cigar1[i], aln
         );
-        align_se_candidates(
+        scr2 = align_se_candidates(
           pread2_t, pread2_t_rc, pread2_a, pread2_a_rc,
           res_se2, bests_se2[i], cigar2[i], aln
         );
       }
-      select_output(allow_ambig, abismal_index.cl,
+      select_output(allow_ambig, scr1, scr2, abismal_index.cl,
         reads1[i], names1[i], reads2[i], names2[i], cigar1[i], cigar2[i],
-        bests[i], bests_se1[i], bests_se2[i], out_stream
-      );
+        bests[i], bests_se1[i], bests_se2[i], out_stream);
     }
 
 #pragma omp critical
     {
       out.write(out_stream.str().c_str(), out_stream.str().size());
-      for (size_t i = 0; i < n_reads; ++i) {
-        pe_stats.update(
-          allow_ambig, bests[i],
-          bests_se1[i], reads1[i].length() == 0, cigar1[i],
-          bests_se2[i], reads2[i].length() == 0, cigar2[i]
-        );
-      }
+      for (size_t i = 0; i < n_reads; ++i)
+        pe_stats.update(allow_ambig, reads1[i], reads2[i],
+            cigar1[i], cigar2[i], bests[i], bests_se1[i], bests_se2[i]);
+
       if (VERBOSE && progress.time_to_report(the_byte))
         progress.report(cerr, the_byte);
     }
@@ -1749,7 +1771,7 @@ int main(int argc, const char **argv) {
     if (!stats_outfile.empty()) {
       std::ofstream stats_of(stats_outfile.c_str(), std::ios::binary);
       stats_of << (reads_file2.empty() ?
-                    se_stats.tostring() : pe_stats.tostring());
+                    se_stats.tostring() : pe_stats.tostring(allow_ambig));
     }
   }
   catch (const runtime_error &e) {

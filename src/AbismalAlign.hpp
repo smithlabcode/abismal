@@ -21,7 +21,6 @@
 #include <string>
 #include <vector>
 #include <algorithm>
-#include <cassert>
 #include <iostream>
 #include <array>
 
@@ -41,8 +40,7 @@ struct AbismalAlign {
 
   AbismalAlign(const genome_iterator &target_start,
                const size_t max_read_length);
-  score_t trim_ends(const score_t diffs,
-                    const std::vector<uint8_t> &query,
+  score_t trim_ends(const std::vector<uint8_t> &query,
                     uint32_t &t_pos,
                     uint32_t &len, std::string &cigar);
   score_t align(const std::vector<uint8_t> &query, uint32_t &t_pos,
@@ -55,7 +53,7 @@ struct AbismalAlign {
   const size_t q_sz_max;
   const size_t bw;
 
-  static const uint16_t max_off_diag = 4;
+  static const uint16_t max_off_diag = 8;
 };
 
 template <score_t (*scr_fun)(const uint8_t, const uint8_t),
@@ -167,51 +165,37 @@ make_default_cigar(const uint32_t len, std::string &cigar) {
 template <score_t (*scr_fun)(const uint8_t, const uint8_t), score_t indel_pen>
 score_t
 AbismalAlign<scr_fun, indel_pen>::trim_ends(
-    const score_t diffs,
     const std::vector<uint8_t> &qseq,
     uint32_t &t_pos, uint32_t &len, std::string &cigar) {
-  genome_iterator t_beg = target + t_pos;
+  genome_iterator t_itr = target + t_pos;
 
   const size_t lim = qseq.size();
-  const std::vector<uint8_t>::const_iterator q_beg(begin(qseq));
+  std::vector<uint8_t>::const_iterator q_itr(begin(qseq));
 
-  // exact match
-  if (diffs == 0) {
-    len = lim;
-    make_default_cigar(len, cigar);
-    return lim - diffs;
+  score_t prefix_score = 0;
+  score_t max_score = 0;
+  uint32_t the_start = 0;
+  uint32_t the_end = 0;
+  for (uint32_t i = 0; i < lim; ++i, ++t_itr, ++q_itr) {
+    const score_t the_score = scr_fun(*t_itr, *q_itr);
+    the_start = (prefix_score == 0 && the_score > 0) ? (i) : (the_start);
+
+    prefix_score = std::max(prefix_score + the_score, 0);
+    the_end = std::max(the_start, (prefix_score > max_score) ? (i) : (the_end));
+    max_score = std::max(max_score, prefix_score);
   }
 
-  // check if errors are in the 5' end
-  score_t cur = 0;
-  for (cur = 0; cur < diffs &&
-      ((*(t_beg + cur) & *(q_beg + cur)) == 0); ++cur);
-  if (cur == diffs){
-    t_pos += diffs;
-    len = lim - diffs;
-    cigar = std::to_string(diffs) + 'S' +
-            std::to_string(lim - diffs) + 'M';
-    return lim - diffs; // all diffs were soft clipped
-  }
-
-  // check if errors are in the 3' end
-  cur = 0;
-  for (size_t i = lim - diffs; cur < diffs &&
-      ((*(t_beg + i) & *(q_beg + i)) == 0); ++cur, ++i);
-
-  if (cur == diffs){
-    t_pos += diffs;
-    len = lim - diffs;
-
-    cigar = std::to_string(lim - diffs) + 'M' +
-            std::to_string(diffs) + 'S';
-    return lim - diffs; // all diffs were soft clipped
-  }
-
-  // accept Hamming distance and do not align
-  len = lim;
+  len = the_end - the_start + 1;
+  t_pos += the_start;
   make_default_cigar(len, cigar);
-  return lim - 2*diffs;
+  if (the_start > 0)
+    cigar = std::to_string(the_start) + 'S' + cigar;
+
+  const score_t three_prime_clip = lim - 1 - the_end;
+  if (three_prime_clip > 0)
+    cigar = cigar + std::to_string(three_prime_clip) + 'S';
+
+  return max_score;
 }
 
 template <score_t (*scr_fun)(const uint8_t, const uint8_t), score_t indel_pen>
@@ -219,7 +203,6 @@ score_t
 AbismalAlign<scr_fun, indel_pen>::align(const std::vector<uint8_t> &qseq,
                                         uint32_t &t_pos, uint32_t &len,
                                         std::string &cigar) {
-
   std::fill(std::begin(table), std::end(table), 0);
   std::fill(std::begin(traceback), std::end(traceback), ' ');
 
@@ -291,7 +274,7 @@ namespace simple_aln {
   static const score_t match = 1;
   static const score_t mismatch = -1;
   static const score_t indel = -1;
-  static const score_t min_diffs_to_align = 1;
+  static const score_t min_diffs_to_align = 6;
   static const std::array<score_t, 2> score_lookup = {match, mismatch};
 
   inline score_t default_score(const uint32_t len, const score_t diffs) {
@@ -334,6 +317,16 @@ namespace simple_aln {
     const score_t mism = (match*(len - ins) - A)/(match - mismatch);
 
     return mism + ins + del;
+  }
+
+  inline score_t
+  best_single_score(const uint32_t readlen) {
+    return match*readlen;
+  }
+
+  inline score_t
+  best_pair_score(const uint32_t readlen1, const uint32_t readlen2) {
+    return match*(readlen1 + readlen2);
   }
 };
 
