@@ -358,7 +358,7 @@ The first eleven fields are mandatory SAM fields:
    otherwise.  For discordant or single-end reads a value of 0 is
    reported.
  - SEQ: The input sequence identical to the FASTQ input (see
-   "important note on SEQ reaads reported in the SAM output" below)
+   "important note on SEQ reads reported in the SAM output" below)
  - QUAL: An asterisk (*). QUAL values are discarded on mapping and
    not reported
 
@@ -385,6 +385,35 @@ in the CV tag. This standard allows downstream analyses on letter
 frequencies and conversion types.  Tools to reverse-complement the SEQ
 field and the letter in the CV tag can be used if properly formatted
 SAM files are necessary.
+
+## Filtering concordant/discordant pairs in paired-end SAM
+
+In paired-end mapping, abismal will try to mate concordant pairs and
+find pairs whose sum of edit distances is below the user-defined
+cut-off (set to 10\% of the mapped read length by default). If it
+cannot find such concordant pair (either due to ambiguity or low
+alignment score), abismal will map each end as single-end reads and
+report locations with sufficiently high similarity. In many cases, one
+may want to only keep concordant pairs, or even isolate discordant
+pairs to analyze their sequence patterns, mapping quality, etc.
+
+To isolate concordant pairs from paired-end output `out.sam`, use the
+following awk script, which isolates the SAM header and reads with an
+equal (=) symbol in the RNEXT field (reserved only for concordant
+pairs).
+```
+awk '$1 ~ /^@/ || $7 == "="' out.sam >out_paired.sam
+```
+
+To isolate discordantly mapped reads from paired-end output `out.sam`,
+use the following awk script, which isolates the SAM header and reads
+with an asterisk (*) in the RNEXT field (reserved for discordantly
+mapped reads).
+```
+awk '$1 ~ /^@/ || $7 == "*"' out.sam >out_single.sam
+```
+
+
 
 # NOTATION USED BY ABISMAL
 
