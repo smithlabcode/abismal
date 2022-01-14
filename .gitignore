@@ -1,0 +1,12 @@
+*
+!.gitignore
+!docs/*
+!src
+!src/*pp
+!m4
+!src/smithlab_cpp/*pp
+!Makefile
+!Makefile.am
+!configure.ac
+!README.md
+!LICENSE
