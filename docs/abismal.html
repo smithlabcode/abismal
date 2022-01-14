@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html  dir="ltr">
+
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>abismal reference manual</title>
+        <link rel="shortcut icon" href="images/favicon.ico" type="image/x-icon">
+        <link rel="apple-touch-icon-precomposed" href="images/apple-touch-icon.png">
+
+        <link rel="stylesheet" href="style.css">
+        <script src="https://code.jquery.com/jquery-2.2.1.min.js"></script>
+        <!-- <script src="uikit.js"></script> -->
+        <script src="https://cdn.rawgit.com/diversen/pandoc-uikit/master/uikit.js"></script>
+        <!-- <script src="scripts.js"></script> -->
+        <script src="https://cdn.rawgit.com/diversen/pandoc-uikit/master/scripts.js"></script>
+        <!-- <script src="jquery.sticky-kit.js "></script> -->
+        <script src="https://cdn.rawgit.com/diversen/pandoc-uikit/master/jquery.sticky-kit.js"></script>
+
+
+        <meta name="generator" content="pandoc-uikit" />
+                <meta name="author" content="Guilherme Sena" />
+                        <title>abismal reference manual</title>
+        <style type="text/css">code{white-space: pre;}</style>
+                                                       
+    </head>
+
+    <body>
+
+
+        <div class="uk-container uk-container-center uk-margin-top uk-margin-large-bottom">
+
+                        <div class="uk-grid" data-uk-grid-margin>
+                <div class="uk-width-1-1">
+                    <h1 class="uk-heading-large">abismal reference manual</h1>
+                                                            <p class="uk-text-large">Guilherme Sena</p>
+                                    </div>
+            </div>
+            
+            <div class="uk-grid" data-uk-grid-margin >          
+                <div class="uk-width-medium-1-4">
+                    <div class="uk-overflow-container" data-uk-sticky="{top:25,media: 768}">
+                        <div class="uk-panel uk-panel-box menu-begin" >
+
+                                                        <ul>
+                                                        <li><a href="#name">NAME</a></li>
+                                                        <li><a href="#synopsis">SYNOPSIS</a>
+                                                        <ul>
+                                                        <li><a href="#examples">Examples</a></li>
+                                                        </ul></li>
+                                                        <li><a href="#description">DESCRIPTION</a></li>
+                                                        <li><a href="#quick-installation">QUICK INSTALLATION</a></li>
+                                                        <li><a href="#options">OPTIONS</a></li>
+                                                        <li><a href="#input-fastq-format">INPUT FASTQ FORMAT</a></li>
+                                                        <li><a href="#output-sam-format">OUTPUT SAM FORMAT</a>
+                                                        <ul>
+                                                        <li><a href="#output-headers">Output headers</a></li>
+                                                        <li><a href="#output-mapped-lines">Output mapped lines</a></li>
+                                                        <li><a href="#important-note-on-seq-reads-reported-in-the-sam-output">IMPORTANT NOTE ON SEQ READS REPORTED IN THE SAM OUTPUT</a></li>
+                                                        </ul></li>
+                                                        <li><a href="#notation-used-by-abismal">NOTATION USED BY ABISMAL</a>
+                                                        <ul>
+                                                        <li><a href="#t-rich-and-a-rich-reads">T-rich and A-rich reads</a></li>
+                                                        <li><a href="#traditional-pbat-and-rpbat-reads">Traditional, PBAT and RPBAT reads</a>
+                                                        <ul>
+                                                        <li><a href="#what-if-the-protocol-traditional-pbat-rpbat-is-not-known">What if the protocol (traditional, PBAT, RPBAT) is not known?</a></li>
+                                                        </ul></li>
+                                                        <li><a href="#valid-hits">Valid hits</a></li>
+                                                        <li><a href="#alignment-scores-and-edit-distances">Alignment scores and edit distances</a></li>
+                                                        <li><a href="#valid-alignments">Valid alignments</a></li>
+                                                        <li><a href="#concordant-pairs">Concordant pairs</a></li>
+                                                        <li><a href="#discordant-pairs">Discordant pairs</a></li>
+                                                        <li><a href="#reporting-non-concordant-reads">Reporting non-concordant reads</a></li>
+                                                        </ul></li>
+                                                        <li><a href="#exit-values">EXIT VALUES</a></li>
+                                                        <li><a href="#reporting-bugs">REPORTING BUGS</a></li>
+                                                        <li><a href="#copyright">COPYRIGHT</a></li>
+                                                        </ul>
+                            
+                        </div>
+                    </div>
+                </div>
+
+                <div class="uk-width-medium-3-4">
+<h1 id="name">NAME</h1>
+<p>abismal - a fast and memory-efficient mapper for short whole genome bisulfite sequencing reads. Official release, discussion, source code and development versions are available at the abismal GitHub <a href="https://github.com/smithlabcode/abismal">repo</a>.</p>
+<h1 id="synopsis">SYNOPSIS</h1>
+<p>abismal <a href="#options">OPTIONS</a> &lt;input-1.fastq&gt; [&lt;input-2.fastq&gt;]</p>
+<h2 id="examples">Examples</h2>
+<pre><code>abismal -g ref.fa -o out.sam [-s out.stats] reads-1.fq
+abismal -g ref.fa -o out.sam [-s out.stats] reads-1.fq reads-2.fq</code></pre>
+<p>If a ref.idx file was created using abismalidx:</p>
+<pre><code>abismal -i ref.idx -o out.sam [-s out.stats] reads-1.fq
+abismal -i ref.idx -o out.sam [-s out.stats] reads-1.fq reads-2.fq</code></pre>
+<h1 id="description">DESCRIPTION</h1>
+<p>abismal maps short bisulfite sequencing reads in FASTQ format to a reference genome in FASTA format and produces an output file in SAM format. Only reads that are mapped uniquely or ambiguously (optional) are reported in the SAM output.</p>
+<p>abismal can map reads assuming either C&gt;T or G&gt;A conversion in single-end reads. Both conversions are also accepted in paired-end mapping, but corresponding read pairs are assume to have complementary base conversions. The assumption of C&gt;T conversion means Ts in the read are considered matches to either Cs or Ts in the reference (in either strand). The assumption of G&gt;A conversion means that As in reads are considered matches to either Gs or As in the reference.</p>
+<p>absimal was built to map short reads of up to 250 bases. It should successfully map reads of size up to 1 million, but because it uses very short seeds for filtration, the mapping time will increase substantially.</p>
+<h1 id="quick-installation">QUICK INSTALLATION</h1>
+<p>Run the following commands to install abismal</p>
+<pre><code>wget https://github.com/smithlabcode/abismal/releases/download/v1.0.0/abismal-1.0.0.tar.gz
+tar -xvzf abismal-1.0.0.tar.gz
+cd abismal-1.0.0
+./configure --prefix=$(pwd)
+make
+make install</code></pre>
+<p>This will create a bin directory where binaries abismalidx and abismal are located. The abismalidx program indexes a FASTA reference genome, and abismal maps FASTQ reads to a reference.</p>
+<h1 id="options">OPTIONS</h1>
+<p>-i FILE, -index FILE [required if -g not provided]</p>
+<p>Input index file generated by abismalidx. Either the -g or -i parameter must be provided (but not both). If -g is provided, abismal will read the indexed genome before starting to map reads. Using -i is recommended if several FASTQ files are mapped to the same genome.</p>
+<p>-g FILE, -genome FILE [required if -i not provided]</p>
+<p>Input FASTA genome. Either the -g or -i parameter must be provided (but not both). If -g is provided, abismal will first index the input FASTA genome before starting to map reads. Using -g is recommended if only one sample will be mapped to a reference genome. In most practical cases, however, it is preferable to first index the genome using abismalidx, then using the output index file as input through the -i flag.</p>
+<p>-o FILE, -outfile FILE</p>
+<p>Output file in SAM format. If not provided, output will be printed to STDOUT, which can be piped to other tools like samtools (e.g. to convert output to BAM)</p>
+<p>-s FILE, -stats FILE</p>
+<p>Output mapping statistics file in YAML format. This file provides a summary of mapping efficiency, detailing how many reads were zero, one or multiple times. It also provides the error rate of mapped reads and the number of reads that were too short to be mapped</p>
+<p>The output is in YAML format, which is human-readable and can be parsed in several programming languages.</p>
+<p>For single-end reads the statistics looks something like this:</p>
+<pre><code>total_reads: 1000000
+mapped:
+    num_mapped: 954620
+    num_unique: 856108
+    num_ambiguous: 98512
+    percent_mapped: 95.462
+    percent_unique: 85.6108
+    percent_ambiguous: 9.8512
+    unique_error:
+        edits: 762988
+        total_bases: 85610800
+        error_rate: 0.891229
+num_unmapped: 45380
+num_skipped: 0
+percent_unmapped: 4.538
+percent_skipped: 0</code></pre>
+<p>For paired-end reads it looks like this:</p>
+<pre><code>pairs:
+    total_pairs: 1000000
+    mapped:
+        num_mapped: 783009
+        num_unique: 720655
+        num_ambiguous: 62354
+        percent_mapped: 78.3009
+        percent_unique: 72.0655
+        percent_ambiguous: 6.2354
+        unique_error:
+            edits: 1042712
+            total_bases: 144131000
+            error_rate: 0.723447
+    num_unmapped: 216991
+    num_discordant: 16085
+    percent_unmapped: 21.6991
+    percent_discordant: 1.6085
+mate1:
+    total_reads: 279345
+    mapped:
+        num_mapped: 175933
+        num_unique: 103058
+        num_ambiguous: 72875
+        percent_mapped: 62.9805
+        percent_unique: 36.8927
+        percent_ambiguous: 26.0878
+        unique_error:
+            edits: 180656
+            total_bases: 10305800
+            error_rate: 1.75295
+    num_unmapped: 103412
+    num_skipped: 0
+    percent_unmapped: 37.0195
+    percent_skipped: 0
+mate2:
+    total_reads: 279345
+    mapped:
+        num_mapped: 115030
+        num_unique: 43807
+        num_ambiguous: 71223
+        percent_mapped: 41.1785
+        percent_unique: 15.682
+        percent_ambiguous: 25.4964
+        unique_error:
+            edits: 55687
+            total_bases: 4380700
+            error_rate: 1.27119
+    num_unmapped: 164315
+    num_skipped: 0
+    percent_unmapped: 58.8215
+    percent_skipped: 0</code></pre>
+<p>-t NUM-THREADS, -threads NUM-THREADS [default : 1]</p>
+<p>number of threads that should be used to map reads. Each thread reads 1000 reads in parallel, so increasing this number uses more memory by a few kilobytes per additional thread. In most practical cases this should not be significantly different than single-thread mapping.</p>
+<p>-l MIN-FRAG-VALUE, -min-frag MIN-FRAG-VALUE [default : 32]</p>
+<p><strong>For paired-end mode only</strong>. The minimum size a concordant fragment can have. There are cases in which concordant pairs can “dovetail”, that is, the end of the reverse mate can pass the start of the forward mate. Ths parameter dictates the minimum size a dovetail read can have while accepting concordance. The schematic below depicts what the value of -l represents:</p>
+<pre><code>                    [==================================&gt;] [FORWARD MATE]
+[&lt;==================================] [REVERSE MATE]
+                    |-------l-------|</code></pre>
+<p>-L MAX-FRAG-VALUE, -max-frag MAX-FRAG-VALUE [default : 3000]</p>
+<p><strong>For paired-end mode only</strong>. The maximum size a concordant fragment, defined as the maximum distance between the genome start (smallest) coordinate of the forward mapped mate and the start (largest) coordinate of the reverse mapped strand, for a pair to be considered concordant. The schematic below depics how L is calculated.</p>
+<pre><code>[===============&gt;] [FORWARD MATE]
+                                         [&lt;==============] [REVERSE MATE]
+|---------------------------L----------------------------|</code></pre>
+<p>-m MAX-FRACTION, -max-distance MAX-FRACTION [default : 0.1]</p>
+<p>The maximum edit distance allowed for a read to be considered “mapped”, relative to the read’s mapped length. Abismal will choose the location in the genome with maximum alignment score. This location will be reported if the number of mismatches, insertions and deletions is at most -m times the mapped region of the read (i.e. excluding soft-clipped bases). For instance, if a read of 150 bp is mapped to a location with CIGAR string 20S100M30S, the read is allowed to have at most 10 mismatches.</p>
+<p>-a -ambig</p>
+<p>If this flag is provided, abismal will report a random location to reads that mapped ambiguously. These reads can be identified by the presence of bit 0x100 in the SAM flags.</p>
+<p>-P -pbat</p>
+<p><strong>For paired-end mapping only</strong>. Assumes the bisulfite conversion of the first end to be G&gt;A and the bisulfite conversion of the second end to be C&gt;T.</p>
+<p>-R -random-pbat</p>
+<p>Maps reads in random PBAT mode.</p>
+<p>For single-end mapping, abismal will attempt to map reads assuming C&gt;T conversion, then G&gt;A, and keeping the conversion that attains the best alignment score.</p>
+<p>For paired-end mapping, abismal will attempt to map reads assuming end 1 has C&gt;T conversion and end 2 has G&gt;A conversion. Then it will map the same reads assuming end 1 has G&gt;A conversion. The conversion that attains highest sum of alignment scores is kept.</p>
+<p>-A -a-rich</p>
+<p><strong>For single-end mapping only</strong>. Indicates that reads are A-rich. Mapping with this flags assumes that the bisulfite conversion is G&gt;A instead of C&gt;T.</p>
+<p>-v -verbose</p>
+<p>Prints more run info on the mapping progress, including a progress bar showing the percentage of input reads currently processed.</p>
+<h1 id="input-fastq-format">INPUT FASTQ FORMAT</h1>
+<p>abismal accepts reads in either FASTQ or FASTQ.GZ formats. The FASTQ format represents reads through 4 lines per read.</p>
+<ul>
+<li>The first line is the read name and has to start with the @ character.</li>
+<li>The second line is the read itself. Read charcters must beither A, C, G, T or N, in lowercase or uppercase.</li>
+<li>The third line is ignored. It usually starts with the + character.</li>
+<li>The fourth line is the Phred quality of each base in the read. It must be the same length as the second line. It is also ignored by the abismal algorithm.</li>
+</ul>
+<p>An example FASTQ file with one read looks like this:</p>
+<pre><code>@1_chr3:131015484-131015553_R1
+TTTATTAGGTAAGAAGGATAATAAGGGAGTTGAGTTTATGTGTTATAGAG
++
+IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII</code></pre>
+<p>Because reads take 4 lines per entry, the number of lines of the FASTQ input must be a multiple of 4. This is a necessary but not sufficient condition for properly formatted FASTQ.</p>
+<p>For paired-end data, it is mandatory that both FASTQ ends have the same number of lines. Corresponding entries in each file are assumed to be mates.</p>
+<h1 id="output-sam-format">OUTPUT SAM FORMAT</h1>
+<h2 id="output-headers">Output headers</h2>
+<p>abismal representes mapped reads in the Sequence Alignment/Map (SAM) format. Detailed specification of SAM is available at <a href="https://samtools.github.io">the samtools documentation page</a>.</p>
+<p>The output starts with SAM headers. Headers contain metadata information on the reference genome. Each header line starts with the @ character.</p>
+<p>The first line in the SAM output file is given by</p>
+<pre><code>@HD VN:1.0</code></pre>
+<p>followed by one line per chromosome in the input FASTA file, encoding the chromosome length. Each line is in the format</p>
+<pre><code>@SQ SN:[chrom-name] LN:[chrom-length]</code></pre>
+<p>where [chrom-name] is given by the first word of the chromosome name in the FASTA file (anything after the first white space is deleted), and [chrom-length] is the number of bases in the chromosome sequence.</p>
+<p>The last line of the headers is a copy of how the program was called to generate the SAM output, and is of the form</p>
+<pre><code>@PG ID:ABISMAL  VN:1.0.0  CL:&quot;[command-call]&quot;</code></pre>
+<p>where [command-call] is the shell command used to run abismal.</p>
+<h2 id="output-mapped-lines">Output mapped lines</h2>
+<p>Following the header lines, reads that are mapped once (or at least once if the -a flag is used) are reported. Each read is a set of thirteen tab-separated fields as follows.</p>
+<p>The first eleven fields are mandatory SAM fields:</p>
+<ul>
+<li>QNAME: The query name, given by the first word of the FASTQ read name</li>
+<li>FLAG: List of samtools flags, according to the SAM file format documentation</li>
+<li>RNAME: The reference name, or the chromosome to which the read was mapped</li>
+<li>POS: 1-based position in the chromosome in which the read was mapepd</li>
+<li>MAPQ: Abismal does not provide MAPQ, so this value is always set to 255 (“not defined” according to the SAM documentation)</li>
+<li>CIGAR: A CIGAR string representing the read alignment. M stands for matches, S are soft-clipped bases, I are insertions to the reference and D are deletions from the reference</li>
+<li>RNEXT: This field is an equal sign (=) for reads that mapped concordantly or an asterisk (*) for single-end reads or reads that map discordantly.</li>
+<li>PNEXT: The position (POS field) of the read’s mate. In single-end reads this is given by an asterisk (*)</li>
+<li>TLEN: The fragment length for paired-end reads. It is a positive value for if the first end maps to the forward strand and negative otherwise. For discordant or single-end reads a value of 0 is reported.</li>
+<li>SEQ: The input sequence identical to the FASTQ input (see “important note on SEQ reaads reported in the SAM output” below)</li>
+<li>QUAL: An asterisk (*). QUAL values are discarded on mapping and not reported</li>
+</ul>
+<p>The last two fields are optional tags that can be used downstream</p>
+<ul>
+<li>NM: The edit distance (mismatches + insertions + deletions) in the alignment between the read and reference</li>
+<li>CV: The bisulfite letter conversion assumed when mapping the read. If the read was assumed A-rich (G&gt;A conversion), the value CV:A:A is reported. If the read was assumed T-rich (C&gt;T conversion), then the value CV:A:T is reported. If the -R flag is not set, all reads coming from the same FASTQ file will have the same assumed conversion. If the -R flag is used, this tag provides the conversion used in the reported alignment.</li>
+</ul>
+<h2 id="important-note-on-seq-reads-reported-in-the-sam-output">IMPORTANT NOTE ON SEQ READS REPORTED IN THE SAM OUTPUT</h2>
+<p>In a strict sense, the SEQ field reported by abismal does not comply with the SAM standard. Properly formatted SAM files reverse-complement reads that map to the reverse strand of the reference genome, whereas abismal reports reads identical to the input FASTQ. This is done deliberately to maintain consistency with the conversion type reported in the CV tag. This standard allows downstream analyses on letter frequencies and conversion types. Tools to reverse-complement the SEQ field and the letter in the CV tag can be used if properly formatted SAM files are necessary.</p>
+<h1 id="notation-used-by-abismal">NOTATION USED BY ABISMAL</h1>
+<p>Below we explain in more detail some of the notation used in the abismal options.</p>
+<h2 id="t-rich-and-a-rich-reads">T-rich and A-rich reads</h2>
+<p>Abismal uses the notation of T-rich and A-rich reads for input reads. We say a read is T-rich if it was sequenced directly after bisulfite conversion, and we say a read is A-rich if it the complement of the bisulfite-converted DNA was sequenced. Single-end and end 1 of paired-end reads are usually T-rich, and end 2 of paired-end reads are usually A-rich.</p>
+<p>For most organisms, we can infer if an input is T-rich based on the frequencies of Ts and Cs (for animal samples and most plants). Half of the T-rich bases should be Ts, and the frequency of Cs should be extremely low. Conversely, in A-rich samples half of the bases are As, and the frequency of Gs is very low. If neither case applies for the dataset, it may be either an RPBAT sample or not a bisulfite sequencing sample (see “notation used by abismal” below for a description of what RPBAT samples are)</p>
+<h2 id="traditional-pbat-and-rpbat-reads">Traditional, PBAT and RPBAT reads</h2>
+<p>Reads that follow the expected T-rich/A-rich convention are called traditional. Inputs are assumed traditional by default. In other words, if no flags are provided, A single-end input, as well as end 1 of paired-end reads, will be assumed T-rich, and end 2 will be assumed A-rich.</p>
+<p>We say reads are PBAT (often from the Post-Bisulfite Adapter Tagging protocol) if they follow the opposite convention of traditional reads. This means that a PBAT single-end input is A-rich, and a PBAT paired-end input is A-rich in end 1 and T-rich in end 2. Reads can be mapped in PBAT mode by using the -p flag or the -pbat flag among the <a href="#options">options</a>.</p>
+<p>We say reads are RPBAT (from the Random-priming PBAT protocol) if reads in the input can be T-rich or A-rich with equal probability, and both must be tried. For paired-end input, we always assume that corresponding ends of reads have complementary bisulfite bases. In other words, if end 1 is T-rich, then end 2 is A-rich, and vice-versa. Reads can be mapped as RPBAT by passing the -R flag or the -random-pbat flag among the <a href="#options">options</a>.</p>
+<h3 id="what-if-the-protocol-traditional-pbat-rpbat-is-not-known">What if the protocol (traditional, PBAT, RPBAT) is not known?</h3>
+<p>If the sequencing protocol is not known, we suggest trying all 3 possibilities. You will always get most reads by mapping as RPBAT, but that does not mean this is always the best option. For instance, if reads come from the traditional single-end protocol, the reads mapped as A-rich may be false positives and lead to incorrect downstream analyses. You should only map as RPBAT if you are getting very low mapping values in both traditional and PBAT modes, which suggests that reads are truly RPBAT.</p>
+<h2 id="valid-hits">Valid hits</h2>
+<p>Abismal maps reads by first computing Hamming distances between the read and the candidates retrieved during seeding. Hamming distance is the number of mismatches between the read and the candidate, so no insertions and deletions are made. We say a candidate is a valid hit for a read if the Hamming distance is below 40% of the read length. Hits that are not valid will not be aligned, as they are extremely unlikely to yield high alignment scores.</p>
+<h2 id="alignment-scores-and-edit-distances">Alignment scores and edit distances</h2>
+<p>Abismal aligns reads through a banded Smith-Waterman alignment, using a band width of 3. We use a scoring system of +1 for matches, -1 for mismatches and -1 for indels. In other words, if an alignment has M matches, m mismatches, I insertions and D deletions, the alignment score A is given by</p>
+<p>A = M - m - I - D</p>
+<p>and the edit distance E is given by</p>
+<pre><code>A = m + I + D</code></pre>
+<p>Abismal selects the best alignment score, and only reports it if the edit distance is below a fraction m (set under the -m or -max-fraction flag) of the read length. For example, if the read length is 100 and m =0.1, the read is only reported if the edit distance is at most 10.</p>
+<p>We also note that abismal does not use phred quality scores in alignment, so a mismatch on a low quality base is the same as a mismatch in a high-quality base.</p>
+<h2 id="valid-alignments">Valid alignments</h2>
+<p>We say a candidate is a valid alignment if the edit distance is at most a fraction m of the read length. The acceptable fraction can be set through the -m or -max-distance flag in <a href="#options">options</a>. Some application-specific cases may require more or less acceptable error, so this parameter can be adjusted by the user.</p>
+<h2 id="concordant-pairs">Concordant pairs</h2>
+<p>On paired-end input, we say reads r1 and r2 with lengths n1 and n2, respectively, are a corresponding pair are concordant if there exist positions p1 and p2 such that</p>
+<ol type="1">
+<li>p1 is a valid alignment for r1 and p2 is a valid alignment for r2</li>
+<li>p1 and p2 are in opposite strands of the genome, and</li>
+<li>p2 - p1 &gt;= l and p2 - p1 &lt;= L - n2.</li>
+</ol>
+<p>This means that the fragment lengths from which the pair originates is at least l and at most L. The default values of l and L are 32 and 3000, respectively, and can be set by the -l and -L flags. Those are conservative values that cover most of the current protocols. We will incorporate automatic calculations of these values in the future based on the first high-quality read pairs that are mapped.</p>
+<h2 id="discordant-pairs">Discordant pairs</h2>
+<p>We say a read pair is discordant if the following 3 conditions are met simultaneously</p>
+<ol type="1">
+<li>It is not concordant,</li>
+<li>The best mapping position of each end is unique,</li>
+<li>The best mapping position of each end is a valid alignment.</li>
+</ol>
+<h2 id="reporting-non-concordant-reads">Reporting non-concordant reads</h2>
+<p>Read pairs that are not concordant (including discordant reads) do not follow the expectations, but in cases where they map with high quality, they will be reported. If read pairs are not concordant, abismal maps each end independently as single-end reads. If users do not which to keep single-end alignments in paired-end data, they can filter out single-end reads of an output file out.sam though the following command.</p>
+<pre><code>samtools view out.sam | awk &#39;$7 == &quot;=&quot;&#39; &gt;out_paired.sam</code></pre>
+<p>The resulting file (out_paired.sam) will contain only concordant pairs.</p>
+<h1 id="exit-values">EXIT VALUES</h1>
+<p>0 : Success.</p>
+<p>1 : Runtime error. When the program, fails, an error message will be shown in STDERR describing the problem encountered.</p>
+<h1 id="reporting-bugs">REPORTING BUGS</h1>
+<p>Bugs can be reported at the abismal GitHub page at the <a href="https://github.com/smithlabcode/abismal/issues">issues section</a>. the abismal GitHub page) as well as by e-mail to desenabr@usc.edu or andrewds@usc.edu. When reporting bugs, please provide the version of abismal used and the operating system used to run abismal. It is also helpful, when relevant, to provide small input datasets and the genome used so we can reproduce the issue and find the source of the problem.</p>
+<h1 id="copyright">COPYRIGHT</h1>
+<p>Copyright (C) 2018-2021 Andrew D. Smith and Guilherme Sena</p>
+<p>abismal is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.</p>
+<p>abismal is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.</p>                    
+                </div>
+            </div>
+
+            <script src="https://vjs.zencdn.net/5.4.4/video.js"></script>
+        </div>
+    </body>
+</html>
