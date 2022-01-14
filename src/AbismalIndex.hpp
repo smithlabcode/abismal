@@ -27,6 +27,7 @@
 #include <deque>
 #include <bitset>
 #include <cassert>
+#include <climits>
 
 #include "smithlab_utils.hpp"
 
@@ -36,7 +37,9 @@ static inline char random_base() {return "ACGT"[rand() & 3];}
 namespace seed {
   // number of positions in the hashed portion of the seed
   static const uint32_t key_weight = 25u;
-  static const uint32_t n_dp_positions = 30u;
+
+  // k-mer size selected from reads
+  static const uint32_t n_seed_positions = 30u;
 
   // window in which we select the best k-mer. The longer it is,
   // the longer the minimum read length that guarantees an exact
@@ -44,7 +47,7 @@ namespace seed {
   static const uint32_t window_size = 10u;
 
   // number of positions to sort within buckets
-  static const uint32_t n_sorting_positions = 200u;
+  static const uint32_t n_sorting_positions = 256u;
 
   static const size_t hash_mask = (1ull << seed::key_weight) - 1;
 
@@ -52,7 +55,8 @@ namespace seed {
   // concatenated genome is so that later we can avoid having to check
   // the (unlikely) case that a read maps partly off either end of the
   // genome.
-  static const size_t padding_size = 1048576ull; // 2^20
+  static const size_t padding_size =
+    std::numeric_limits<int16_t>::max();
 
   void read(FILE* in);
   void write(FILE* out);
@@ -140,45 +144,50 @@ struct AbismalIndex {
 
   static bool VERBOSE;
 
-  uint32_t max_candidates; // number of hits at which seeds are expanded
+  // max number of hits a small seed can have for comparisons to
+  // be made. Also max number of hits a large seed can have
+  // before we increase the number of stored candidates
+  size_t max_candidates;
 
-  // the default PE heap size estimated from the genome k-mer
-  // frequencies
-  uint32_t pe_heap_size; // number of candidates kept on PE reads
+  // the PE heap size estimated from the genome k-mer frequencies
+  size_t pe_heap_size;
 
   size_t counter_size; // number of kmers indexed
-  size_t index_size; // size of the index
+  size_t index_size; // number of genome positions indexed
 
   std::vector<uint32_t> index; // genome positions for each k-mer
   std::vector<uint32_t> counter; // offset of each k-mer in "index"
   Genome genome; // the genome
-  ChromLookup cl;
+  ChromLookup cl; // the starting position of each chromosome
 
   void create_index(const std::string &genome_file);
 
-  /* count how many positions must be stored for each hash value */
-  void get_bucket_sizes(std::vector<bool> &keep, const uint32_t word_size);
+  // count how many positions must be stored for each hash value
+  void get_bucket_sizes(const uint32_t word_size, const std::vector<bool> &keep);
 
-  /* get index statistics used in mapping */
-  void calc_mapping_parameters(const bool sens);
+  // get max_candidates and heap sizes based on k-mer frequencies
+  void calc_mapping_parameters(const std::vector<bool> &keep);
 
-  /* how much RAM is needed to map reads*/
-  double estimate_ram();
+  // how much RAM is needed to map reads
+  double estimate_ram() const;
 
-  /* select genome positions by dp*/
+  // select genome positions that minimizes sum of frequencies
   void compress_dp(std::vector<bool> &keep);
 
-  /* put genome positions in the appropriate buckets */
+  // put genome positions in the appropriate buckets
   void hash_genome(std::vector<bool> &keep);
 
-  /* Sort each bucket, if the seed length is more than 26, then use
-   * binary search for the rest part of the seed */
+  // Sort each bucket, if the seed length is more than
+  // seed::key_weight, then use binary search for the rest part of the seed
   void sort_buckets();
 
-  /* convert the genome to 4-bit encoding */
+  // convert the genome to 4-bit encoding
   void encode_genome(const std::vector<uint8_t> &input_genome);
 
+  // write index to disk
   void write(const std::string &index_file) const;
+
+  // read index from disk
   void read(const std::string &index_file);
 
   static std::string internal_identifier;
