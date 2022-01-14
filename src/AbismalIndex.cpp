@@ -25,7 +25,11 @@
 #include <fstream>
 #include <stdexcept>
 #include <iterator>
-#include <algorithm>
+#if defined(_OPENMP)
+  #include <parallel/algorithm>
+#else
+  #include <algorithm>
+#endif
 #include <deque>
 #include <fstream>
 #include <utility>
@@ -64,10 +68,13 @@ AbismalIndex::create_index(const string &genome_file) {
   vector<bool> pos_to_keep;
   pos_to_keep.resize(cl.get_genome_size());
   fill(begin(pos_to_keep), end(pos_to_keep), true);
+
+  // keep padding positions out of index
   fill(begin(pos_to_keep), begin(pos_to_keep) + seed::padding_size, false);
   fill(end(pos_to_keep) - seed::padding_size, end(pos_to_keep), false);
 
   compress_dp(pos_to_keep);
+  calc_mapping_parameters(pos_to_keep);
   hash_genome(pos_to_keep);
   sort_buckets();
 }
@@ -83,7 +90,7 @@ AbismalIndex::encode_genome(const vector<uint8_t> &input_genome) {
 }
 
 double
-AbismalIndex::estimate_ram() {
+AbismalIndex::estimate_ram() const {
   size_t num_bytes =
     //64-bit words
     sizeof(size_t)*(genome.size()) +
@@ -113,51 +120,49 @@ get_quantile(const vector<uint32_t> &v, const double q) {
 }
 
 void
-AbismalIndex::calc_mapping_parameters(const bool sens) {
+AbismalIndex::calc_mapping_parameters(const vector<bool> &keep) {
   if (VERBOSE)
     cerr << "[calculating mapping parameters from index]\n";
 
+  get_bucket_sizes(seed::n_seed_positions, keep);
+
   size_t count = 0;
-  const uint32_t num_kmers = (1u << seed::key_weight);
+  const uint32_t num_kmers = (1u << seed::n_seed_positions);
   vector<uint32_t> copy_of_counter(num_kmers, 0u);
   for (uint32_t i = 0; i < num_kmers; ++i) {
-    copy_of_counter[i] = counter[i+1] - counter[i];
+    copy_of_counter[i] = counter[i];
     count += (copy_of_counter[i] != 0);
   }
 
-  // GS: can be __gnu_parallel, but does not compile on OSX
+#if defined(_OPENMP)
+  __gnu_parallel::sort(begin(copy_of_counter), end(copy_of_counter));
+#else
   sort(begin(copy_of_counter), end(copy_of_counter));
+#endif
 
   // cut-off to skip k-mers in sensitive step
-  static const double cand_q_sensitive = 1.0 - 1.0e-5;
-  static const double cand_q = 1.0 - 1e-3;
-  max_candidates =
-    get_quantile(copy_of_counter, sens ? cand_q_sensitive : cand_q);
+  static const double cand_q = 1.0 - 1e-5;
+  max_candidates = get_quantile(copy_of_counter, cand_q);
 
 
   // GS: this definitely has to be more sophisticated and involve
   // some analysis on dead zones. For now it is estimated based on
   // k-mer quantiles as they are somewhat correlated to repeat
   // frequencies.
-  static const double heap_q = 1.0 - 1.0e-3;
-  static const double heap_q_sensitive = 1.0 - 1.0e-4;
-  pe_heap_size =
-    get_quantile(copy_of_counter, sens ? heap_q_sensitive : heap_q);
-
-  cerr << "max candidates: " << max_candidates << endl;
-  cerr << "pe heap size " << pe_heap_size << endl;
+  static const double heap_q = 1.0 - 1.0e-4;
+  pe_heap_size = seed::n_seed_positions*get_quantile(copy_of_counter, heap_q);
 }
 
 inline void
 shift_dp_key(const char c, uint32_t &hash) {
-  static const uint32_t mask = (1u << seed::n_dp_positions) - 1;
+  static const uint32_t mask = (1u << seed::n_seed_positions) - 1;
   hash = ((hash << 1) | get_bit(c)) & mask;
 }
 
 void
-AbismalIndex::get_bucket_sizes(vector<bool> &keep, const uint32_t word_size) {
+AbismalIndex::get_bucket_sizes(const uint32_t word_size, const vector<bool> &keep) {
   counter.clear();
-  const bool do_dp = (word_size == seed::n_dp_positions);
+  const bool do_dp = (word_size == seed::n_seed_positions);
 
   // the "counter" has an additional entry for convenience
   counter_size = (1ull << word_size);
@@ -199,7 +204,7 @@ AbismalIndex::get_bucket_sizes(vector<bool> &keep, const uint32_t word_size) {
 
 void
 AbismalIndex::hash_genome(vector<bool> &keep) {
-  get_bucket_sizes(keep, seed::key_weight);
+  get_bucket_sizes(seed::key_weight, keep);
   /*
   cerr << "[writing reduced counts to counts_reduced.txt]\n";
   write_counts_to_disk("counts_reduced.txt", counter);*/
@@ -271,7 +276,7 @@ add_sol(deque<helper_sol> &helper, const uint32_t pos, const dp_sol cand) {
 void
 AbismalIndex::compress_dp(vector<bool> &keep) {
   // first get bucket sizes and build ranks
-  get_bucket_sizes(keep, seed::n_dp_positions);
+  get_bucket_sizes(seed::n_seed_positions, keep);
 
   fill(begin(keep), end(keep), false);
 
@@ -281,14 +286,14 @@ AbismalIndex::compress_dp(vector<bool> &keep) {
 
   // start building up the hash key
   genome_iterator gi(begin(genome));
-  const auto gi_lim(gi + (seed::n_dp_positions - 1));
+  const auto gi_lim(gi + (seed::n_seed_positions - 1));
   uint32_t hash_key = 0;
   while (gi != gi_lim)
     shift_dp_key(*gi++, hash_key);
 
   // the dp memory allocation
   static const size_t BLOCK_SIZE = 10000000;
-  static const size_t w = seed::n_dp_positions;
+  static const size_t w = seed::n_seed_positions;
   deque<helper_sol> helper;
   vector<dp_sol> opt(BLOCK_SIZE);
 
@@ -441,6 +446,8 @@ AbismalIndex::write(const string &index_file) const {
   cl.write(out);
 
   if (fwrite((char*)&genome[0], sizeof(size_t), genome.size(), out) != genome.size() ||
+      fwrite((char*)&max_candidates, sizeof(size_t), 1, out) != 1 ||
+      fwrite((char*)&pe_heap_size, sizeof(size_t), 1, out) != 1 ||
       fwrite((char*)&counter_size, sizeof(size_t), 1, out) != 1 ||
       fwrite((char*)&index_size, sizeof(size_t), 1, out) != 1 ||
       fwrite((char*)(&counter[0]), sizeof(uint32_t),
@@ -483,6 +490,12 @@ AbismalIndex::read(const string &index_file) {
   genome.resize(genome_to_read);
   if (fread((char*)&genome[0], sizeof(size_t), genome_to_read, in) != genome_to_read)
     throw runtime_error(error_msg);
+
+  // read genome parameters
+  if (fread((char*)&max_candidates, sizeof(size_t), 1, in) != 1 ||
+      fread((char*)&pe_heap_size, sizeof(size_t), 1, in) != 1)
+    throw runtime_error(error_msg);
+
 
   // read the sizes of counter and index vectors
   if (fread((char*)&counter_size, sizeof(size_t), 1, in) != 1 ||
