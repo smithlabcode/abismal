@@ -925,6 +925,7 @@ align_se_candidates(const Read &pread_t, const Read &pread_t_rc,
 
   const score_t readlen = static_cast<score_t>(pread_t.size());
   const score_t max_diffs = valid_diffs_cutoff(readlen, cutoff);
+  const score_t max_scr = simple_aln::best_single_score(readlen);
   if (!res.best.empty()) { // exact match, no need to align
     best = res.best; // ambig info also passed here
     make_default_cigar(readlen, cigar);
@@ -952,7 +953,8 @@ align_se_candidates(const Read &pread_t, const Read &pread_t_rc,
         best_scr = cand_scr;
         best_pos = cand_pos;
       }
-      else if (cand_scr == best_scr && !same_pos(cand_pos, best_pos))
+      else if (cand_scr == best_scr && ((cand_scr == max_scr) ?
+           (cand_pos != best_pos) : !same_pos(cand_pos, best_pos)))
         best.set_ambig();
     }
   }
