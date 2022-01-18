@@ -942,8 +942,7 @@ align_se_candidates(const Read &pread_t, const Read &pread_t_rc,
   for (; it != lim; ++it) {
     if (valid_hit(*it, readlen)) {
       cand_pos = it->pos;
-      const score_t the_diffs = min(it->diffs, max_diffs);
-      const score_t cand_scr = aln.align<false>(the_diffs,
+      const score_t cand_scr = aln.align<false>(it->diffs, max_diffs,
         ((it->rc()) ?
          ((it->elem_is_a_rich()) ? (pread_t_rc) : (pread_a_rc)) :
          ((it->elem_is_a_rich()) ? (pread_a) : (pread_t))), cand_pos);
@@ -959,14 +958,13 @@ align_se_candidates(const Read &pread_t, const Read &pread_t_rc,
   }
 
   if (best.pos != 0) {
-    const score_t the_diffs = min(best.diffs, max_diffs);
     // recovers traceback to build CIGAR
-    aln.align<true>(the_diffs, (best.rc()) ?
+    aln.align<true>(best.diffs, max_diffs, (best.rc()) ?
       ((best.elem_is_a_rich()) ? (pread_t_rc) : (pread_a_rc)) :
       ((best.elem_is_a_rich()) ? (pread_a) : (pread_t)), best.pos);
 
     uint32_t len = 0;
-    aln.build_cigar_len_and_pos(the_diffs, cigar, len, best.pos);
+    aln.build_cigar_len_and_pos(best.diffs, max_diffs, cigar, len, best.pos);
 
     best.diffs = simple_aln::edit_distance(best_scr, len, cigar);
     // do not report and count it as unmapped if not valid
@@ -1276,13 +1274,11 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
     for (; j1 != j1_end && j1->pos + pe_element::min_dist <= lim; ++j1, ++a1) {
       s1 = *j1;
       if (scr2 == 0) { // ensures elements in j2 are aligned only once
-        const score_t the_diffs = min(j2->diffs, max_diffs2);
-        scr2 = aln.align<false>(the_diffs, pread2, s2.pos);
+        scr2 = aln.align<false>(j2->diffs, max_diffs2, pread2, s2.pos);
       }
 
       if (*a1 == 0) { // ensures elements in j1 are aligned only once
-        const score_t the_diffs = min(j1->diffs, max_diffs1);
-        scr1 = aln.align<false>(the_diffs, pread1, s1.pos);
+        scr1 = aln.align<false>(j1->diffs, max_diffs1, pread1, s1.pos);
         *a1 = scr1;
       }
 
@@ -1304,22 +1300,17 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
     s1 = (swap_ends) ? (best.r2) : (best.r1);
     s2 = (swap_ends) ? (best.r1) : (best.r2);
 
-    const score_t the_diffs1 = min(s1.diffs, max_diffs1);
-    const score_t the_diffs2 = min(s2.diffs, max_diffs2);
-
     // re-aligns pos 1 with traceback
-    aln.align<true>(the_diffs1, pread1, best_pos1);
-
     uint32_t len1 = 0;
-    aln.build_cigar_len_and_pos(the_diffs1, cig1, len1, best_pos1);
+    aln.align<true>(s1.diffs, max_diffs1, pread1, best_pos1);
+    aln.build_cigar_len_and_pos(s1.diffs, max_diffs1, cig1, len1, best_pos1);
     s1.pos = best_pos1;
     s1.diffs = simple_aln::edit_distance(best_scr1, len1, cig1);
 
     // re-aligns pos 2 with traceback
-    aln.align<true>(the_diffs2, pread2, best_pos2);
-
     uint32_t len2 = 0;
-    aln.build_cigar_len_and_pos(the_diffs2, cig2, len2, best_pos2);
+    aln.align<true>(s2.diffs, max_diffs2, pread2, best_pos2);
+    aln.build_cigar_len_and_pos(s2.diffs, max_diffs2, cig2, len2, best_pos2);
     s2.pos = best_pos2;
     s2.diffs = simple_aln::edit_distance(best_scr2, len2, cig2);
 
