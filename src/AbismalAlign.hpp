@@ -146,68 +146,82 @@ get_best_score(const std::vector<score_t> &table, const size_t n_col,
   return *best_cell_itr;
 }
 
-// GS: from Wozniak et al 1998. Finds the maximum of two
-// elements (a and b) without branching and stores it in a.
-// Faster than std::max and the ternary operator
 template <class T>
-void
+inline void
 max16(T &a, const T b) {
-  static const int shift = 8*sizeof(T) - 1;
-  a -= b;
-  a = (a & (~(a >> shift))) + b;
+  a = ((a>b) ? a : b);
 }
 
 
 template <score_t (*scr_fun)(const uint8_t, const uint8_t),
-          const bool do_traceback,
+          class T, class QueryConstItr>
+inline void
+from_diag(T next_row, const T next_row_end, T cur_row,
+          QueryConstItr query_seq, uint8_t ref_base) {
+  while (next_row != next_row_end) {
+    const score_t score = scr_fun(*query_seq++, ref_base) + *cur_row++;
+    max16(*next_row++, score);
+  }
+}
+
+template <score_t indel_pen, class T>
+inline void
+from_above(T above_itr, const T above_end, T target) {
+  while (above_itr != above_end) {
+    const score_t score = *above_itr++ + indel_pen;
+    max16(*target++, score);
+  }
+}
+
+// ADS: from_left is the same function as from_above, but uses
+// different order on arguments, so rewritten to be more intuitive.
+template <score_t indel_pen, class T>
+inline void
+from_left(T left_itr, T target, const T target_end) {
+  while (target != target_end) {
+    const score_t score = *left_itr++ + indel_pen;
+    max16(*target++, score);
+  }
+}
+
+
+/********* SAME FUNCTIONS AS ABOVE BUT WITH TRACEBACK ********/
+template <score_t (*scr_fun)(const uint8_t, const uint8_t),
           class T, class QueryConstItr, class U>
 void
 from_diag(T next_row, const T next_row_end, T cur_row,
           QueryConstItr query_seq, uint8_t ref_base, U traceback) {
   while (next_row != next_row_end) {
     const score_t score = scr_fun(*query_seq, ref_base) + *cur_row;
-    //*next_row = max16(score, *next_row);
     max16(*next_row, score);
-    if (do_traceback) {
-      *traceback = (*next_row == score) ? (diag_symbol) : (*traceback);
-      ++traceback;
-    }
-    ++next_row; ++query_seq; ++cur_row;
+    *traceback = (*next_row == score) ? (diag_symbol) : (*traceback);
+    ++traceback; ++next_row; ++query_seq; ++cur_row;
   }
 }
 
-template <score_t indel_pen, const bool do_traceback,
+template <score_t indel_pen,
          class T, class U>
 void
 from_above(T above_itr, const T above_end, T target, U traceback) {
   while (above_itr != above_end) {
     const score_t score = *above_itr + indel_pen;
-    //*target = max16(score, *target);
     max16(*target, score);
-    if (do_traceback) {
-      *traceback = (*target == score) ? (above_symbol) : (*traceback);
-      ++traceback;
-    }
-    ++above_itr; ++target;
+    *traceback = (*target == score) ? (above_symbol) : (*traceback);
+    ++traceback; ++above_itr; ++target;
   }
 }
 
-// ADS: from_left is the same function as from_above, but uses
-// different order on arguments, so rewritten to be more intuitive.
-template <score_t indel_pen, const bool do_traceback, class T, class U>
+template <score_t indel_pen, class T, class U>
 void
 from_left(T left_itr, T target, const T target_end, U traceback) {
   while (target != target_end) {
     const score_t score = *left_itr + indel_pen;
-    //*target = max16(score, *target);
     max16(*target, score);
-    if (do_traceback) {
-      *traceback = (*target == score) ? (left_symbol) : (*traceback);
-      ++traceback;
-    }
-    ++left_itr; ++target;
+    *traceback = (*target == score) ? (left_symbol) : (*traceback);
+    ++traceback; ++left_itr; ++target;
   }
 }
+
 
 inline void
 make_default_cigar(const uint32_t len, std::string &cigar) {
@@ -247,13 +261,20 @@ AbismalAlign<scr_fun, indel_pen>::align(
     const size_t left = (i < bandwidth ? bandwidth - i : 0);
     const size_t right = std::min(bandwidth, t_shift - i);
 
-    if (do_traceback)
-      tb_cur += bandwidth; // next row in traceback
     cur += bandwidth; // next row in aln matrix
-    from_diag<scr_fun, do_traceback>(cur + left, cur + right, prev + left,
-                       q_itr + (i > bandwidth ? i - bandwidth : 0), *t_itr, tb_cur + left);
-    from_above<indel_pen, do_traceback>(prev + left + 1, prev + right, cur + left, tb_cur + left);
-    from_left<indel_pen, do_traceback>(cur + left, cur + left + 1, cur + right, tb_cur + left + 1);
+    if (do_traceback) {
+      tb_cur += bandwidth; // next row in traceback
+      from_diag<scr_fun>(cur + left, cur + right, prev + left,
+                         q_itr + (i > bandwidth ? i - bandwidth : 0), *t_itr, tb_cur + left);
+      from_above<indel_pen>(prev + left + 1, prev + right, cur + left, tb_cur + left);
+      from_left<indel_pen>(cur + left, cur + left + 1, cur + right, tb_cur + left + 1);
+    }
+    else {
+      from_diag<scr_fun>(cur + left, cur + right, prev + left,
+                         q_itr + (i > bandwidth ? i - bandwidth : 0), *t_itr);
+      from_above<indel_pen>(prev + left + 1, prev + right, cur + left);
+      from_left<indel_pen>(cur + left, cur + left + 1, cur + right);
+    }
     ++t_itr;
     prev += bandwidth; // update previous row
   }
