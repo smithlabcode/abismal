@@ -75,21 +75,25 @@ $ abismal [options] -i <index-file> -o <output-file> <read_1.fq> <read_2.fq>
 |option|long version   |arg type |default             |description                           |
 |:-----|:--------------|:--------|------------------:|:--------------------------------------|
 | -i   | -index        | string  |                   | genome index file                     |
-| -g   | -genome      | string   |                   | genome file (FASTA)                   |
+| -g   | -genome       | string  |                   | genome file (FASTA)                   |
 | -o   | -outfile      | string  | stdout            | output file (SAM)                     |
-| -t   | -threads      | integer | 1                 | number of mapping threads             |
-| -b   | -batch        | integer | 20,000            | number of reads to load at once       |
-| -c   | -candidates   | integer | 0 (automatic)     | maximum candidates for comparison     |
-| -p   | -max-mates    | integer | 20                | max number of candidates for mating   |
-| -l   | -min-frag     | integer | 32                | minimum fragment length (PE mode)     |
-| -L   | -max-frag     | integer | 3,000             | maximum fragment length (PE mode)     |
-| -m   | -max-distance | double  | 0.1               | max relative number of errors         |
 | -s   | -stats        | string  |                   | mapping statistics output file (YAML) |
+| -x   | -sensitive    | boolean | false             | run abismal in max sensitivity mode*  |
+| -t   | -threads      | integer | 1                 | number of mapping threads             |
+| -l   | -min-frag     | integer | 32                | minimum fragment length (PE mode)     |
+| -L   | -max-frag     | integer | 3000              | maximum fragment length (PE mode)     |
+| -m   | -max-distance | double  | 0.1               | max relative number of errors         |
 | -a   | -ambig        |         |                   | report a position for ambiguous reads |
 | -P   | -pbat         |         |                   | input follows the PBAT protocol       |
 | -R   | -random-pbat  |         |                   | input follows the random PBAT protocol|
 | -A   | -a-rich       |         |                   | reads are A-rich (SE mode)            |
-| -V   | -verbose      |         |                   | print more run info                   |
+| -v   | -verbose      |         |                   | print more run info                   |
+
+\* in max sensitivity mode, abismal will not skip frequent k-mers when mapping a read. This
+makes abismal 4 to 20 times slower, but may increase the number of mapped reads up to 0.5%.
+Run abismal in this mode if you only plan on mapping your dataset once and will do lots of
+downstream analyses afterwards, or if you are interested in some highly repetitive regions
+of the genome.
 
 ### Examples ###
 
