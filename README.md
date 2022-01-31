@@ -21,6 +21,14 @@ If you have trouble with the `make` part of the installation procedure
 described below, please contact us via e-mail or through a [GitHub
 issue](https://github.com/smithlabcode/abismal/issues).
 
+### Documentation ###
+
+The full documentation for abismal can be found
+[here](https://github.com/smithlabcode/abismal/blob/master/docs/MANUAL.md). This explains
+the use of each parameter in full detail. Below we describe the most common use cases,
+specifically installing the software, indexing a genome and mapping single- and paired-end
+reads.
+
 ### Installation from a clone of the repo ###
 
 (1) make sure you clone with the ``--recursive`` flag, which also
