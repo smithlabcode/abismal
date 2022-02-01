@@ -86,16 +86,16 @@ $ abismal [options] -i <index-file> -o <output-file> <read_1.fq> <read_2.fq>
 | -g   | -genome       | string  |                   | genome file (FASTA)                   |
 | -o   | -outfile      | string  | stdout            | output file (SAM)                     |
 | -s   | -stats        | string  |                   | mapping statistics output file (YAML) |
-| -x   | -sensitive    | boolean | false             | run abismal in max sensitivity mode*  |
+| -x   | -sensitive    | boolean |                   | run abismal in max sensitivity mode*  |
 | -t   | -threads      | integer | 1                 | number of mapping threads             |
 | -l   | -min-frag     | integer | 32                | minimum fragment length (PE mode)     |
 | -L   | -max-frag     | integer | 3000              | maximum fragment length (PE mode)     |
 | -m   | -max-distance | double  | 0.1               | max relative number of errors         |
-| -a   | -ambig        |         |                   | report a position for ambiguous reads |
-| -P   | -pbat         |         |                   | input follows the PBAT protocol       |
-| -R   | -random-pbat  |         |                   | input follows the random PBAT protocol|
-| -A   | -a-rich       |         |                   | reads are A-rich (SE mode)            |
-| -v   | -verbose      |         |                   | print more run info                   |
+| -a   | -ambig        | boolean |                   | report a position for ambiguous reads |
+| -P   | -pbat         | boolean |                   | input follows the PBAT protocol       |
+| -R   | -random-pbat  | boolean |                   | input follows the random PBAT protocol|
+| -A   | -a-rich       | boolean |                   | reads are A-rich (SE mode)            |
+| -v   | -verbose      | boolean |                   | print more run info                   |
 
 \* in max sensitivity mode, abismal will not skip frequent k-mers when mapping a read. This
 makes abismal 4 to 20 times slower, but may increase the number of mapped reads up to 0.5%.
