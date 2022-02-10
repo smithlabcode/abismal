@@ -1781,7 +1781,6 @@ int main(int argc, const char **argv) {
       return EXIT_SUCCESS;
     }
     if (leftover_args.size() != 1 && leftover_args.size() != 2) {
-      cerr << "leftover size = " << leftover_args.size() << endl;
       cerr << opt_parse.help_message() << endl;
       return EXIT_SUCCESS;
     }
