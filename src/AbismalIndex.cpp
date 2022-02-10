@@ -141,16 +141,16 @@ AbismalIndex::calc_mapping_parameters(const vector<bool> &keep) {
 #endif
 
   // cut-off to skip k-mers in sensitive step
-  static const double cand_q = 1.0 - 1e-5;
-  max_candidates = get_quantile(copy_of_counter, cand_q);
+  max_candidates = get_quantile(copy_of_counter,
+      seed::max_candidates_quantile);
 
 
   // GS: this definitely has to be more sophisticated and involve
   // some analysis on dead zones. For now it is estimated based on
   // k-mer quantiles as they are somewhat correlated to repeat
   // frequencies.
-  static const double heap_q = 1.0 - 1.0e-4;
-  pe_heap_size = seed::n_seed_positions*get_quantile(copy_of_counter, heap_q);
+  pe_heap_size = seed::n_seed_positions*get_quantile(copy_of_counter,
+      seed::heap_size_quantile);
 }
 
 inline void

@@ -49,6 +49,13 @@ namespace seed {
   // number of positions to sort within buckets
   static const uint32_t n_sorting_positions = 256u;
 
+  // the k-mer quantile used to estimate the cut-off
+  // to skip frequent small k-mers
+  static const double max_candidates_quantile = 1.0 - 1.0e-5;
+
+  // the k-mer quantile used to estimate the PE heap size
+  static const double heap_size_quantile = 1.0 - 1.0e-4;
+
   static const size_t hash_mask = (1ull << seed::key_weight) - 1;
 
   // the purpose of padding the left and right ends of the
