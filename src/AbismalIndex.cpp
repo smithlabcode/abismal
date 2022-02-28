@@ -151,6 +151,9 @@ AbismalIndex::calc_mapping_parameters(const vector<bool> &keep) {
   // frequencies.
   pe_heap_size = seed::n_seed_positions*get_quantile(copy_of_counter,
       seed::heap_size_quantile);
+
+  cerr << "max candidates estimate: " << max_candidates << "\n";
+  cerr << "pe heap size : " << pe_heap_size << "\n";
 }
 
 inline void
@@ -203,11 +206,18 @@ AbismalIndex::get_bucket_sizes(const uint32_t word_size, const vector<bool> &kee
 }
 
 void
+write_counts_to_disk(const string outfile, const vector<uint32_t> &counter) {
+  ofstream out(outfile);
+  const size_t lim = counter.size();
+  for (size_t i = 0; i < lim; ++i)
+    out << i << " " << counter[i] << "\n";
+}
+
+void
 AbismalIndex::hash_genome(vector<bool> &keep) {
   get_bucket_sizes(seed::key_weight, keep);
-  /*
-  cerr << "[writing reduced counts to counts_reduced.txt]\n";
-  write_counts_to_disk("counts_reduced.txt", counter);*/
+  cerr << "[writing reduced counts to counts.txt]\n";
+  write_counts_to_disk("counts.txt", counter);
 
   if (VERBOSE)
     cerr << "[allocating hash table]" << endl;
@@ -244,33 +254,30 @@ AbismalIndex::hash_genome(vector<bool> &keep) {
 struct dp_sol {
   size_t cost;
   uint32_t prev;
-  dp_sol() {
-    reset();
-  }
-
-  void reset() {
-    cost = std::numeric_limits<uint32_t>::max();
-    prev = std::numeric_limits<uint32_t>::max();
-  }
-
-  dp_sol(const uint32_t c) {}
+  dp_sol() { reset(); }
+  void reset() { cost = INF; prev = NIL; }
+  dp_sol(const uint32_t c) : cost(c), prev(NIL) {}
   dp_sol(const uint32_t c, const uint32_t p) : cost(c), prev(p) {}
+
+  static const size_t INF = std::numeric_limits<size_t>::max();
+  static const uint32_t NIL = std::numeric_limits<uint32_t>::max();
 };
 
 typedef pair<dp_sol, uint32_t> helper_sol;
 
 void
-add_sol(deque<helper_sol> &helper, const uint32_t pos, const dp_sol cand) {
+add_sol(deque<helper_sol> &helper, const uint32_t pos, const dp_sol &cand) {
   while (!helper.empty() && helper.back().first.cost > cand.cost)
     helper.pop_back();
 
   helper.push_back(make_pair(cand, pos));
 
-  while(helper.front().second + seed::window_size < pos)
+  while(helper.front().second + seed::window_size <= pos)
     helper.pop_front();
 
-  //assert(helper.size() <= seed::window_size + 1);
+  //assert(helper.size() <= seed::window_size);
   //assert(!helper.empty());
+  //assert(is_helper_sorted(helper));
 }
 
 void
@@ -278,75 +285,80 @@ AbismalIndex::compress_dp(vector<bool> &keep) {
   // first get bucket sizes and build ranks
   get_bucket_sizes(seed::n_seed_positions, keep);
 
-  fill(begin(keep), end(keep), false);
-
-  const size_t lim = cl.get_genome_size();
-
-  ProgressBar progress(lim, "solving dp");
-
-  // start building up the hash key
-  genome_iterator gi(begin(genome));
-  const auto gi_lim(gi + (seed::n_seed_positions - 1));
-  uint32_t hash_key = 0;
-  while (gi != gi_lim)
-    shift_dp_key(*gi++, hash_key);
-
   // the dp memory allocation
   static const size_t BLOCK_SIZE = 10000000;
   static const size_t w = seed::n_seed_positions;
   deque<helper_sol> helper;
   vector<dp_sol> opt(BLOCK_SIZE);
 
-  size_t beg = 0;
+  // no position is indexed
+  fill(begin(keep), end(keep), false);
+
+  const size_t lim = cl.get_genome_size() - seed::padding_size;
+
+  ProgressBar progress(lim, "solving dp");
+
+  genome_iterator gi(begin(genome));
+  uint32_t hash_key = 0;
+
+  // fast forward padding positions
+  gi = gi + seed::padding_size;
+
+  // build the first hash key minus last base
+  const auto gi_lim(gi + (w - 1));
+  while (gi != gi_lim)
+    shift_dp_key(*gi++, hash_key);
+
+  size_t beg = seed::padding_size;
   while (beg < lim) {
     // the position up to which we will solve
     const size_t fin = min(beg + BLOCK_SIZE, lim);
 
     // the problem size
     const size_t sz = fin - beg;
-    helper.clear();
 
     // resets without needing to reallocate
     for (size_t i = 0; i < sz; ++i)
       opt[i].reset();
 
-    // get the first w positions
-    for (size_t i = 0; i < min(w - 1, sz); ++i) {
+    // get the first w solutions
+    helper.clear();
+    for (size_t i = 0; i < min(w, sz); ++i) {
       shift_dp_key(*gi++, hash_key);
-      add_sol(helper, i, dp_sol(counter[hash_key]));
+      opt[i].cost = counter[hash_key];
+      opt[i].prev = dp_sol::NIL;
+      add_sol(helper, i, opt[i]);
     }
 
-    for (size_t i = w - 1; i < sz; ++i) {
+    // main dp loop
+    for (size_t i = w; i < sz; ++i) {
       if (VERBOSE && progress.time_to_report(beg + i))
         progress.report(cerr, beg + i);
 
-      // update minimizers using k-mer from current base
       shift_dp_key(*gi++, hash_key);
-      add_sol(helper, i, dp_sol(counter[hash_key]));
-
-      // index position
       opt[i].cost = helper.front().first.cost + counter[hash_key];
       opt[i].prev = helper.front().second;
+      add_sol(helper, i, opt[i]);
     }
 
-    // get the final solution
     size_t opt_ans = std::numeric_limits<size_t>::max();
-    uint32_t tb = std::numeric_limits<uint32_t>::max();
+    uint32_t last = dp_sol::NIL;
+
+    // get the final solution
     for (size_t i = 0; i < min(w, sz); ++i) {
-      const size_t cand = opt[sz - i - 1].cost;
-      if (cand < opt_ans) {
-        opt_ans = cand;
-        tb = sz - i - 1;
-      }
+      const uint32_t pos = sz - i - 1;
+      const size_t cand = opt[pos].cost;
+      if (cand < opt_ans) { opt_ans = cand; last = pos; }
     }
 
     // build traceback
-    while (tb != std::numeric_limits<uint32_t>::max()) {
-      keep[beg + tb] = true;
-      tb = opt[tb].prev;
+    while (last != dp_sol::NIL) {
+      keep[beg + last] = true;
+      last = opt[last].prev;
     }
 
-    beg = min(beg + BLOCK_SIZE, lim);
+    // go to next block
+    beg = fin;
   }
 
   if (VERBOSE)
