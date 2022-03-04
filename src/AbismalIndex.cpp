@@ -152,8 +152,6 @@ AbismalIndex::calc_mapping_parameters(const vector<bool> &keep) {
   pe_heap_size = seed::n_seed_positions*get_quantile(copy_of_counter,
       seed::heap_size_quantile);
 
-  cerr << "max candidates estimate: " << max_candidates << "\n";
-  cerr << "pe heap size : " << pe_heap_size << "\n";
 }
 
 inline void
@@ -206,18 +204,8 @@ AbismalIndex::get_bucket_sizes(const uint32_t word_size, const vector<bool> &kee
 }
 
 void
-write_counts_to_disk(const string outfile, const vector<uint32_t> &counter) {
-  ofstream out(outfile);
-  const size_t lim = counter.size();
-  for (size_t i = 0; i < lim; ++i)
-    out << i << " " << counter[i] << "\n";
-}
-
-void
 AbismalIndex::hash_genome(vector<bool> &keep) {
   get_bucket_sizes(seed::key_weight, keep);
-  cerr << "[writing reduced counts to counts.txt]\n";
-  write_counts_to_disk("counts.txt", counter);
 
   if (VERBOSE)
     cerr << "[allocating hash table]" << endl;
@@ -254,10 +242,11 @@ AbismalIndex::hash_genome(vector<bool> &keep) {
 struct dp_sol {
   size_t cost;
   uint32_t prev;
+  uint32_t num;
   dp_sol() { reset(); }
-  void reset() { cost = INF; prev = NIL; }
-  dp_sol(const uint32_t c) : cost(c), prev(NIL) {}
-  dp_sol(const uint32_t c, const uint32_t p) : cost(c), prev(p) {}
+  void reset() { cost = INF; prev = NIL; num = 0; }
+  dp_sol(const uint32_t c) : cost(c), prev(NIL), num(0) {}
+  dp_sol(const uint32_t c, const uint32_t p) : cost(c), prev(p), num(0) {}
 
   static const size_t INF = std::numeric_limits<size_t>::max();
   static const uint32_t NIL = std::numeric_limits<uint32_t>::max();
@@ -272,10 +261,10 @@ add_sol(deque<helper_sol> &helper, const uint32_t pos, const dp_sol &cand) {
 
   helper.push_back(make_pair(cand, pos));
 
-  while(helper.front().second + seed::window_size <= pos)
+  while (helper.front().second + seed::window_size <= pos)
     helper.pop_front();
 
-  //assert(helper.size() <= seed::window_size);
+  assert(helper.size() <= seed::window_size);
   //assert(!helper.empty());
   //assert(is_helper_sorted(helper));
 }
@@ -283,18 +272,17 @@ add_sol(deque<helper_sol> &helper, const uint32_t pos, const dp_sol &cand) {
 void
 AbismalIndex::compress_dp(vector<bool> &keep) {
   // first get bucket sizes and build ranks
-  get_bucket_sizes(seed::n_seed_positions, keep);
+  get_bucket_sizes(seed::key_weight, keep);
 
   // the dp memory allocation
   static const size_t BLOCK_SIZE = 10000000;
-  static const size_t w = seed::n_seed_positions;
   deque<helper_sol> helper;
   vector<dp_sol> opt(BLOCK_SIZE);
 
   // no position is indexed
   fill(begin(keep), end(keep), false);
 
-  const size_t lim = cl.get_genome_size() - seed::padding_size;
+  const size_t lim = cl.get_genome_size() - seed::padding_size - seed::key_weight;
 
   ProgressBar progress(lim, "solving dp");
 
@@ -305,9 +293,9 @@ AbismalIndex::compress_dp(vector<bool> &keep) {
   gi = gi + seed::padding_size;
 
   // build the first hash key minus last base
-  const auto gi_lim(gi + (w - 1));
+  const auto gi_lim(gi + (seed::key_weight - 1));
   while (gi != gi_lim)
-    shift_dp_key(*gi++, hash_key);
+    shift_hash_key(*gi++, hash_key);
 
   size_t beg = seed::padding_size;
   while (beg < lim) {
@@ -323,32 +311,39 @@ AbismalIndex::compress_dp(vector<bool> &keep) {
 
     // get the first w solutions
     helper.clear();
-    for (size_t i = 0; i < min(w, sz); ++i) {
-      shift_dp_key(*gi++, hash_key);
+    for (size_t i = 0; i < seed::window_size; ++i) {
+      shift_hash_key(*gi++, hash_key);
       opt[i].cost = counter[hash_key];
       opt[i].prev = dp_sol::NIL;
+      opt[i].num = 1;
       add_sol(helper, i, opt[i]);
     }
 
     // main dp loop
-    for (size_t i = w; i < sz; ++i) {
+    for (size_t i = seed::window_size; i < sz; ++i) {
       if (VERBOSE && progress.time_to_report(beg + i))
         progress.report(cerr, beg + i);
 
-      shift_dp_key(*gi++, hash_key);
+      shift_hash_key(*gi++, hash_key);
       opt[i].cost = helper.front().first.cost + counter[hash_key];
       opt[i].prev = helper.front().second;
+      opt[i].num = helper.front().first.num + 1;
       add_sol(helper, i, opt[i]);
     }
 
     size_t opt_ans = std::numeric_limits<size_t>::max();
+    size_t opt_num = std::numeric_limits<size_t>::max();
     uint32_t last = dp_sol::NIL;
 
     // get the final solution
-    for (size_t i = 0; i < min(w, sz); ++i) {
-      const uint32_t pos = sz - i - 1;
-      const size_t cand = opt[pos].cost;
-      if (cand < opt_ans) { opt_ans = cand; last = pos; }
+    for (size_t i = sz - 1; i >= sz - seed::window_size; --i) {
+      const size_t cand_cost = opt[i].cost;
+      const size_t cand_num = opt[i].num;
+      if (cand_cost < opt_ans || (cand_cost == opt_ans && cand_num < opt_num)) {
+        opt_ans = cand_cost;
+        opt_num = cand_num;
+        last = i;
+      }
     }
 
     // build traceback
