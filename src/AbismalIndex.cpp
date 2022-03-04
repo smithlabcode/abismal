@@ -124,16 +124,7 @@ AbismalIndex::calc_mapping_parameters(const vector<bool> &keep) {
   if (VERBOSE)
     cerr << "[calculating mapping parameters from index]\n";
 
-  get_bucket_sizes(seed::n_seed_positions, keep);
-
-  size_t count = 0;
-  const uint32_t num_kmers = (1u << seed::n_seed_positions);
-  vector<uint32_t> copy_of_counter(num_kmers, 0u);
-  for (uint32_t i = 0; i < num_kmers; ++i) {
-    copy_of_counter[i] = counter[i];
-    count += (copy_of_counter[i] != 0);
-  }
-
+  vector<uint32_t> copy_of_counter = counter;
 #if defined(_OPENMP)
   __gnu_parallel::sort(begin(copy_of_counter), end(copy_of_counter));
 #else
@@ -152,6 +143,7 @@ AbismalIndex::calc_mapping_parameters(const vector<bool> &keep) {
   pe_heap_size = seed::n_seed_positions*get_quantile(copy_of_counter,
       seed::heap_size_quantile);
 
+  cerr << "cand pe " << max_candidates << " " << pe_heap_size << "\n";
 }
 
 inline void
@@ -275,7 +267,7 @@ AbismalIndex::compress_dp(vector<bool> &keep) {
   get_bucket_sizes(seed::key_weight, keep);
 
   // the dp memory allocation
-  static const size_t BLOCK_SIZE = 10000000;
+  static const size_t BLOCK_SIZE = 1000000;
   deque<helper_sol> helper;
   vector<dp_sol> opt(BLOCK_SIZE);
 
