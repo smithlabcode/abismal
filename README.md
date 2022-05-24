@@ -151,6 +151,16 @@ are explicitly highlighted below:
 ***Andrew D Smith*** *andrewds@usc.edu*
 ***Guilherme Sena*** *desenabr@usc.edu*
 
+### Citation ###
+The abismal manuscript is available
+[here](https://doi.org/10.1093/nargab/lqab115).
+If you used `abismal` to analyze your data, please cite us as follows.
+```
+de Sena Brandine, G., & Smith, A. D. (2021). Fast and memory-efficient
+mapping of short bisulfite sequencing reads using a two-letter
+alphabet. NAR genomics and bioinformatics, 3(4), lqab115.
+```
+
 ### Copyright ###
 
 Copyright (C) 2018-2021 Andrew D. Smith and Guilherme de Sena Brandine
