@@ -49,7 +49,7 @@ substantially.
 
 Run the following commands to install abismal
 ```
-wget https://github.com/smithlabcode/abismal/releases/download/v1.0.0/abismal-1.0.0.tar.gz
+wget https://github.com/smithlabcode/abismal/releases/download/v3.0.0/abismal-3.0.0.tar.gz
 tar -xvzf abismal-1.0.0.tar.gz
 cd abismal-1.0.0
 ./configure --prefix=$(pwd)
