@@ -25,11 +25,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <iterator>
-#if defined(_OPENMP)
-  #include <parallel/algorithm>
-#else
-  #include <algorithm>
-#endif
+#include <algorithm>
 #include <deque>
 #include <fstream>
 #include <utility>
