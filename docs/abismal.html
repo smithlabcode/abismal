@@ -235,7 +235,7 @@ IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII</code></pre>
 <pre><code>@SQ SN:[chrom-name] LN:[chrom-length]</code></pre>
 <p>where [chrom-name] is given by the first word of the chromosome name in the FASTA file (anything after the first white space is deleted), and [chrom-length] is the number of bases in the chromosome sequence.</p>
 <p>The last line of the headers is a copy of how the program was called to generate the SAM output, and is of the form</p>
-<pre><code>@PG ID:ABISMAL  VN:1.0.0  CL:&quot;[command-call]&quot;</code></pre>
+<pre><code>@PG ID:ABISMAL  VN:3.0.0  CL:&quot;[command-call]&quot;</code></pre>
 <p>where [command-call] is the shell command used to run abismal.</p>
 <h2 id="output-mapped-lines">Output mapped lines</h2>
 <p>Following the header lines, reads that are mapped once (or at least once if the -a flag is used) are reported. Each read is a set of thirteen tab-separated fields as follows.</p>

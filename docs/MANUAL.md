@@ -50,8 +50,8 @@ substantially.
 Run the following commands to install abismal
 ```
 wget https://github.com/smithlabcode/abismal/releases/download/v3.0.0/abismal-3.0.0.tar.gz
-tar -xvzf abismal-1.0.0.tar.gz
-cd abismal-1.0.0
+tar -xvzf abismal-3.0.0.tar.gz
+cd abismal-3.0.0
 ./configure --prefix=$(pwd)
 make
 make install
@@ -322,7 +322,7 @@ The last line of the headers is a copy of how the program was called
 to generate the SAM output, and is of the form
 
 ```
-@PG ID:ABISMAL  VN:1.0.0  CL:"[command-call]"
+@PG ID:ABISMAL  VN:3.0.0  CL:"[command-call]"
 ```
 
 where [command-call] is the shell command used to run abismal.
