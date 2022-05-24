@@ -335,9 +335,9 @@ AbismalAlign<scr_fun, indel_pen>::build_cigar_len_and_pos(
 // A specific namespace for simple match/mismatch scoring system and a
 // 1 -1 -1 scoring scheme for edit distance.
 namespace simple_aln {
-  static const score_t match = 1;
-  static const score_t mismatch = -2;
-  static const score_t indel = -3;
+  static const score_t match = 2;
+  static const score_t mismatch = -3;
+  static const score_t indel = -4;
   static const std::array<score_t, 2> score_lookup = {match, mismatch};
 
   inline score_t default_score(const uint32_t len, const score_t diffs) {
