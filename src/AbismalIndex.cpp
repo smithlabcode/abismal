@@ -51,6 +51,14 @@ using std::fill;
 using std::to_string;
 using std::max;
 
+#define _DO_DP
+#define _TWOLETTER
+#define _THREELETTER
+
+#if defined(_TWOLETTER) || defined(_THREELETTER)
+  #define _HYBRID
+#endif
+
 bool AbismalIndex::VERBOSE = false;
 string AbismalIndex::internal_identifier = "AbismalIndex";
 
@@ -65,17 +73,13 @@ AbismalIndex::create_index(const string &genome_file) {
   encode_genome(inflated_genome);
   vector<uint8_t>().swap(inflated_genome);
 
-  vector<bool> pos_to_keep;
-  pos_to_keep.resize(cl.get_genome_size());
-  fill(begin(pos_to_keep), end(pos_to_keep), true);
+  // creat genome-wide mask of positions to keep
+  keep.resize(cl.get_genome_size());
+  fill(begin(keep), end(keep), true);
 
-  // keep padding positions out of index
-  fill(begin(pos_to_keep), begin(pos_to_keep) + seed::padding_size, false);
-  fill(end(pos_to_keep) - seed::padding_size, end(pos_to_keep), false);
-
-  compress_dp(pos_to_keep);
-  calc_mapping_parameters(pos_to_keep);
-  hash_genome(pos_to_keep);
+  select_two_letter_positions();
+  compress_dp();
+  hash_genome();
   sort_buckets();
 }
 
@@ -89,126 +93,23 @@ AbismalIndex::encode_genome(const vector<uint8_t> &input_genome) {
   encode_dna_four_bit(begin(input_genome), end(input_genome), begin(genome));
 }
 
-double
-AbismalIndex::estimate_ram() const {
-  size_t num_bytes =
-    //64-bit words
-    sizeof(size_t)*(genome.size()) +
-
-    // 32-bit words
-    sizeof(uint32_t)*(counter_size + index_size);
-
-  static const double bytes_per_mb = 1024.0*1024.0*1024.0;
-  return num_bytes/(bytes_per_mb);
-}
-
-// gets an arbitrary quantile from the k-mer frequencies
-uint32_t
-get_quantile(const vector<uint32_t> &v, const double q) {
-  assert(q >= 0.0);
-  assert(q <= 1.0);
-
-  const auto the_last = end(v);
-  // first non-zero
-  const auto the_first = lower_bound(begin(v), the_last, 1);
-
-  // number of k-mers in the genome
-  const size_t len = the_last - the_first;
-  const auto the_ind = the_first + static_cast<size_t>(q*len);
-
-  return *the_ind;
-}
-
+template<const bool use_mask>
 void
-AbismalIndex::calc_mapping_parameters(const vector<bool> &keep) {
-  if (VERBOSE)
-    cerr << "[calculating mapping parameters from index]\n";
-
-  vector<uint32_t> copy_of_counter = counter;
-#if defined(_OPENMP)
-  __gnu_parallel::sort(begin(copy_of_counter), end(copy_of_counter));
-#else
-  sort(begin(copy_of_counter), end(copy_of_counter));
-#endif
-
-  // cut-off to skip k-mers in sensitive step
-  max_candidates = get_quantile(copy_of_counter,
-      seed::max_candidates_quantile);
-
-
-  // GS: this definitely has to be more sophisticated and involve
-  // some analysis on dead zones. For now it is estimated based on
-  // k-mer quantiles as they are somewhat correlated to repeat
-  // frequencies.
-  pe_heap_size = seed::n_seed_positions*get_quantile(copy_of_counter,
-      seed::heap_size_quantile);
-
-  cerr << "cand pe " << max_candidates << " " << pe_heap_size << "\n";
-}
-
-inline void
-shift_dp_key(const char c, uint32_t &hash) {
-  static const uint32_t mask = (1u << seed::n_seed_positions) - 1;
-  hash = ((hash << 1) | get_bit(c)) & mask;
-}
-
-void
-AbismalIndex::get_bucket_sizes(const uint32_t word_size, const vector<bool> &keep) {
+AbismalIndex::get_bucket_sizes() {
   counter.clear();
-  const bool do_dp = (word_size == seed::n_seed_positions);
+
+  counter_size = (1ull << seed::key_weight);
 
   // the "counter" has an additional entry for convenience
-  counter_size = (1ull << word_size);
   counter.resize(counter_size + 1, 0);
 
   const size_t genome_st = seed::padding_size;
-  const size_t lim = cl.get_genome_size() - word_size - seed::padding_size;
-  ProgressBar progress(lim, "counting " + to_string(word_size) +
+  const size_t lim = cl.get_genome_size() - seed::key_weight - seed::padding_size;
+  ProgressBar progress(lim, "counting " + to_string(seed::key_weight) +
                             "-bit words");
 
   if (VERBOSE)
     progress.report(cerr, 0);
-
-  // start building up the hash key
-  genome_iterator gi(begin(genome));
-  gi = gi + genome_st;
-
-  const auto gi_lim(gi + (word_size - 1));
-  uint32_t hash_key = 0;
-  while (gi != gi_lim)
-    if (do_dp)
-      shift_dp_key(*gi++, hash_key);
-    else
-      shift_hash_key(*gi++, hash_key);
-
-  for (size_t i = genome_st; i < lim; ++i) {
-    if (VERBOSE && progress.time_to_report(i))
-      progress.report(cerr, i);
-
-    if (do_dp)
-      shift_dp_key(*gi++, hash_key);
-    else
-      shift_hash_key(*gi++, hash_key);
-    counter[hash_key] += keep[i];
-  }
-  if (VERBOSE)
-    progress.report(cerr, lim);
-}
-
-void
-AbismalIndex::hash_genome(vector<bool> &keep) {
-  get_bucket_sizes(seed::key_weight, keep);
-
-  if (VERBOSE)
-    cerr << "[allocating hash table]" << endl;
-
-  std::partial_sum(begin(counter), end(counter), begin(counter));
-  index_size = counter[counter_size];
-  index.resize(index_size, 0);
-
-  const size_t genome_st = seed::padding_size;
-  const size_t lim = cl.get_genome_size() - seed::key_weight - seed::padding_size;
-  ProgressBar progress(lim, "hashing genome");
 
   // start building up the hash key
   genome_iterator gi(begin(genome));
@@ -220,12 +121,251 @@ AbismalIndex::hash_genome(vector<bool> &keep) {
     shift_hash_key(*gi++, hash_key);
 
   for (size_t i = genome_st; i < lim; ++i) {
-    if (VERBOSE && progress.time_to_report(i))
-      progress.report(cerr, i);
-
     shift_hash_key(*gi++, hash_key);
-    if (keep[i])
-      index[--counter[hash_key]] = i;
+
+    if (keep[i]) {
+      if (VERBOSE && progress.time_to_report(i))
+        progress.report(cerr, i);
+
+      const bool count_base =  (!use_mask || is_two_letter[i]);
+      counter[hash_key] += count_base;
+    }
+  }
+  if (VERBOSE)
+    progress.report(cerr, lim);
+}
+
+template<const three_conv_type the_conv, const bool use_mask> void
+AbismalIndex::get_bucket_sizes_three() {
+  counter_size_three = seed::hash_mask_three;
+
+  if (the_conv == c_to_t)
+    counter_t.clear();
+  else
+    counter_a.clear();
+
+  if (the_conv == c_to_t)
+    counter_t.resize(counter_size_three + 1, 0);
+  else
+    counter_a.resize(counter_size_three + 1, 0);
+
+  const size_t genome_st = seed::padding_size;
+  const size_t lim = cl.get_genome_size() - seed::key_weight_three - seed::padding_size;
+  ProgressBar progress(lim, "counting " + to_string(seed::key_weight_three) +
+                            "-3 letters");
+
+  if (VERBOSE)
+    progress.report(cerr, 0);
+
+  // start building up the hash key
+  genome_iterator gi(begin(genome));
+  gi = gi + genome_st;
+
+  const auto gi_lim(gi + (seed::key_weight_three - 1));
+  uint32_t hash_key = 0;
+  while (gi != gi_lim)
+    shift_three_key<the_conv>(*gi++, hash_key);
+
+  for (size_t i = genome_st; i < lim; ++i) {
+    shift_three_key<the_conv>(*gi++, hash_key);
+    if (keep[i]) {
+      if (VERBOSE && progress.time_to_report(i))
+        progress.report(cerr, i);
+
+      const bool count_base = (!use_mask || !is_two_letter[i]);
+
+      if (the_conv == c_to_t)
+        counter_t[hash_key] += count_base;
+      else
+        counter_a[hash_key] += count_base;
+    }
+  }
+  if (VERBOSE)
+    progress.report(cerr, lim);
+}
+
+inline uint32_t
+two_letter_cost(const uint32_t count) {
+  return (count);
+}
+
+inline uint32_t
+three_letter_cost(const uint32_t count_t, const uint32_t count_a) {
+  return ((count_t + count_a) >> 1);
+}
+
+void
+AbismalIndex::select_two_letter_positions() {
+  // first get statistics on the full genome
+#pragma omp parallel for
+  for (size_t i = 0; i < 3; ++i) {
+#if defined(_TWOLETTER)
+    if (i == 0)
+      get_bucket_sizes<false>();
+#endif
+#if defined(_THREELETTER)
+    if (i == 1)
+      get_bucket_sizes_three<c_to_t, false>();
+    if (i == 2)
+      get_bucket_sizes_three<g_to_a, false >();
+#endif
+  }
+
+  // now choose which have lower count under two-letters
+  is_two_letter.resize(cl.get_genome_size());
+  fill(begin(is_two_letter), end(is_two_letter), false);
+#if defined(_THREELETTER) && !defined(_TWOLETTER)
+  return;
+#endif
+
+#if defined(_TWOLETTER) && !defined(_THREELETTER)
+  fill(begin(is_two_letter), end(is_two_letter), true);
+  return;
+#endif
+
+#if defined(_HYBRID)
+  const size_t genome_st = seed::padding_size;
+  const size_t lim = cl.get_genome_size() - seed::key_weight - seed::padding_size;
+  ProgressBar progress(lim, "building hybrid index");
+
+  if (VERBOSE)
+    progress.report(cerr, 0);
+
+  // start building up the hash key
+  genome_iterator gi_two(begin(genome));
+  genome_iterator gi_three(begin(genome));
+  gi_two = gi_two + genome_st;
+  gi_three = gi_three + genome_st;
+
+  uint32_t hash_two = 0;
+  uint32_t hash_t = 0;
+  uint32_t hash_a = 0;
+
+  const auto gi_lim_two(gi_two + (seed::key_weight - 1));
+  const auto gi_lim_three(gi_three + (seed::key_weight_three - 1));
+  while (gi_two != gi_lim_two) {
+    shift_hash_key(*gi_two++, hash_two);
+  }
+
+  while (gi_three != gi_lim_three) {
+    shift_three_key<c_to_t>(*gi_three, hash_t);
+    shift_three_key<g_to_a>(*gi_three, hash_a);
+    ++gi_three;
+  }
+
+  size_t tot_two = 0;
+  size_t tot_three = 0;
+  for (size_t i = genome_st; i < lim; ++i, ++gi_two, ++gi_three) {
+    shift_hash_key(*gi_two, hash_two);
+    shift_three_key<c_to_t>(*gi_three, hash_t);
+    shift_three_key<g_to_a>(*gi_three, hash_a);
+
+    if (keep[i]) {
+      if (VERBOSE && progress.time_to_report(i))
+        progress.report(cerr, i);
+
+      is_two_letter[i] = (
+        two_letter_cost(counter[hash_two]) <=
+        three_letter_cost(counter_t[hash_t], counter_a[hash_a])
+      );
+
+      tot_two += is_two_letter[i];
+      tot_three += !is_two_letter[i];
+    }
+  }
+  cerr << "\ntotal two letter: " << tot_two << "\n";
+  cerr << "total three letter: " << tot_three << "\n";
+#endif
+}
+
+void
+AbismalIndex::hash_genome() {
+
+  // count k-mers under each encoding with masking
+#pragma omp parallel for
+  for (size_t i = 0; i < 3; ++i) {
+    if (i == 0)
+    get_bucket_sizes<true>();
+    else if (i == 1)
+      get_bucket_sizes_three<c_to_t, true>();
+    else if (i == 2)
+      get_bucket_sizes_three<g_to_a,  true>();
+  }
+
+  /*
+  //============== DEBUG ===============
+  ofstream of_two("counts-two.txt");
+  ofstream of_three_t("counts-three-t.txt");
+  ofstream of_three_a("counts-three-a.txt");
+  cerr << "[saving 2-letter counts to counts-two.txt]\n";
+  for (size_t i = 0; i < counter.size(); ++i)
+    of_two << i << " " << counter[i] << "\n";
+
+  cerr << "[saving 3-letter counts to counts-three-t.txt and counts-three-a.txt]\n";
+  for (size_t i = 0; i < counter_t.size(); ++i) {
+    of_three_t << i << " " << counter_t[i] << "\n";
+    of_three_a << i << " " << counter_a[i] << "\n";
+  }
+  //============== END DEBUG ===============*/
+
+  if (VERBOSE)
+    cerr << "[allocating hash tables]" << endl;
+
+  std::partial_sum(begin(counter), end(counter), begin(counter));
+  std::partial_sum(begin(counter_t), end(counter_t), begin(counter_t));
+  std::partial_sum(begin(counter_a), end(counter_a), begin(counter_a));
+
+  index_size = counter[counter_size];
+  index_size_three = counter_t[counter_size_three];
+
+  index.resize(index_size, 0);
+  index_t.resize(index_size_three, 0);
+  index_a.resize(index_size_three, 0);
+  cerr << "[index sizes: " << index_size << " " << index_size_three << "]\n";
+
+  const size_t genome_st = seed::padding_size;
+  const size_t lim = cl.get_genome_size() - seed::key_weight - seed::padding_size;
+  ProgressBar progress(lim, "hashing genome");
+
+  // start building up the hash key
+  genome_iterator gi_two(begin(genome));
+  genome_iterator gi_three(begin(genome));
+  gi_two = gi_two + genome_st;
+  gi_three = gi_three + genome_st;
+
+  const auto gi_lim_two(gi_two + (seed::key_weight - 1));
+  const auto gi_lim_three(gi_three + (seed::key_weight_three - 1));
+
+  uint32_t hash_two = 0;
+  uint32_t hash_t = 0;
+  uint32_t hash_a = 0;
+
+  while (gi_two != gi_lim_two) {
+    shift_hash_key(*gi_two++, hash_two);
+  }
+
+  while (gi_three != gi_lim_three) {
+    shift_three_key<c_to_t>(*gi_three, hash_t);
+    shift_three_key<g_to_a>(*gi_three, hash_a);
+    ++gi_three;
+  }
+
+  for (size_t i = genome_st; i < lim; ++i, ++gi_two, ++gi_three) {
+    shift_hash_key(*gi_two, hash_two);
+    shift_three_key<c_to_t>(*gi_three, hash_t);
+    shift_three_key<g_to_a>(*gi_three, hash_a);
+
+    if (keep[i]) {
+      if (VERBOSE && progress.time_to_report(i))
+        progress.report(cerr, i);
+
+      if (is_two_letter[i])
+        index[--counter[hash_two]] = i;
+      else {
+        index_t[--counter_t[hash_t]] = i;
+        index_a[--counter_a[hash_a]] = i;
+      }
+    }
   }
   if (VERBOSE)
     progress.report(cerr, lim);
@@ -248,6 +388,7 @@ typedef pair<dp_sol, uint32_t> helper_sol;
 
 void
 add_sol(deque<helper_sol> &helper, const uint32_t pos, const dp_sol &cand) {
+#if defined(_DO_DP)
   while (!helper.empty() && helper.back().first.cost > cand.cost)
     helper.pop_back();
 
@@ -255,39 +396,74 @@ add_sol(deque<helper_sol> &helper, const uint32_t pos, const dp_sol &cand) {
 
   while (helper.front().second + seed::window_size <= pos)
     helper.pop_front();
-
-  assert(helper.size() <= seed::window_size);
+  //assert(helper.size() <= seed::window_size);
   //assert(!helper.empty());
   //assert(is_helper_sorted(helper));
+
+#else
+  if (helper.size() == seed::window_size)
+    helper.pop_front();
+  helper.push_back(make_pair(cand, pos));
+#endif
+
+}
+
+inline uint32_t
+get_hybrid_cost(const bool is_two_letter,
+                const uint32_t count_two,
+                const uint32_t count_t, const uint32_t count_a) {
+#if defined(_TWOLETTER) && !defined(_THREELETTER)
+  return two_letter_cost(count_two);
+#endif
+
+#if defined(_THREELETTER) && !defined(_TWOLETTER)
+  return three_letter_cost(count_t, count_a);
+#endif
+
+#if defined(_HYBRID)
+  return (is_two_letter ? two_letter_cost(count_two) :
+                          three_letter_cost(count_t, count_a));
+#endif
 }
 
 void
-AbismalIndex::compress_dp(vector<bool> &keep) {
-  // first get bucket sizes and build ranks
-  get_bucket_sizes(seed::key_weight, keep);
-
-  // the dp memory allocation
-  static const size_t BLOCK_SIZE = 1000000;
-  deque<helper_sol> helper;
-  vector<dp_sol> opt(BLOCK_SIZE);
-
+AbismalIndex::compress_dp() {
   // no position is indexed
   fill(begin(keep), end(keep), false);
 
-  const size_t lim = cl.get_genome_size() - seed::padding_size - seed::key_weight;
+  const size_t lim =
+    cl.get_genome_size() - seed::padding_size - seed::key_weight;
 
-  ProgressBar progress(lim, "solving dp");
+  // the dp memory allocation
+  static const size_t BLOCK_SIZE = 10000000;
+  deque<helper_sol> helper;
+  vector<dp_sol> opt(BLOCK_SIZE);
 
-  genome_iterator gi(begin(genome));
-  uint32_t hash_key = 0;
+
+  ProgressBar progress(lim, "solving dynamic prog.");
+
+  genome_iterator gi_two(begin(genome));
+  genome_iterator gi_three(begin(genome));
+  uint32_t hash_two = 0;
+  uint32_t hash_t = 0;
+  uint32_t hash_a = 0;
+  size_t hit_rate = 0;
+  size_t num_bases = 0;
 
   // fast forward padding positions
-  gi = gi + seed::padding_size;
+  gi_two = gi_two + seed::padding_size;
+  gi_three = gi_three + seed::padding_size;
 
   // build the first hash key minus last base
-  const auto gi_lim(gi + (seed::key_weight - 1));
-  while (gi != gi_lim)
-    shift_hash_key(*gi++, hash_key);
+  const auto gi_lim_two(gi_three + (seed::key_weight - 1));
+  while (gi_two != gi_lim_two)
+    shift_hash_key(*gi_two++, hash_two);
+
+  const auto gi_lim_three(gi_three + (seed::key_weight_three - 1));
+  while (gi_three != gi_lim_three) {
+    shift_three_key<c_to_t>(*gi_three, hash_t);
+    shift_three_key<g_to_a>(*gi_three++, hash_a);
+  }
 
   size_t beg = seed::padding_size;
   while (beg < lim) {
@@ -304,8 +480,13 @@ AbismalIndex::compress_dp(vector<bool> &keep) {
     // get the first w solutions
     helper.clear();
     for (size_t i = 0; i < seed::window_size; ++i) {
-      shift_hash_key(*gi++, hash_key);
-      opt[i].cost = counter[hash_key];
+      shift_hash_key(*gi_two++, hash_two);
+      shift_three_key<c_to_t>(*gi_three, hash_t);
+      shift_three_key<g_to_a>(*gi_three++, hash_a);
+
+      opt[i].cost =
+        get_hybrid_cost(is_two_letter[beg + i],
+            counter[hash_two], counter_t[hash_t], counter_a[hash_a]);
       opt[i].prev = dp_sol::NIL;
       opt[i].num = 1;
       add_sol(helper, i, opt[i]);
@@ -316,8 +497,14 @@ AbismalIndex::compress_dp(vector<bool> &keep) {
       if (VERBOSE && progress.time_to_report(beg + i))
         progress.report(cerr, beg + i);
 
-      shift_hash_key(*gi++, hash_key);
-      opt[i].cost = helper.front().first.cost + counter[hash_key];
+      shift_hash_key(*gi_two++, hash_two);
+      shift_three_key<c_to_t>(*gi_three, hash_t);
+      shift_three_key<g_to_a>(*gi_three++, hash_a);
+
+      opt[i].cost = helper.front().first.cost +
+        get_hybrid_cost(is_two_letter[beg + i],
+                         counter[hash_two], counter_t[hash_t], counter_a[hash_a]);
+
       opt[i].prev = helper.front().second;
       opt[i].num = helper.front().first.num + 1;
       add_sol(helper, i, opt[i]);
@@ -338,9 +525,12 @@ AbismalIndex::compress_dp(vector<bool> &keep) {
       }
     }
 
+    hit_rate += opt_ans;
+
     // build traceback
     while (last != dp_sol::NIL) {
       keep[beg + last] = true;
+      ++num_bases;
       last = opt[last].prev;
     }
 
@@ -348,6 +538,8 @@ AbismalIndex::compress_dp(vector<bool> &keep) {
     beg = fin;
   }
 
+  // GS: this is a heuristic
+  max_candidates = 100u;
   if (VERBOSE)
     progress.report(cerr, lim);
 
@@ -357,11 +549,11 @@ struct BucketLess {
   BucketLess(const Genome &g) : g_start(begin(g)) {}
   bool operator()(const uint32_t a, const uint32_t b) const {
     auto idx1(g_start + a + seed::key_weight);
-    auto lim1(g_start + a + seed::n_sorting_positions);
+    const auto lim1(g_start + a + seed::n_sorting_positions);
     auto idx2(g_start + b + seed::key_weight);
     while (idx1 != lim1) {
-      const char c1 = get_bit(*(idx1++));
-      const char c2 = get_bit(*(idx2++));
+      const uint8_t c1 = get_bit(*(idx1++));
+      const uint8_t c2 = get_bit(*(idx2++));
       if (c1 != c2) return c1 < c2;
     }
     return false;
@@ -369,10 +561,28 @@ struct BucketLess {
   const genome_iterator g_start;
 };
 
+template<const three_conv_type the_type>
+struct BucketLessThree {
+  BucketLessThree(const Genome &g) : g_start(begin(g)) {}
+  bool operator()(const uint32_t a, const uint32_t b) const {
+    auto idx1(g_start + a + seed::key_weight_three);
+    const auto lim1(g_start + a + seed::n_sorting_positions);
+    auto idx2(g_start + b + seed::key_weight_three);
+    while (idx1 != lim1) {
+      const uint8_t c1 = get_three_letter_num<the_type>(*(idx1++));
+      const uint8_t c2 = get_three_letter_num<the_type>(*(idx2++));
+      if (c1 != c2) return c1 < c2;
+    }
+    return false;
+  }
+  const genome_iterator g_start;
+};
+
+
 void
 AbismalIndex::sort_buckets() {
   if (VERBOSE)
-    cerr << "[sorting buckets]" << endl;
+    cerr << "[sorting two-letter buckets]" << endl;
   const vector<uint32_t>::iterator b(begin(index));
   const BucketLess bucket_less(genome);
 #pragma omp parallel for
@@ -380,8 +590,25 @@ AbismalIndex::sort_buckets() {
     if (counter[i + 1] > counter[i] + 1) {
       sort(b + counter[i], b + counter[i + 1], bucket_less);
     }
-}
 
+  cerr << "[sorting three-letter buckets C-to-T]" << endl;
+  const vector<uint32_t>::iterator b_t(begin(index_t));
+  const BucketLessThree<c_to_t> bucket_less_t(genome);
+#pragma omp parallel for
+  for (size_t i = 0; i < counter_size_three; ++i)
+    if (counter_t[i + 1] > counter_t[i] + 1) {
+      sort(b_t + counter_t[i], b_t + counter_t[i + 1], bucket_less_t);
+    }
+
+  cerr << "[sorting three-letter buckets G-to-A]" << endl;
+  const vector<uint32_t>::iterator b_a(begin(index_a));
+  const BucketLessThree<g_to_a> bucket_less_a(genome);
+#pragma omp parallel for
+  for (size_t i = 0; i < counter_size_three; ++i)
+    if (counter_a[i + 1] > counter_a[i] + 1) {
+      sort(b_a + counter_a[i], b_a + counter_a[i + 1], bucket_less_a);
+    }
+}
 static void
 write_internal_identifier(FILE *out) {
   if (fwrite((char*)&AbismalIndex::internal_identifier[0], 1,
@@ -445,14 +672,24 @@ AbismalIndex::write(const string &index_file) const {
   cl.write(out);
 
   if (fwrite((char*)&genome[0], sizeof(size_t), genome.size(), out) != genome.size() ||
-      fwrite((char*)&max_candidates, sizeof(size_t), 1, out) != 1 ||
-      fwrite((char*)&pe_heap_size, sizeof(size_t), 1, out) != 1 ||
+      fwrite((char*)&max_candidates, sizeof(uint32_t), 1, out) != 1 ||
       fwrite((char*)&counter_size, sizeof(size_t), 1, out) != 1 ||
+      fwrite((char*)&counter_size_three, sizeof(size_t), 1, out) != 1 ||
       fwrite((char*)&index_size, sizeof(size_t), 1, out) != 1 ||
+      fwrite((char*)&index_size_three, sizeof(size_t), 1, out) != 1 ||
       fwrite((char*)(&counter[0]), sizeof(uint32_t),
              counter_size + 1, out) != (counter_size + 1) ||
+      fwrite((char*)(&counter_t[0]), sizeof(uint32_t),
+             counter_size_three + 1, out) != (counter_size_three + 1) ||
+      fwrite((char*)(&counter_a[0]), sizeof(uint32_t),
+             counter_size_three + 1, out) != (counter_size_three + 1) ||
+
       fwrite((char*)(&index[0]), sizeof(uint32_t),
-             index_size, out) != index_size)
+             index_size, out) != (index_size) ||
+      fwrite((char*)(&index_t[0]), sizeof(uint32_t),
+             index_size_three, out) != (index_size_three) ||
+      fwrite((char*)(&index_a[0]), sizeof(uint32_t),
+             index_size_three, out) != (index_size_three))
     throw runtime_error("failed writing index");
 
   if (fclose(out) != 0)
@@ -490,15 +727,12 @@ AbismalIndex::read(const string &index_file) {
   if (fread((char*)&genome[0], sizeof(size_t), genome_to_read, in) != genome_to_read)
     throw runtime_error(error_msg);
 
-  // read genome parameters
-  if (fread((char*)&max_candidates, sizeof(size_t), 1, in) != 1 ||
-      fread((char*)&pe_heap_size, sizeof(size_t), 1, in) != 1)
-    throw runtime_error(error_msg);
-
-
   // read the sizes of counter and index vectors
-  if (fread((char*)&counter_size, sizeof(size_t), 1, in) != 1 ||
-      fread((char*)&index_size, sizeof(size_t), 1, in) != 1)
+  if (fread((char*)&max_candidates, sizeof(uint32_t), 1, in) != 1 ||
+      fread((char*)&counter_size, sizeof(size_t), 1, in) != 1 ||
+      fread((char*)&counter_size_three, sizeof(size_t), 1, in) != 1 ||
+      fread((char*)&index_size, sizeof(size_t), 1, in) != 1 ||
+      fread((char*)&index_size_three, sizeof(size_t), 1, in) != 1)
     throw runtime_error(error_msg);
 
   // allocate then read the counter vector
@@ -507,10 +741,31 @@ AbismalIndex::read(const string &index_file) {
             (counter_size + 1), in) != (counter_size + 1))
     throw runtime_error(error_msg);
 
+  counter_t = vector<uint32_t>(counter_size_three + 1);
+  if (fread((char*)(&counter_t[0]), sizeof(uint32_t),
+            (counter_size_three + 1), in) != (counter_size_three + 1))
+    throw runtime_error(error_msg);
+
+  counter_a = vector<uint32_t>(counter_size_three + 1);
+  if (fread((char*)(&counter_a[0]), sizeof(uint32_t),
+            (counter_size_three + 1), in) != (counter_size_three + 1))
+    throw runtime_error(error_msg);
+
+
 
   // allocate the read the index vector
   index = vector<uint32_t>(index_size);
   if (fread((char*)(&index[0]), sizeof(uint32_t), index_size, in) != index_size)
+    throw runtime_error(error_msg);
+
+  index_t = vector<uint32_t>(index_size_three);
+  if (fread((char*)(&index_t[0]), sizeof(uint32_t), index_size_three, in)
+      != index_size_three)
+    throw runtime_error(error_msg);
+
+  index_a = vector<uint32_t>(index_size_three);
+  if (fread((char*)(&index_a[0]), sizeof(uint32_t), index_size_three, in)
+      != index_size_three)
     throw runtime_error(error_msg);
 
   if (fclose(in) != 0)
@@ -642,7 +897,7 @@ ChromLookup::get_chrom_idx_and_offset(const uint32_t pos,
   vector<uint32_t>::const_iterator idx =
     upper_bound(begin(starts), end(starts), pos);
 
-  assert(idx != begin(starts));
+  //assert(idx != begin(starts));
 
   --idx;
 
