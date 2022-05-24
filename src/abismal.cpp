@@ -1963,7 +1963,7 @@ file_exists(const string &filename) {
 int main(int argc, const char **argv) {
 
   try {
-    static const string ABISMAL_VERSION = "2.0.0";
+    static const string ABISMAL_VERSION = "3.0.0";
     bool VERBOSE = false;
     bool GA_conversion = false;
     bool allow_ambig = false;
