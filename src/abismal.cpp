@@ -23,6 +23,7 @@
 #include <stdexcept>
 #include <chrono>
 #include <numeric>
+#include <bitset>
 
 #include "smithlab_os.hpp"
 #include "smithlab_utils.hpp"
@@ -34,6 +35,7 @@
 #include "dna_four_bit_bisulfite.hpp"
 #include "AbismalIndex.hpp"
 #include "AbismalAlign.hpp"
+#include "popcnt.hpp"
 
 #include <omp.h>
 
@@ -56,6 +58,8 @@ using std::pop_heap;
 using std::chrono::system_clock;
 using std::ostringstream;
 
+using std::bitset;
+
 using AbismalAlignSimple =
       AbismalAlign<simple_aln::mismatch_score, simple_aln::indel>;
 
@@ -63,7 +67,8 @@ using AbismalAlignSimple =
 typedef uint16_t flags_t; // every bit is a flag
 typedef int16_t score_t; // aln score, edit distance, hamming distance
 typedef vector<uint8_t> Read; //4-bit encoding of reads
-typedef vector<size_t> PackedRead; //4-bit encoding of reads
+                              //
+typedef vector<element_t> PackedRead; //4-bit encoding of reads
 
 enum conversion_type { t_rich = false, a_rich = true };
 
@@ -761,12 +766,45 @@ select_output(const bool allow_ambig,
   }
 }
 
+// GS: make this better
 inline score_t
-popcount64(size_t x) { // count active bits in a 64-bit number
-  x = (x & 0x5555555555555555ULL) + ((x >> 1) & 0x5555555555555555ULL);
-  x = (x & 0x3333333333333333ULL) + ((x >> 2) & 0x3333333333333333ULL);
-  x = (x & 0x0F0F0F0F0F0F0F0FULL) + ((x >> 4) & 0x0F0F0F0F0F0F0F0FULL);
-  return (x * 0x0101010101010101ULL) >> 56;
+popcount128 (element_t x) {
+  static const element_t
+    MASK_1 = (static_cast<element_t>(0x5555555555555555ULL) << 64) |
+              static_cast<element_t>(0x5555555555555555ULL);
+
+  static const element_t
+    MASK_2 = (static_cast<element_t>(0x3333333333333333ULL) << 64) |
+              static_cast<element_t>(0x3333333333333333ULL);
+
+  static const element_t
+    MASK_4 = (static_cast<element_t>(0x0F0F0F0F0F0F0F0FULL) << 64) |
+              static_cast<element_t>(0x0F0F0F0F0F0F0F0FULL);
+
+  static const element_t
+    MASK_8 = (static_cast<element_t>(0x00FF00FF00FF00FFULL) << 64) |
+              static_cast<element_t>(0x00FF00FF00FF00FFULL);
+
+  static const element_t
+    MASK_16 = (static_cast<element_t>(0x0000FFFF0000FFFFULL) << 64) |
+               static_cast<element_t>(0x0000FFFF0000FFFFULL);
+
+  static const element_t
+    MASK_32 = (static_cast<element_t>(0x00000000FFFFFFFFULL) << 64) |
+               static_cast<element_t>(0x00000000FFFFFFFFULL);
+
+  static const element_t
+    MASK_64 = static_cast<element_t>(0xFFFFFFFFFFFFFFFFULL);
+
+  x = (x & MASK_1) + ((x >> 1) & MASK_1);
+  x = (x & MASK_2) + ((x >> 2) & MASK_2);
+  x = (x & MASK_4) + ((x >> 4) & MASK_4);
+  x = (x & MASK_8) + ((x >> 8) & MASK_8);
+  x = (x & MASK_16) + ((x >> 16) & MASK_16);
+  x = (x & MASK_32) + ((x >> 32) & MASK_32);
+  return (x & MASK_64) + ((x >> 64) & MASK_64);
+
+  //return popcnt64(x) + popcnt64(x >> 64);
 }
 
 /* GS: this function counts mismatches between read and genome when
@@ -787,15 +825,13 @@ score_t
 full_compare(const score_t cutoff, const PackedRead::const_iterator read_end,
              const uint32_t offset, PackedRead::const_iterator read_itr,
              Genome::const_iterator genome_itr) {
-  static const score_t max_matches = static_cast<score_t>(16);
+
+  // max number of matches per element
+  static const score_t max_matches = static_cast<score_t>(32);
   score_t d = 0;
   while (d <= cutoff && read_itr != read_end) {
-    d += max_matches - popcount64(
-      (*read_itr) & /*16 bases from the read*/
-
-      /*16 bases from the padded genome*/
-      ((*genome_itr >> offset) | ((*++genome_itr << (63 - offset)) << 1))
-    );
+    d += max_matches - popcount128(*read_itr &
+      ((*genome_itr >> offset) | ((*++genome_itr << (128 - offset)))));
     ++read_itr;
   }
   return d;
@@ -810,21 +846,20 @@ check_hits(const uint32_t offset,
            const vector<uint32_t>::const_iterator &end_idx,
            vector<uint32_t>::const_iterator start_idx,
            result_type &res) {
-  uint32_t ans = 0;
-  for (; start_idx != end_idx && !res.sure_ambig; ++start_idx, ++ans) {
+  for (; start_idx != end_idx && !res.sure_ambig; ++start_idx) {
     // GS: adds the next candidate to cache while current is compared
     __builtin_prefetch(
-      &(*(genome_st + ((*(start_idx + 16) - offset) >> 4)))
+      &(*(genome_st + ((*(start_idx + 8) - offset) >> 5)))
     );
     const uint32_t the_pos = *start_idx - offset;
     /* GS: the_pos & 15u tells if the position is a multiple of 16, in
      * which case it is aligned with the genome. Otherwise we need to
      * use the unaligned comparison function that offsets genome
-     * position by the_pos (mod 16). Multiplied by 4 because each base
+     * position by the_pos (mod 32). Multiplied by 4 because each base
      * uses 4 bits */
     const score_t diffs = full_compare(
-      res.cutoff, read_end, ((the_pos & 15u) << 2),
-      read_st, genome_st + (the_pos >> 4)
+      res.cutoff, read_end, ((the_pos & 31u) << 2),
+      read_st, genome_st + (the_pos >> 5)
     );
 
     if (diffs <= res.cutoff)
@@ -1044,20 +1079,21 @@ prep_read(const string &r, Read &pread) {
  * */
 static void
 pack_read(const Read &pread, PackedRead &packed_pread) {
-  static const size_t base_match_any = 0xFull;
+  static const element_t base_match_any = static_cast<element_t>(0xF);
+  static const size_t NUM_BASES_PER_ELEMENT = 32;
   const size_t sz = pread.size();
-  const size_t num_complete_pos = sz/16;
+  const size_t num_complete_pos = sz/NUM_BASES_PER_ELEMENT;
 
   // divide by 16 and add an extra position if remainder not 0
-  packed_pread.resize((sz + 15)/16);
+  packed_pread.resize((sz + NUM_BASES_PER_ELEMENT - 1)/NUM_BASES_PER_ELEMENT);
   PackedRead::iterator it(begin(packed_pread));
 
   // first add the complete positions (i.e. having all 16 bases)
   size_t pread_ind = 0;
   for (size_t i = 0; i < num_complete_pos; ++i) {
     *it = 0;
-    for (size_t j = 0; j < 16; ++j)
-      *it |= (static_cast<size_t>(pread[pread_ind++]) << (j << 2));
+    for (size_t j = 0; j < NUM_BASES_PER_ELEMENT; ++j)
+      *it |= (static_cast<element_t>(pread[pread_ind++]) << (j << 2));
     ++it;
   }
 
@@ -1069,9 +1105,9 @@ pack_read(const Read &pread, PackedRead &packed_pread) {
   *it = 0;
   size_t j = 0;
   while (pread_ind < sz)
-    *it |= (static_cast<size_t>(pread[pread_ind++]) << ((j++) << 2));
+    *it |= (static_cast<element_t>(pread[pread_ind++]) << ((j++) << 2));
 
-  while (j < 16)
+  while (j < NUM_BASES_PER_ELEMENT)
     *it |= base_match_any << ((j++) << 2);
 }
 

@@ -85,7 +85,7 @@ AbismalIndex::encode_genome(const vector<uint8_t> &input_genome) {
   if (VERBOSE)
     cerr << "[encoding genome]" << endl;
 
-  genome.resize(input_genome.size()/16 + (input_genome.size()%16 != 0));
+  genome.resize(input_genome.size()/32 + (input_genome.size()%32 != 0));
   encode_dna_four_bit(begin(input_genome), end(input_genome), begin(genome));
 }
 
@@ -667,7 +667,7 @@ AbismalIndex::write(const string &index_file) const {
   seed::write(out);
   cl.write(out);
 
-  if (fwrite((char*)&genome[0], sizeof(size_t), genome.size(), out) != genome.size() ||
+  if (fwrite((char*)&genome[0], sizeof(element_t), genome.size(), out) != genome.size() ||
       fwrite((char*)&max_candidates, sizeof(uint32_t), 1, out) != 1 ||
       fwrite((char*)&counter_size, sizeof(size_t), 1, out) != 1 ||
       fwrite((char*)&counter_size_three, sizeof(size_t), 1, out) != 1 ||
@@ -717,10 +717,10 @@ AbismalIndex::read(const string &index_file) {
   seed::read(in);
   cl.read(in);
 
-  const size_t genome_to_read = (cl.get_genome_size() + 15)/16;
+  const size_t genome_to_read = (cl.get_genome_size() + 31)/32;
   // read the 4-bit encoded genome
   genome.resize(genome_to_read);
-  if (fread((char*)&genome[0], sizeof(size_t), genome_to_read, in) != genome_to_read)
+  if (fread((char*)&genome[0], sizeof(element_t), genome_to_read, in) != genome_to_read)
     throw runtime_error(error_msg);
 
   // read the sizes of counter and index vectors
