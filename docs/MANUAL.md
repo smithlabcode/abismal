@@ -489,12 +489,11 @@ mismatches and -1 for indels. In other words, if an alignment has M
 matches, m mismatches, I insertions and D deletions, the alignment
 score A is given by
 
-A = M - m - I - D
+$$A = a - I - D$$
 
 and the edit distance E is given by
-```
-A = m + I + D
-```
+
+$$E = m + I + D$$
 
 Abismal selects the best alignment score, and only reports it if the
 edit distance is below a fraction m (set under the -m or
@@ -516,18 +515,18 @@ so this parameter can be adjusted by the user.
 
 ## Concordant pairs
 
-On paired-end input, we say reads r1 and r2 with lengths
-n1 and n2, respectively, are a corresponding pair are
+On paired-end input, we say reads $r_1$ and $r_2$ with lengths
+$n_1$ and $n_2$, respectively, are a corresponding pair are
 concordant if there exist positions p1 and p2 such that
 
-1. p1 is a valid alignment for r1 and p2 is a valid
-alignment for r2
-2. p1 and p2 are in opposite strands of the genome, and
-3. p2 - p1 >= l and p2 - p1 <= L - n2.
+1. $p_1$ is a valid alignment for $r_1$ and $p_2$ is a valid
+alignment for $r_2$
+2. $p_1$ and $p_2$ are in opposite strands of the genome, and
+3. $p_2 - p_1 \geq l$ and $p_2 - p_1 \leq L - n2$.
 
 This means that the fragment lengths from which the pair originates is
-at least l and at most L. The default values of l and L are 32
-and 3000, respectively, and can be set by the -l and -L flags.
+at least $l$ and at most $L$. The default values of $l$ and $L$ are 32
+and 3000, respectively, and can be set by the `-l` and `-L` flags.
 Those are conservative values that cover most of the current
 protocols. We will incorporate automatic calculations of these values
 in the future based on the first high-quality read pairs that are
