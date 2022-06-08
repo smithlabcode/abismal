@@ -517,7 +517,7 @@ so this parameter can be adjusted by the user.
 
 On paired-end input, we say reads $r_1$ and $r_2$ with lengths
 $n_1$ and $n_2$, respectively, are a corresponding pair are
-concordant if there exist positions p1 and p2 such that
+concordant if there exist positions $p_1$ and $p_2$ such that
 
 1. $p_1$ is a valid alignment for $r_1$ and $p_2$ is a valid
 alignment for $r_2$
