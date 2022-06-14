@@ -31,6 +31,7 @@
 #include "zlib_wrapper.hpp"
 #include "sam_record.hpp"
 #include "bisulfite_utils.hpp"
+#include "popcnt.hpp"
 
 #include "dna_four_bit_bisulfite.hpp"
 #include "AbismalIndex.hpp"
@@ -255,6 +256,14 @@ valid_hit(const se_element s, const uint32_t readlen) {
   return s.diffs < static_cast<score_t>(se_element::invalid_hit_frac*readlen);
 }
 
+template <class T> inline T
+min16(const T x, const T y) {
+  return (x<y) ? x:y;
+}
+template <class T> inline T
+max16(const T x, const T y) {
+  return (x>y)? x:y;
+}
 struct se_candidates {
   se_candidates () :
     sz(1), best(se_element()),
@@ -300,7 +309,7 @@ struct se_candidates {
     update_cand(d, s, p);
 
     sure_ambig = best.sure_ambig();
-    cutoff = (specific ? min(cutoff, v.front().diffs) : v.front().diffs);
+    cutoff = (specific ? min16(cutoff, v.front().diffs) : v.front().diffs);
   }
 
   void reset() {
@@ -579,7 +588,7 @@ struct pe_candidates {
     push_heap(begin(v), begin(v) + sz);
 
     // update cutoff and sure_ambig
-    cutoff = (specific ? min(cutoff, v.front().diffs) : v.front().diffs);
+    cutoff = (specific ? min16(cutoff, v.front().diffs) : v.front().diffs);
     sure_ambig = (full() && cutoff == 0);
   }
 
@@ -766,47 +775,6 @@ select_output(const bool allow_ambig,
   }
 }
 
-// GS: make this better
-inline score_t
-popcount128 (element_t x) {
-  static const element_t
-    MASK_1 = (static_cast<element_t>(0x5555555555555555ULL) << 64) |
-              static_cast<element_t>(0x5555555555555555ULL);
-
-  static const element_t
-    MASK_2 = (static_cast<element_t>(0x3333333333333333ULL) << 64) |
-              static_cast<element_t>(0x3333333333333333ULL);
-
-  static const element_t
-    MASK_4 = (static_cast<element_t>(0x0F0F0F0F0F0F0F0FULL) << 64) |
-              static_cast<element_t>(0x0F0F0F0F0F0F0F0FULL);
-
-  static const element_t
-    MASK_8 = (static_cast<element_t>(0x00FF00FF00FF00FFULL) << 64) |
-              static_cast<element_t>(0x00FF00FF00FF00FFULL);
-
-  static const element_t
-    MASK_16 = (static_cast<element_t>(0x0000FFFF0000FFFFULL) << 64) |
-               static_cast<element_t>(0x0000FFFF0000FFFFULL);
-
-  static const element_t
-    MASK_32 = (static_cast<element_t>(0x00000000FFFFFFFFULL) << 64) |
-               static_cast<element_t>(0x00000000FFFFFFFFULL);
-
-  static const element_t
-    MASK_64 = static_cast<element_t>(0xFFFFFFFFFFFFFFFFULL);
-
-  x = (x & MASK_1) + ((x >> 1) & MASK_1);
-  x = (x & MASK_2) + ((x >> 2) & MASK_2);
-  x = (x & MASK_4) + ((x >> 4) & MASK_4);
-  x = (x & MASK_8) + ((x >> 8) & MASK_8);
-  x = (x & MASK_16) + ((x >> 16) & MASK_16);
-  x = (x & MASK_32) + ((x >> 32) & MASK_32);
-  return (x & MASK_64) + ((x >> 64) & MASK_64);
-
-  //return popcnt64(x) + popcnt64(x >> 64);
-}
-
 /* GS: this function counts mismatches between read and genome when
  * they are packed as 64-bit integers, with 16 characters per integer.
  * The number of ones in the AND operation is the number of matches,
@@ -827,13 +795,14 @@ full_compare(const score_t cutoff, const PackedRead::const_iterator read_end,
              Genome::const_iterator genome_itr) {
 
   // max number of matches per element
-  static const score_t max_matches = static_cast<score_t>(32);
+  static const score_t max_matches = static_cast<score_t>(16);
   score_t d = 0;
-  while (d <= cutoff && read_itr != read_end) {
-    d += max_matches - popcount128(*read_itr &
-      ((*genome_itr >> offset) | ((*++genome_itr << (128 - offset)))));
-    ++read_itr;
-  }
+  for (; d <= cutoff && read_itr != read_end;
+       d += max_matches - popcnt64(
+         (*read_itr) & /*16 bases from the read*/
+         /*16 bases from the padded genome*/
+         ((*genome_itr >> offset) | ((*++genome_itr << (63 - offset)) << 1))
+       ), ++read_itr);
   return d;
 }
 
@@ -858,8 +827,8 @@ check_hits(const uint32_t offset,
      * position by the_pos (mod 32). Multiplied by 4 because each base
      * uses 4 bits */
     const score_t diffs = full_compare(
-      res.cutoff, read_end, ((the_pos & 31u) << 2),
-      read_st, genome_st + (the_pos >> 5)
+      res.cutoff, read_end, ((the_pos & 15u) << 2),
+      read_st, genome_st + (the_pos >> 4)
     );
 
     if (diffs <= res.cutoff)
@@ -993,41 +962,54 @@ process_seeds(const uint32_t max_candidates,
   Read::const_iterator read_idx(begin(read_seed));
   vector<uint32_t>::const_iterator s_idx;
   vector<uint32_t>::const_iterator e_idx;
+  vector<uint32_t>::const_iterator s_idx_three;
+  vector<uint32_t>::const_iterator e_idx_three;
+
+  uint32_t d_two = 0;
+  uint32_t d_three = 0;
+  uint32_t l_two = 0;
+  uint32_t l_three = 0;
 
   get_1bit_hash(read_idx, k);
   get_base_3_hash<the_conv>(read_idx, k_three);
 
-  const uint32_t specific_len = min(readlen - seed::window_size, readlen >> 1u);
-  const uint32_t specific_lim = max(seed::window_size, readlen >> 1u);
+  const uint32_t specific_len = min16(readlen - seed::window_size, readlen >> 1u);
+  const uint32_t specific_lim = max16(seed::window_size,
+      static_cast<uint32_t>(readlen >> 1u));
 
   res.set_specific();
   for (i = 0; i < specific_lim && !res.sure_ambig; ++i, ++read_idx) {
-    //two-letter seeds
     s_idx = index_st + *(counter_st + k);
     e_idx = index_st + *(counter_st + k + 1);
-    if ((s_idx != e_idx) &&
-      (find_candidates<seed::key_weight>(max_candidates,
-        read_idx, genome_st, readlen - i, s_idx, e_idx)
-        >= specific_len || ((e_idx - s_idx) <= max_candidates))) {
+    l_two = find_candidates<seed::key_weight>(max_candidates,
+              read_idx, genome_st, readlen - i, s_idx, e_idx
+            );
+    d_two = (e_idx - s_idx);
+
+    s_idx_three = index_three_st + *(counter_three_st + k_three);
+    e_idx_three = index_three_st + *(counter_three_st + k_three + 1);
+    l_three = find_candidates_three<seed::key_weight_three, the_conv>(
+                max_candidates, read_idx, genome_st,
+                readlen - i, s_idx_three, e_idx_three
+              );
+
+    d_three = (e_idx_three - s_idx_three);
+
+    // two-letter seeds
+    if (d_two <= max_candidates ||
+        ((d_three == 0 || d_two <= d_three) && l_two >= specific_len))
       check_hits<strand_code, true>(i, pack_s_idx, pack_e_idx,
-                              genome_st.itr, e_idx, s_idx, res);
-    }
+        genome_st.itr, e_idx, s_idx, res
+      );
 
     // three-letter seeds
-    if (!res.sure_ambig) {
-      s_idx = index_three_st + *(counter_three_st + k_three);
-      e_idx = index_three_st + *(counter_three_st + k_three + 1);
-      if ((s_idx != e_idx) &&
-          (find_candidates_three<seed::key_weight_three, the_conv>(
-          max_candidates, read_idx, genome_st, readlen - i, s_idx, e_idx)
-          >= specific_len || ((e_idx - s_idx) <= max_candidates))) {
-        check_hits<strand_code, true>(i, pack_s_idx, pack_e_idx,
-                                genome_st.itr, e_idx, s_idx, res);
-      }
+    if (d_three <= max_candidates || l_three >= specific_len)
+      check_hits<strand_code, true>(i, pack_s_idx, pack_e_idx,
+        genome_st.itr, e_idx_three, s_idx_three, res
+      );
 
-      shift_hash_key(*(read_idx + seed::key_weight), k);
-      shift_three_key<the_conv>(*(read_idx + seed::key_weight_three), k_three);
-    }
+    shift_hash_key(*(read_idx + seed::key_weight), k);
+    shift_three_key<the_conv>(*(read_idx + seed::key_weight_three), k_three);
   }
 
   if (!res.should_do_sensitive()) return;
@@ -1037,24 +1019,34 @@ process_seeds(const uint32_t max_candidates,
   get_base_3_hash<the_conv>(read_idx, k_three);
 
   res.set_sensitive();
+
   const uint32_t lim_two = readlen - seed::key_weight + 1;
+
+  // GS: this is to avoid chasing down uninformative two-letter
+  // seeds when there is a sufficiently high number of three
+  // letter seeds that is lower than the number of two-letter hits
+  static const uint32_t MIN_FOLD_SIZE = 10;
   for (i = 0; i < lim_two && !res.sure_ambig; ++i, ++read_idx) {
-    //two-letter seeds
     s_idx = index_st + *(counter_st + k);
     e_idx = index_st + *(counter_st + k + 1);
-    if (s_idx != e_idx && e_idx - s_idx <= max_candidates) {
+    d_two = (e_idx - s_idx);
+
+    s_idx_three = index_three_st + *(counter_three_st + k_three);
+    e_idx_three = index_three_st + *(counter_three_st + k_three + 1);
+    d_three = (e_idx_three - s_idx_three);
+
+    //two-letter seeds
+    if (d_two != 0 && d_two <= max_candidates &&
+        (d_three == 0 || d_two <= MIN_FOLD_SIZE*d_three))
       check_hits<strand_code, true>(i, pack_s_idx, pack_e_idx,
-                              genome_st.itr, e_idx, s_idx, res);
-    }
+        genome_st.itr, e_idx, s_idx, res
+      );
 
     // three-letter seeds
-    s_idx = index_three_st + *(counter_three_st + k_three);
-    e_idx = index_three_st + *(counter_three_st + k_three + 1);
-    if (s_idx != e_idx &&
-        e_idx - s_idx <= max_candidates) {
+    if (d_three != 0 && d_three <= max_candidates)
       check_hits<strand_code, true>(i, pack_s_idx, pack_e_idx,
-                              genome_st.itr, e_idx, s_idx, res);
-    }
+        genome_st.itr, e_idx_three, s_idx_three, res
+      );
 
     shift_hash_key(*(read_idx + seed::key_weight), k);
     shift_three_key<the_conv>(*(read_idx + seed::key_weight_three), k_three);
@@ -1080,7 +1072,7 @@ prep_read(const string &r, Read &pread) {
 static void
 pack_read(const Read &pread, PackedRead &packed_pread) {
   static const element_t base_match_any = static_cast<element_t>(0xF);
-  static const size_t NUM_BASES_PER_ELEMENT = 32;
+  static const size_t NUM_BASES_PER_ELEMENT = 16;
   const size_t sz = pread.size();
   const size_t num_complete_pos = sz/NUM_BASES_PER_ELEMENT;
 

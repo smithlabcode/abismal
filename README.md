@@ -116,9 +116,14 @@ truncated at the first whitespace character.
 
 (2) **Bisulfite Mapping**
 
-To map reads to human genome hg38:
+To map single-end reads in file `reads.fq` to human genome hg38:
 ```
 $ abismal -i hg38.abismalidx -o reads.sam reads.fq
+```
+
+To map paired-end reads in files `reads-1.fq` and `reads-2.fq` to human genome hg38:
+```
+$ abismal -i hg38.abismalidx -o reads.sam reads-1.fq reads-2.fq
 ```
 
 To map reads in BAM format (requires [samtools](https://www.htslib.org))

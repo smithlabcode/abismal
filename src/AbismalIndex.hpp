@@ -33,6 +33,7 @@
 #include "smithlab_utils.hpp"
 #include "dna_four_bit.hpp"
 
+typedef size_t element_t;
 typedef std::vector<element_t> Genome;
 typedef bool two_letter_t;
 typedef uint8_t three_letter_t;
