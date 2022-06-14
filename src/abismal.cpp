@@ -818,7 +818,7 @@ check_hits(const uint32_t offset,
   for (; start_idx != end_idx && !res.sure_ambig; ++start_idx) {
     // GS: adds the next candidate to cache while current is compared
     __builtin_prefetch(
-      &(*(genome_st + ((*(start_idx + 8) - offset) >> 5)))
+      &(*(genome_st + ((*(start_idx + 10) - offset) >> 4)))
     );
     const uint32_t the_pos = *start_idx - offset;
     /* GS: the_pos & 15u tells if the position is a multiple of 16, in
