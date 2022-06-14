@@ -30,6 +30,8 @@
 #include <fstream>
 #include <utility>
 
+#include "kdq.h"
+
 using std::pair;
 using std::make_pair;
 using std::ofstream;
@@ -46,14 +48,6 @@ using std::deque;
 using std::fill;
 using std::to_string;
 using std::max;
-
-#define _DO_DP
-#define _TWOLETTER
-#define _THREELETTER
-
-#if defined(_TWOLETTER) || defined(_THREELETTER)
-  #define _HYBRID
-#endif
 
 bool AbismalIndex::VERBOSE = false;
 string AbismalIndex::internal_identifier = "AbismalIndex";
@@ -195,31 +189,18 @@ AbismalIndex::select_two_letter_positions() {
   // first get statistics on the full genome
 #pragma omp parallel for
   for (size_t i = 0; i < 3; ++i) {
-#if defined(_TWOLETTER)
     if (i == 0)
       get_bucket_sizes<false>();
-#endif
-#if defined(_THREELETTER)
     if (i == 1)
       get_bucket_sizes_three<c_to_t, false>();
     if (i == 2)
       get_bucket_sizes_three<g_to_a, false >();
-#endif
   }
 
   // now choose which have lower count under two-letters
   is_two_letter.resize(cl.get_genome_size());
   fill(begin(is_two_letter), end(is_two_letter), false);
-#if defined(_THREELETTER) && !defined(_TWOLETTER)
-  return;
-#endif
 
-#if defined(_TWOLETTER) && !defined(_THREELETTER)
-  fill(begin(is_two_letter), end(is_two_letter), true);
-  return;
-#endif
-
-#if defined(_HYBRID)
   const size_t genome_st = seed::padding_size;
   const size_t lim = cl.get_genome_size() - seed::key_weight - seed::padding_size;
   ProgressBar progress(lim, "building hybrid index");
@@ -249,29 +230,22 @@ AbismalIndex::select_two_letter_positions() {
     ++gi_three;
   }
 
-  size_t tot_two = 0;
-  size_t tot_three = 0;
   for (size_t i = genome_st; i < lim; ++i, ++gi_two, ++gi_three) {
     shift_hash_key(*gi_two, hash_two);
     shift_three_key<c_to_t>(*gi_three, hash_t);
     shift_three_key<g_to_a>(*gi_three, hash_a);
 
-    if (keep[i]) {
-      if (VERBOSE && progress.time_to_report(i))
-        progress.report(cerr, i);
+    if (VERBOSE && progress.time_to_report(i))
+      progress.report(cerr, i);
 
-      is_two_letter[i] = (
-        two_letter_cost(counter[hash_two]) <=
-        three_letter_cost(counter_t[hash_t], counter_a[hash_a])
-      );
-
-      tot_two += is_two_letter[i];
-      tot_three += !is_two_letter[i];
-    }
+    is_two_letter[i] = (
+      two_letter_cost(counter[hash_two]) <=
+      three_letter_cost(counter_t[hash_t], counter_a[hash_a])
+    );
   }
-  cerr << "\ntotal two letter: " << tot_two << "\n";
-  cerr << "total three letter: " << tot_three << "\n";
-#endif
+  if (VERBOSE)
+    progress.report(cerr, lim);
+
 }
 
 void
@@ -287,22 +261,6 @@ AbismalIndex::hash_genome() {
     else if (i == 2)
       get_bucket_sizes_three<g_to_a,  true>();
   }
-
-  /*
-  //============== DEBUG ===============
-  ofstream of_two("counts-two.txt");
-  ofstream of_three_t("counts-three-t.txt");
-  ofstream of_three_a("counts-three-a.txt");
-  cerr << "[saving 2-letter counts to counts-two.txt]\n";
-  for (size_t i = 0; i < counter.size(); ++i)
-    of_two << i << " " << counter[i] << "\n";
-
-  cerr << "[saving 3-letter counts to counts-three-t.txt and counts-three-a.txt]\n";
-  for (size_t i = 0; i < counter_t.size(); ++i) {
-    of_three_t << i << " " << counter_t[i] << "\n";
-    of_three_a << i << " " << counter_a[i] << "\n";
-  }
-  //============== END DEBUG ===============*/
 
   if (VERBOSE)
     cerr << "[allocating hash tables]" << endl;
@@ -370,11 +328,10 @@ AbismalIndex::hash_genome() {
 struct dp_sol {
   size_t cost;
   uint32_t prev;
-  uint32_t num;
   dp_sol() { reset(); }
-  void reset() { cost = INF; prev = NIL; num = 0; }
-  dp_sol(const uint32_t c) : cost(c), prev(NIL), num(0) {}
-  dp_sol(const uint32_t c, const uint32_t p) : cost(c), prev(p), num(0) {}
+  void reset() { cost = INF; prev = NIL;  }
+  dp_sol(const uint32_t c) : cost(c), prev(NIL)  {}
+  dp_sol(const uint32_t c, const uint32_t p) : cost(c), prev(p)  {}
 
   static const size_t INF = std::numeric_limits<size_t>::max();
   static const uint32_t NIL = std::numeric_limits<uint32_t>::max();
@@ -382,9 +339,15 @@ struct dp_sol {
 
 typedef pair<dp_sol, uint32_t> helper_sol;
 
+struct q_sol {
+  dp_sol sol;
+  uint32_t pos;
+  q_sol(const dp_sol &_sol, const uint32_t p) : sol(_sol), pos(p) {}
+};
+
+/*
 void
 add_sol(deque<helper_sol> &helper, const uint32_t pos, const dp_sol &cand) {
-#if defined(_DO_DP)
   while (!helper.empty() && helper.back().first.cost > cand.cost)
     helper.pop_back();
 
@@ -395,31 +358,36 @@ add_sol(deque<helper_sol> &helper, const uint32_t pos, const dp_sol &cand) {
   //assert(helper.size() <= seed::window_size);
   //assert(!helper.empty());
   //assert(is_helper_sorted(helper));
+}*/
 
-#else
-  if (helper.size() == seed::window_size)
-    helper.pop_front();
-  helper.push_back(make_pair(cand, pos));
-#endif
+KDQ_INIT(q_sol);
 
+static void
+add_sol_klib(kdq_t(q_sol) *q, const uint32_t pos, const dp_sol &cand) {
+
+  while (kdq_size(q) != 0 && kdq_last(q).sol.cost > cand.cost)
+    kdq_pop(q_sol, q);
+
+  kdq_push(q_sol, q, q_sol(cand, pos));
+
+  while (kdq_first(q).pos + seed::window_size <= pos)
+    kdq_shift(q_sol, q);
+
+  // GS TODO: comment this out once everything works
+  //assert(kdq_size(q) <= seed::window_size);
+  //assert(kdq_size(q) != 0);
+  //assert(is_helper_sorted(helper));
+
+  if (kdq_size(q) == seed::window_size)
+    kdq_shift(q_sol, q);
 }
 
 inline uint32_t
 get_hybrid_cost(const bool is_two_letter,
                 const uint32_t count_two,
                 const uint32_t count_t, const uint32_t count_a) {
-#if defined(_TWOLETTER) && !defined(_THREELETTER)
-  return two_letter_cost(count_two);
-#endif
-
-#if defined(_THREELETTER) && !defined(_TWOLETTER)
-  return three_letter_cost(count_t, count_a);
-#endif
-
-#if defined(_HYBRID)
   return (is_two_letter ? two_letter_cost(count_two) :
                           three_letter_cost(count_t, count_a));
-#endif
 }
 
 void
@@ -431,8 +399,10 @@ AbismalIndex::compress_dp() {
     cl.get_genome_size() - seed::padding_size - seed::key_weight;
 
   // the dp memory allocation
-  static const size_t BLOCK_SIZE = 10000000;
-  deque<helper_sol> helper;
+  static const size_t BLOCK_SIZE = 1000000;
+  //deque<helper_sol> helper;
+  kdq_t(q_sol) *helper = kdq_init(q_sol);
+  kdq_resize(q_sol, helper, 5); // 5 bits, 2^5 > w. Can reduce this later if it's faster
   vector<dp_sol> opt(BLOCK_SIZE);
 
 
@@ -474,7 +444,6 @@ AbismalIndex::compress_dp() {
       opt[i].reset();
 
     // get the first w solutions
-    helper.clear();
     for (size_t i = 0; i < seed::window_size; ++i) {
       shift_hash_key(*gi_two++, hash_two);
       shift_three_key<c_to_t>(*gi_three, hash_t);
@@ -484,8 +453,8 @@ AbismalIndex::compress_dp() {
         get_hybrid_cost(is_two_letter[beg + i],
             counter[hash_two], counter_t[hash_t], counter_a[hash_a]);
       opt[i].prev = dp_sol::NIL;
-      opt[i].num = 1;
-      add_sol(helper, i, opt[i]);
+      //add_sol(helper, i, opt[i]);
+      add_sol_klib(helper, i, opt[i]);
     }
 
     // main dp loop
@@ -497,26 +466,22 @@ AbismalIndex::compress_dp() {
       shift_three_key<c_to_t>(*gi_three, hash_t);
       shift_three_key<g_to_a>(*gi_three++, hash_a);
 
-      opt[i].cost = helper.front().first.cost +
+      opt[i].cost = kdq_first(helper).sol.cost +
         get_hybrid_cost(is_two_letter[beg + i],
                          counter[hash_two], counter_t[hash_t], counter_a[hash_a]);
 
-      opt[i].prev = helper.front().second;
-      opt[i].num = helper.front().first.num + 1;
-      add_sol(helper, i, opt[i]);
+      opt[i].prev = kdq_first(helper).pos;
+      add_sol_klib(helper, i, opt[i]);
     }
 
     size_t opt_ans = std::numeric_limits<size_t>::max();
-    size_t opt_num = std::numeric_limits<size_t>::max();
     uint32_t last = dp_sol::NIL;
 
     // get the final solution
     for (size_t i = sz - 1; i >= sz - seed::window_size; --i) {
       const size_t cand_cost = opt[i].cost;
-      const size_t cand_num = opt[i].num;
-      if (cand_cost < opt_ans || (cand_cost == opt_ans && cand_num < opt_num)) {
+      if (cand_cost < opt_ans) {
         opt_ans = cand_cost;
-        opt_num = cand_num;
         last = i;
       }
     }
