@@ -33,6 +33,70 @@
 typedef int16_t score_t;
 typedef genome_four_bit_itr genome_iterator;
 
+// A specific namespace for simple match/mismatch scoring system and a
+// 1 -1 -1 scoring scheme for edit distance.
+namespace simple_aln {
+  static const score_t match = 2;
+  static const score_t mismatch = -3;
+  static const score_t indel = -4;
+  static const std::array<score_t, 2> score_lookup = {match, mismatch};
+
+  inline score_t default_score(const uint32_t len, const score_t diffs) {
+    return match*(len - diffs) + mismatch*diffs;
+  }
+  static score_t
+  count_deletions(const std::string &cigar) {
+    score_t ans = 0;
+    const auto lim = std::end(cigar);
+    for (auto it(begin(cigar)); it != lim; ++it) {
+      ans += (extract_op_count(it, lim)) * (*it == 'D');
+    }
+    return ans;
+  }
+
+  static score_t
+  count_insertions(const std::string &cigar) {
+    score_t ans = 0;
+    const auto lim = std::end(cigar);
+    for (auto it(begin(cigar)); it !=  lim; ++it) {
+      ans += (extract_op_count(it, lim)) * (*it == 'I');
+    }
+    return ans;
+  }
+
+  inline score_t
+  mismatch_score(const uint8_t q_base, const uint8_t t_base) {
+    return score_lookup[(q_base & t_base) == 0];
+  }
+
+  // edit distance as a function of aln_score and len
+  inline score_t edit_distance(const score_t scr, const uint32_t len,
+                               const std::string &cigar) {
+    if (scr == 0) return len;
+    const score_t ins = count_insertions(cigar);
+    const score_t del = count_deletions(cigar);
+
+    // A = S - (indel_pen) = match*M + mismatch*m
+    // B = len - ins = M + m
+    // m = (match*(len - ins) - A)/(match - mismatch)
+    const score_t A = scr - indel*(ins + del);
+    const score_t mism = (match*(len - ins) - A)/(match - mismatch);
+
+    return mism + ins + del;
+  }
+
+  inline score_t
+  best_single_score(const uint32_t readlen) {
+    return match*readlen;
+  }
+
+  inline score_t
+  best_pair_score(const uint32_t readlen1, const uint32_t readlen2) {
+    return best_single_score(readlen1) + best_single_score(readlen2);
+  }
+};
+
+
 template <score_t (*scr_fun)(const uint8_t, const uint8_t),
           score_t indel_pen = -1>
 struct AbismalAlign {
@@ -134,24 +198,24 @@ get_traceback(const size_t n_col,
   }
 }
 
-
-static score_t
-get_best_score(const std::vector<score_t> &table, const size_t n_col,
-               const size_t t_shift,
-               size_t &best_i, size_t &best_j) {
-  auto best_cell_itr = std::max_element(begin(table), end(table));
-  const size_t best_cell = std::distance(std::begin(table), best_cell_itr);
-  best_i = best_cell/n_col;
-  best_j = best_cell % n_col;
-  return *best_cell_itr;
-}
-
 template <class T>
 inline void
 max16(T &a, const T b) {
   a = ((a>b) ? a : b);
 }
 
+static score_t
+get_best_score(const std::vector<score_t> &table,
+               const size_t n_cells,
+               const size_t n_col,
+               const size_t t_shift,
+               size_t &best_i, size_t &best_j) {
+  auto best_cell_itr = std::max_element(std::begin(table), std::begin(table) + n_cells);
+  const size_t best_cell = std::distance(std::begin(table), best_cell_itr);
+  best_i = best_cell/n_col;
+  best_j = best_cell % n_col;
+  return *best_cell_itr;
+}
 
 template <score_t (*scr_fun)(const uint8_t, const uint8_t),
           class T, class QueryConstItr>
@@ -236,14 +300,20 @@ AbismalAlign<scr_fun, indel_pen>::align(
     const score_t max_diffs,
     const std::vector<uint8_t> &qseq,
     const uint32_t t_pos) {
-  std::fill(std::begin(table), std::end(table), 0);
-  std::fill(std::begin(traceback), std::end(traceback), ' ');
+  // edge case: diffs = 0 so alignment is "trivial"
+  if (diffs <= 0)
+    return simple_aln::best_single_score(qseq.size());
 
-  q_sz = qseq.size();
   // if diffs is small bw can be reduced
   const size_t bandwidth =
     std::min(bw, static_cast<size_t>(2*std::min(diffs, max_diffs) + 1));
 
+  const size_t n_cells = (4*qseq.size() + bandwidth)*bandwidth;
+
+  std::fill(std::begin(table), std::begin(table) + n_cells, 0);
+  std::fill(std::begin(traceback), std::begin(traceback) + n_cells, ' ');
+
+  q_sz = qseq.size();
   // GS: non-negative because of padding. The mapper
   // must ensure t_pos is large enough when calling the function
   const size_t t_beg = t_pos - ((bandwidth - 1)/2);
@@ -281,7 +351,7 @@ AbismalAlign<scr_fun, indel_pen>::align(
 
   // locate the end of the alignment as max score
   size_t the_row = 0, the_col = 0;
-  return get_best_score(table, bandwidth, q_sz + bandwidth, the_row, the_col);
+  return get_best_score(table, n_cells, bandwidth, q_sz + bandwidth, the_row, the_col);
 }
 
 template <score_t (*scr_fun)(const uint8_t, const uint8_t), score_t indel_pen>
@@ -292,12 +362,13 @@ AbismalAlign<scr_fun, indel_pen>::build_cigar_len_and_pos(
     uint32_t &t_pos) {
   // locate the end of the alignment as max score
   const size_t bandwidth = std::min(bw, static_cast<size_t>(2*std::min(diffs, max_diffs) + 1));
+  const size_t n_cells = (q_sz + bandwidth)*bandwidth;
   size_t the_row = 0, the_col = 0;
-  const score_t r = get_best_score(table, bandwidth, q_sz + bandwidth, the_row, the_col);
+  const score_t r = get_best_score(table, n_cells, bandwidth, q_sz + bandwidth, the_row, the_col);
 
   // GS: unlikely, but possible, case where the score = 0, which
   // degenerates CIGAR string below
-  if (r == 0) {
+  if (r == 0 || diffs == 0) {
     cigar = std::to_string(q_sz) + "M";
     len = q_sz;
     // t_pos does not change in this case
@@ -332,65 +403,5 @@ AbismalAlign<scr_fun, indel_pen>::build_cigar_len_and_pos(
 }
 
 
-// A specific namespace for simple match/mismatch scoring system and a
-// 1 -1 -1 scoring scheme for edit distance.
-namespace simple_aln {
-  static const score_t match = 2;
-  static const score_t mismatch = -3;
-  static const score_t indel = -4;
-  static const std::array<score_t, 2> score_lookup = {match, mismatch};
-
-  inline score_t default_score(const uint32_t len, const score_t diffs) {
-    return match*(len - diffs) + mismatch*diffs;
-  }
-  static score_t
-  count_deletions(const std::string &cigar) {
-    score_t ans = 0;
-    for (auto it(begin(cigar)); it != end(cigar); ++it) {
-      ans += (extract_op_count(it, end(cigar))) * (*it == 'D');
-    }
-    return ans;
-  }
-
-  static score_t
-  count_insertions(const std::string &cigar) {
-    score_t ans = 0;
-    for (auto it(begin(cigar)); it != end(cigar); ++it) {
-      ans += (extract_op_count(it, end(cigar))) * (*it == 'I');
-    }
-    return ans;
-  }
-
-  inline score_t
-  mismatch_score(const uint8_t q_base, const uint8_t t_base) {
-    return score_lookup[(q_base & t_base) == 0];
-  }
-
-  // edit distance as a function of aln_score and len
-  inline score_t edit_distance(const score_t scr, const uint32_t len,
-                               const std::string &cigar) {
-    if (scr == 0) return len;
-    const score_t ins = count_insertions(cigar);
-    const score_t del = count_deletions(cigar);
-
-    // A = S - (indel_pen) = match*M + mismatch*m
-    // B = len - ins = M + m
-    // m = (match*(len - ins) - A)/(match - mismatch)
-    const score_t A = scr - indel*(ins + del);
-    const score_t mism = (match*(len - ins) - A)/(match - mismatch);
-
-    return mism + ins + del;
-  }
-
-  inline score_t
-  best_single_score(const uint32_t readlen) {
-    return match*readlen;
-  }
-
-  inline score_t
-  best_pair_score(const uint32_t readlen1, const uint32_t readlen2) {
-    return best_single_score(readlen1) + best_single_score(readlen2);
-  }
-};
 
 #endif
