@@ -816,9 +816,9 @@ check_hits(const uint32_t offset,
            vector<uint32_t>::const_iterator start_idx,
            result_type &res) {
   for (; start_idx != end_idx && !res.sure_ambig; ++start_idx) {
-    // GS: adds the next candidate to cache while current is compared
-    __builtin_prefetch(
-      &(*(genome_st + ((*(start_idx + 1) - offset) >> 4)))
+    // GS: adds the next candidate to L1d cache while current is compared
+    _mm_prefetch(
+      &(*(genome_st + ((*(start_idx + omp_get_num_threads()) - offset) >> 4))), _MM_HINT_T0
     );
     const uint32_t the_pos = *start_idx - offset;
     /* GS: the_pos & 15u tells if the position is a multiple of 16, in
