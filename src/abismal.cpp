@@ -996,35 +996,34 @@ process_seeds(const uint32_t max_candidates,
 
   res.set_specific();
   for (i = 0; i < specific_lim && !res.sure_ambig; ++i, ++read_idx) {
+    // two-letter seeds
     s_idx = index_st + *(counter_st + k);
     e_idx = index_st + *(counter_st + k + 1);
     l_two = find_candidates<seed::key_weight>(pe_candidates::max_size_small,
               read_idx, genome_st, readlen - i, s_idx, e_idx
             );
     d_two = (e_idx - s_idx);
-
-    s_idx_three = index_three_st + *(counter_three_st + k_three);
-    e_idx_three = index_three_st + *(counter_three_st + k_three + 1);
-    l_three = find_candidates_three<seed::key_weight_three, the_conv>(
-                pe_candidates::max_size_small, read_idx, genome_st,
-                readlen - i, s_idx_three, e_idx_three
-              );
-
-    d_three = (e_idx_three - s_idx_three);
-
-    // two-letter seeds
-    if (d_two <= max_candidates ||
-        ((d_three == 0 || d_two <= d_three) && l_two >= specific_len))
+    if (d_two <= max_candidates || l_two >= specific_len)
       check_hits<strand_code, true>(i, pack_s_idx, pack_e_idx,
         genome_st.itr, e_idx, s_idx, res
       );
 
-    // three-letter seeds
-    if (d_three <= max_candidates || l_three >= specific_len)
-      check_hits<strand_code, true>(i, pack_s_idx, pack_e_idx,
-        genome_st.itr, e_idx_three, s_idx_three, res
-      );
+    if (!res.sure_ambig) {
+      s_idx_three = index_three_st + *(counter_three_st + k_three);
+      e_idx_three = index_three_st + *(counter_three_st + k_three + 1);
+      l_three = find_candidates_three<seed::key_weight_three, the_conv>(
+                  pe_candidates::max_size_small, read_idx, genome_st,
+                  readlen - i, s_idx_three, e_idx_three
+                );
 
+      d_three = (e_idx_three - s_idx_three);
+
+      // three-letter seeds
+      if (d_three <= max_candidates || l_three >= specific_len)
+        check_hits<strand_code, true>(i, pack_s_idx, pack_e_idx,
+          genome_st.itr, e_idx_three, s_idx_three, res
+        );
+    }
     shift_hash_key(*(read_idx + seed::key_weight), k);
     shift_three_key<the_conv>(*(read_idx + seed::key_weight_three), k_three);
   }
