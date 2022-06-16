@@ -221,19 +221,9 @@ get_bit(const uint8_t nt) {return (nt & 5) == 0;}
 template<const three_conv_type the_conv>
 inline three_letter_t
 get_three_letter_num(const uint8_t &nt) {
-  // C = T = 0, A = 1, G = 2
-  // bisulfite base = 0101 = 10 = 0
-  static const uint8_t conv_array_t[] =
-  {3, 1, 0, 3, 2, 3, 3, 3, 0,
-   3, 0, 3, 3, 3, 3, 3, 3};
-
-  // A = G = 0, C = 1, T = 2
-  // bisulfite base = 0101 = 5 = 0
-  static const uint8_t conv_array_a[] =
-  {3, 0, 1, 3, 0, 0, 3, 3, 2,
-   3, 3, 3, 3, 3, 3, 3, 3};
-
-  return ((the_conv == c_to_t) ? (conv_array_t[nt]) : (conv_array_a[nt]));
+  return ((the_conv == c_to_t) ?
+      ((((nt & 4) != 0)<<1)  | ((nt & 1) != 0)) : // C=T=0, A=1, G=2
+      ((((nt & 8) != 0)<<1)  | ((nt & 2) != 0))); // A=G=0,C=1,T=2
 }
 
 inline void
