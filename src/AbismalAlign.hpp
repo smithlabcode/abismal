@@ -223,7 +223,7 @@ get_best_score(const std::vector<score_t> &table,
 
 template <score_t (*scr_fun)(const uint8_t, const uint8_t),
           class T, class QueryConstItr>
-inline void
+void
 from_diag(T next_row, const T next_row_end, T cur_row,
           QueryConstItr query_seq, uint8_t ref_base) {
   while (next_row != next_row_end) {
@@ -233,7 +233,7 @@ from_diag(T next_row, const T next_row_end, T cur_row,
 }
 
 template <score_t indel_pen, class T>
-inline void
+void
 from_above(T above_itr, const T above_end, T target) {
   while (above_itr != above_end) {
     const score_t score = *above_itr++ + indel_pen;
@@ -244,7 +244,7 @@ from_above(T above_itr, const T above_end, T target) {
 // ADS: from_left is the same function as from_above, but uses
 // different order on arguments, so rewritten to be more intuitive.
 template <score_t indel_pen, class T>
-inline void
+void
 from_left(T left_itr, T target, const T target_end) {
   while (target != target_end) {
     const score_t score = *left_itr++ + indel_pen;
@@ -372,7 +372,7 @@ AbismalAlign<scr_fun, indel_pen>::build_cigar_len_and_pos(
 
   // GS: unlikely, but possible, case where the score = 0, which
   // degenerates CIGAR string below
-  if (r == 0 || diffs <= 2) {
+  if (r == 0 || diffs == 0) {
     cigar = std::to_string(q_sz) + "M";
     len = q_sz;
     // t_pos does not change in this case
