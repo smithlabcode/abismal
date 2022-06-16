@@ -304,12 +304,12 @@ AbismalAlign<scr_fun, indel_pen>::align(
     const score_t max_diffs,
     const std::vector<uint8_t> &qseq,
     const uint32_t t_pos) {
+  q_sz = qseq.size();
   // edge case: diffs = 0 so alignment is "trivial"
-  if (diffs <= 0)
-    return simple_aln::best_single_score(qseq.size());
+  if (diffs == 0)
+    return simple_aln::best_single_score(q_sz);
 
   // if diffs is small bw can be reduced
-  q_sz = qseq.size();
   const size_t bandwidth =
     min16(bw, static_cast<size_t>(2*min16(diffs, max_diffs) + 1));
   const size_t n_cells = (q_sz + bandwidth)*bandwidth;
