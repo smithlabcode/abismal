@@ -797,7 +797,7 @@ full_compare(const score_t cutoff, const PackedRead::const_iterator read_end,
        d += max_matches - popcnt64(
          (*read_itr) & /*16 bases from the read*/
          /*16 bases from the padded genome*/
-         ((*genome_itr >> offset) | ((*++genome_itr << (63 - offset)) << 1))
+         ((*genome_itr >> offset) | ((*++genome_itr << (64 - offset))))
        ), ++read_itr);
   return d;
 }
@@ -1113,14 +1113,15 @@ align_se_candidates(const Read &pread_t, const Read &pread_t_rc,
                     se_element &best,
                     string &cigar,
                     AbismalAlignSimple &aln) {
-
   const score_t readlen = static_cast<score_t>(pread_t.size());
   const score_t max_diffs = valid_diffs_cutoff(readlen, cutoff);
   const score_t max_scr = simple_aln::best_single_score(readlen);
   if (!res.best.empty()) { // exact match, no need to align
     best = res.best; // ambig info also passed here
     make_default_cigar(readlen, cigar);
+    return;
   }
+
 
   score_t best_scr = 0;
   uint32_t cand_pos = 0;
@@ -1480,7 +1481,8 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
   se_element s1;
   se_element s2;
 
-  // GS: skips empty hits
+  // GS: skips empty hits which are in the beginning
+  // because empty hits, by definition, have pos = 0
   for (; j1 != j1_end && j1->empty(); ++j1, ++a1);
   for (; j2 != j2_end && j2->empty(); ++j2);
 
