@@ -198,10 +198,14 @@ get_traceback(const size_t n_col,
   }
 }
 
-template <class T>
-inline void
+template <class T> inline void
 max16(T &a, const T b) {
   a = ((a>b) ? a : b);
+}
+
+template <class T> inline T
+min16(const T a, const T b) {
+  return  ((a<b) ? a : b);
 }
 
 static score_t
@@ -305,15 +309,14 @@ AbismalAlign<scr_fun, indel_pen>::align(
     return simple_aln::best_single_score(qseq.size());
 
   // if diffs is small bw can be reduced
+  q_sz = qseq.size();
   const size_t bandwidth =
-    std::min(bw, static_cast<size_t>(2*std::min(diffs, max_diffs) + 1));
-
-  const size_t n_cells = (4*qseq.size() + bandwidth)*bandwidth;
+    min16(bw, static_cast<size_t>(2*min16(diffs, max_diffs) + 1));
+  const size_t n_cells = (q_sz + bandwidth)*bandwidth;
 
   std::fill(std::begin(table), std::begin(table) + n_cells, 0);
   std::fill(std::begin(traceback), std::begin(traceback) + n_cells, ' ');
 
-  q_sz = qseq.size();
   // GS: non-negative because of padding. The mapper
   // must ensure t_pos is large enough when calling the function
   const size_t t_beg = t_pos - ((bandwidth - 1)/2);
@@ -327,9 +330,10 @@ AbismalAlign<scr_fun, indel_pen>::align(
   // prev and cur point to rows in the alignment matrix
   auto prev(std::begin(table));
   auto cur(prev);
+
   for (size_t i = 1; i < t_shift; ++i) {
     const size_t left = (i < bandwidth ? bandwidth - i : 0);
-    const size_t right = std::min(bandwidth, t_shift - i);
+    const size_t right = min16(bandwidth, t_shift - i);
 
     cur += bandwidth; // next row in aln matrix
     if (do_traceback) {
@@ -361,14 +365,14 @@ AbismalAlign<scr_fun, indel_pen>::build_cigar_len_and_pos(
     std::string &cigar, uint32_t &len,
     uint32_t &t_pos) {
   // locate the end of the alignment as max score
-  const size_t bandwidth = std::min(bw, static_cast<size_t>(2*std::min(diffs, max_diffs) + 1));
+  const size_t bandwidth = min16(bw, static_cast<size_t>(2*min16(diffs, max_diffs) + 1));
   const size_t n_cells = (q_sz + bandwidth)*bandwidth;
   size_t the_row = 0, the_col = 0;
   const score_t r = get_best_score(table, n_cells, bandwidth, q_sz + bandwidth, the_row, the_col);
 
   // GS: unlikely, but possible, case where the score = 0, which
   // degenerates CIGAR string below
-  if (r == 0 || diffs == 0) {
+  if (r == 0 || diffs <= 2) {
     cigar = std::to_string(q_sz) + "M";
     len = q_sz;
     // t_pos does not change in this case
