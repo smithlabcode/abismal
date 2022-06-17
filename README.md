@@ -5,6 +5,9 @@
 a read mapping program for bisulfite sequencing in DNA methylation
 studies.
 
+Download the latest stable release
+[here](https://github.com/smithlabcode/abismal/releases).
+
 ### Requirements ###
 
 Currently abismal requires a C++ compiler that supports the C++11
@@ -56,8 +59,8 @@ $ make all
 $ make install
 ```
 
-This will install `abismal` and `abismalidx` inside the `bin`
-directory in the output location.
+This will install `abismal`, `abismalidx` and `simreads`
+inside the `bin` directory in the output location.
 
 ### Indexing the genome ###
 
@@ -80,22 +83,22 @@ $ abismal [options] -i <index-file> -o <output-file> <read_1.fq> <read_2.fq>
 
 ### abismal options ###
 
-|option|long version   |arg type |default             |description                           |
-|:-----|:--------------|:--------|------------------:|:--------------------------------------|
-| -i   | -index        | string  |                   | genome index file                     |
-| -g   | -genome       | string  |                   | genome file (FASTA)                   |
-| -o   | -outfile      | string  | stdout            | output file (SAM)                     |
-| -s   | -stats        | string  |                   | mapping statistics output file (YAML) |
-| -x   | -sensitive    | boolean |                   | run abismal in max sensitivity mode*  |
-| -t   | -threads      | integer | 1                 | number of mapping threads             |
-| -l   | -min-frag     | integer | 32                | minimum fragment length (PE mode)     |
-| -L   | -max-frag     | integer | 3000              | maximum fragment length (PE mode)     |
-| -m   | -max-distance | double  | 0.1               | max relative number of errors         |
-| -a   | -ambig        | boolean |                   | report a position for ambiguous reads |
-| -P   | -pbat         | boolean |                   | input follows the PBAT protocol       |
-| -R   | -random-pbat  | boolean |                   | input follows the random PBAT protocol|
-| -A   | -a-rich       | boolean |                   | reads are A-rich (SE mode)            |
-| -v   | -verbose      | boolean |                   | print more run info                   |
+|option|long version     |arg type |default            | description                           |
+|:-----|:----------------|:--------|------------------:|:--------------------------------------|
+| -i   | -index          | string  |                   | genome index file                     |
+| -g   | -genome         | string  |                   | genome file (FASTA)                   |
+| -o   | -outfile        | string  | stdout            | output file (SAM)                     |
+| -s   | -stats          | string  |                   | mapping statistics output file (YAML) |
+| -c   | -max-candidates | boolean |                   | max candidates per seed*              |
+| -l   | -min-frag       | integer | 32                | minimum fragment length (PE mode)     |
+| -L   | -max-frag       | integer | 3000              | maximum fragment length (PE mode)     |
+| -m   | -max-distance   | double  | 0.1               | max relative number of errors         |
+| -a   | -ambig          | boolean |                   | report a position for ambiguous reads |
+| -P   | -pbat           | boolean |                   | input follows the PBAT protocol       |
+| -R   | -random-pbat    | boolean |                   | input follows the random PBAT protocol|
+| -A   | -a-rich         | boolean |                   | reads are A-rich (SE mode)            |
+| -t   | -threads        | integer | 1                 | number of mapping threads             |
+| -v   | -verbose        | boolean |                   | print more run info                   |
 
 \* in max sensitivity mode, abismal will not skip frequent k-mers when mapping a read. This
 makes abismal 4 to 20 times slower, but may increase the number of mapped reads up to 0.5%.
@@ -168,7 +171,7 @@ NAR genomics and bioinformatics, 3(4), lqab115.
 
 ### Copyright ###
 
-Copyright (C) 2018-2021 Andrew D. Smith and Guilherme de Sena Brandine
+Copyright (C) 2018-2022 Andrew D. Smith and Guilherme de Sena Brandine
 
 Authors: Andrew D. Smith and Guilherme de Sena Brandine
 
