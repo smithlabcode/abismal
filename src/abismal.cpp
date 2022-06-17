@@ -178,7 +178,7 @@ struct se_element { //assert(sizeof(se_element) == 8)
   uint32_t pos;
 
   se_element() :
-    diffs(numeric_limits<score_t>::max() - 1),  flags(0), pos(0)  {}
+    diffs(MAX_DIFFS),  flags(0), pos(0)  {}
 
   se_element(const score_t d, const flags_t f, const uint32_t p) :
     diffs(d), flags(f), pos(p) {}
@@ -213,6 +213,7 @@ struct se_element { //assert(sizeof(se_element) == 8)
 
   inline void reset() {
     pos = 0;
+    diffs = MAX_DIFFS;
   }
 
   inline void reset(const uint32_t readlen) {
@@ -221,9 +222,11 @@ struct se_element { //assert(sizeof(se_element) == 8)
   }
   static double valid_frac;
   static const double invalid_hit_frac;
+  static const score_t MAX_DIFFS;
 };
 
 double se_element::valid_frac = 0.1;
+const score_t se_element::MAX_DIFFS = std::numeric_limits<score_t>::max() - 1;
 
 // a liberal number of mismatches accepted to
 // align a read downstream
@@ -265,8 +268,9 @@ struct se_candidates {
     sz(1), best(se_element()),
     v(vector<se_element>(max_size)) {}
   inline bool full() const { return sz == max_size; };
-  void update_exact_match(const score_t d, const flags_t s, const uint32_t p) {
-    const se_element cand(d, s, p);
+  inline bool has_exact_match() const { return !best.empty(); };
+  void update_exact_match(const flags_t s, const uint32_t p) {
+    const se_element cand(0, s, p);
     if (best.empty())
       best = cand; // cand has ambig flag set to false
 
@@ -301,8 +305,9 @@ struct se_candidates {
 
   void update(const bool specific, const score_t d, const flags_t s, const uint32_t p) {
     if (d == 0)
-      update_exact_match(d, s, p);
-    update_cand(d, s, p);
+      update_exact_match(s, p);
+    else
+      update_cand(d, s, p);
 
     sure_ambig = best.sure_ambig();
     cutoff = (specific ? min16(cutoff, v.front().diffs) : v.front().diffs);
@@ -789,7 +794,6 @@ score_t
 full_compare(const score_t cutoff, const PackedRead::const_iterator read_end,
              const uint32_t offset, PackedRead::const_iterator read_itr,
              Genome::const_iterator genome_itr) {
-
   // max number of matches per element
   static const score_t max_matches = static_cast<score_t>(16);
   score_t d = 0;
@@ -797,7 +801,7 @@ full_compare(const score_t cutoff, const PackedRead::const_iterator read_end,
        d += max_matches - popcnt64(
          (*read_itr) & /*16 bases from the read*/
          /*16 bases from the padded genome*/
-         ((*genome_itr >> offset) | ((*++genome_itr << (64 - offset))))
+         ((*genome_itr >> offset) | ((*++genome_itr << (63 - offset)) << 1))
        ), ++read_itr);
   return d;
 }
@@ -1116,12 +1120,11 @@ align_se_candidates(const Read &pread_t, const Read &pread_t_rc,
   const score_t readlen = static_cast<score_t>(pread_t.size());
   const score_t max_diffs = valid_diffs_cutoff(readlen, cutoff);
   const score_t max_scr = simple_aln::best_single_score(readlen);
-  if (!res.best.empty()) { // exact match, no need to align
+  if (res.has_exact_match()) { // exact match, no need to align
     best = res.best; // ambig info also passed here
     make_default_cigar(readlen, cigar);
     return;
   }
-
 
   score_t best_scr = 0;
   uint32_t cand_pos = 0;
@@ -1567,12 +1570,10 @@ select_maps(const Read &pread1, const Read &pread2,
     res2.prepare_for_mating();
       best_pair<swap_ends>(res1, res2, pread1, pread2,
           cig1, cig2, mem_scr1, aln, best);
-    best_single(res1, res_se1);
-    best_single(res2, res_se2);
-    return true;
   }
-
-  return false;
+  best_single(res1, res_se1);
+  best_single(res2, res_se2);
+  return true;
 }
 
 
@@ -1743,8 +1744,9 @@ map_paired_ended(const bool VERBOSE,
       }
 
       if (!valid_pair(bests[i], reads1[i].size(), reads2[i].size(),
-            cigar_rseq_ops(cigar1[i]), cigar_rseq_ops(cigar2[i])))
+            cigar_rseq_ops(cigar1[i]), cigar_rseq_ops(cigar2[i]))) {
         bests[i].reset();
+      }
 
       if (!bests[i].should_report(allow_ambig)) {
         align_se_candidates(pread1, pread1_rc, pread1, pread1_rc,
@@ -1913,8 +1915,9 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
         res_se2.reset();
       }
       if (!valid_pair(bests[i], reads1[i].size(), reads2[i].size(),
-            cigar_rseq_ops(cigar1[i]), cigar_rseq_ops(cigar2[i])))
+            cigar_rseq_ops(cigar1[i]), cigar_rseq_ops(cigar2[i]))) {
         bests[i].reset();
+      }
 
       if (!bests[i].should_report(allow_ambig)) {
         align_se_candidates(
