@@ -1,5 +1,11 @@
-## abismal ##
 
+[![GitHub Downloads](https://img.shields.io/github/downloads/smithlabcode/abismal/total.svg?style=social&logo=github&label=Download)](https://github.com/smithlabcode/abismal/releases)
+[![DOI](https://zenodo.org/badge/228294373.svg)](https://zenodo.org/badge/latestdoi/228294373)
+[![Install with Conda](https://anaconda.org/bioconda/abismal/badges/installer/conda.svg)](https://anaconda.org/bioconda/abismal)
+[![Install with Conda](https://anaconda.org/bioconda/abismal/badges/platforms.svg)](https://anaconda.org/bioconda/abismal)
+[![Install with Conda](https://anaconda.org/bioconda/abismal/badges/downloads.svg)](https://anaconda.org/bioconda/abismal)
+
+## abismal ##
 
 **A**nother **Bis**ulfite **M**apping **Al**gorithm (abismal) is
 a read mapping program for bisulfite sequencing in DNA methylation
@@ -7,6 +13,9 @@ studies.
 
 Download the latest stable release
 [here](https://github.com/smithlabcode/abismal/releases).
+
+See how to [get started](https://github.com/smithlabcode/abismal/blob/master/docs/MANUAL.md#quick-installation) and the
+[full program documentation](https://github.com/smithlabcode/abismal/blob/master/docs/MANUAL.md).
 
 ### Requirements ###
 
@@ -107,7 +116,7 @@ downstream analyses afterwards, or if you are interested in some highly repetiti
 of the genome.
 
 ### Examples ###
-
+[![GitHub Downloads](https://img.shields.io/github/downloads/lh3/minimap2/total.svg?style=social&logo=github&label=Download)](https://github.com/lh3/minimap2/releases)
 (1) **Indexing the genome**
 
 To make an index for hg38:
@@ -185,8 +194,3 @@ ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
 FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
 for more details.
 
-
-[![DOI](https://zenodo.org/badge/228294373.svg)](https://zenodo.org/badge/latestdoi/228294373)
-[![Install with Conda](https://anaconda.org/bioconda/abismal/badges/installer/conda.svg)](https://anaconda.org/bioconda/abismal)
-[![Install with Conda](https://anaconda.org/bioconda/abismal/badges/platforms.svg)](https://anaconda.org/bioconda/abismal)
-[![Install with Conda](https://anaconda.org/bioconda/abismal/badges/downloads.svg)](https://anaconda.org/bioconda/abismal)
