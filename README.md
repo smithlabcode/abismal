@@ -98,7 +98,7 @@ $ abismal [options] -i <index-file> -o <output-file> <read_1.fq> <read_2.fq>
 | -g   | -genome         | string  |                   | genome file (FASTA)                   |
 | -o   | -outfile        | string  | stdout            | output file (SAM)                     |
 | -s   | -stats          | string  |                   | mapping statistics output file (YAML) |
-| -c   | -max-candidates | boolean |                   | max candidates per seed*              |
+| -c   | -max-candidates | integer | 100               | max candidates per seed*              |
 | -l   | -min-frag       | integer | 32                | minimum fragment length (PE mode)     |
 | -L   | -max-frag       | integer | 3000              | maximum fragment length (PE mode)     |
 | -m   | -max-distance   | double  | 0.1               | max relative number of errors         |
@@ -109,14 +109,13 @@ $ abismal [options] -i <index-file> -o <output-file> <read_1.fq> <read_2.fq>
 | -t   | -threads        | integer | 1                 | number of mapping threads             |
 | -v   | -verbose        | boolean |                   | print more run info                   |
 
-\* in max sensitivity mode, abismal will not skip frequent k-mers when mapping a read. This
-makes abismal 4 to 20 times slower, but may increase the number of mapped reads up to 0.5%.
-Run abismal in this mode if you only plan on mapping your dataset once and will do lots of
-downstream analyses afterwards, or if you are interested in some highly repetitive regions
-of the genome.
+\* the max candidates parameter controls the amount of "effort" in mapping. In the "sensitive" step,
+which aligns reads with smaller exact match seeds, abismal skips seeds that
+retrieves more than `c` candidates. The higher the value of `c`, the more alignments abismal
+performs. Note that abismal still aligns reads to every exact match hit that spans more than
+half of the read ("specific step"). The specific step does not change with the value set by `c`.
 
 ### Examples ###
-[![GitHub Downloads](https://img.shields.io/github/downloads/lh3/minimap2/total.svg?style=social&logo=github&label=Download)](https://github.com/lh3/minimap2/releases)
 (1) **Indexing the genome**
 
 To make an index for hg38:
