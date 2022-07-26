@@ -38,7 +38,8 @@ using std::cerr;
 using std::endl;
 using std::unordered_set;
 
-int main(int argc, const char **argv) {
+int
+main_abismalidx(int argc, const char **argv) {
 
   try {
     bool VERBOSE = false;
@@ -100,3 +101,10 @@ int main(int argc, const char **argv) {
   }
   return EXIT_SUCCESS;
 }
+
+#ifndef NO_MAIN
+int
+main(int argc, const char **argv) {
+  return main_abismalidx(argc, argv);
+}
+#endif

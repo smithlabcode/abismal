@@ -81,12 +81,12 @@ print_with_time(const string &s) {
   cerr << "[" << time_fmt << "] " << s << endl;
 }
 
-constexpr conversion_type
+static constexpr conversion_type
 flip_conv(const conversion_type conv) {
   return conv == t_rich ? a_rich : t_rich;
 }
 
-constexpr flags_t
+static constexpr flags_t
 get_strand_code(const char strand, const conversion_type conv) {
   return (((strand == '-')  ? samflags::read_rc : 0) |
           ((conv == a_rich) ? bsflags::read_is_a_rich: 0));
@@ -166,7 +166,7 @@ const uint32_t ReadLoader::min_read_length =
 
 // GS: used to allocate the appropriate dimensions of the banded
 // alignment matrix for a batch of reads
-inline void
+static inline void
 update_max_read_length(size_t &max_length, const vector<string> &reads) {
   for (vector<string>::const_iterator it (begin(reads)); it != end(reads); ++it)
     max_length = max(max_length, it->size());
@@ -232,12 +232,12 @@ const score_t se_element::MAX_DIFFS = std::numeric_limits<score_t>::max() - 1;
 // align a read downstream
 const double se_element::invalid_hit_frac = 0.4;
 
-inline score_t
+static inline score_t
 valid_diffs_cutoff(const uint32_t readlen, const double cutoff) {
   return static_cast<score_t>(cutoff*readlen);
 }
 
-inline bool
+static inline bool
 valid_len(const uint32_t aln_len, const uint32_t readlen) {
   static const double min_aln_frac =
     1.0 - se_element::invalid_hit_frac;
@@ -246,7 +246,7 @@ valid_len(const uint32_t aln_len, const uint32_t readlen) {
       static_cast<uint32_t>(min_aln_frac*readlen));
 }
 
-inline bool
+static inline bool
 valid(const se_element &s, const uint32_t aln_len,
       const uint32_t readlen, const double cutoff) {
   return
@@ -254,12 +254,13 @@ valid(const se_element &s, const uint32_t aln_len,
     s.diffs <= valid_diffs_cutoff(readlen, cutoff);
 }
 
-inline bool
+static inline bool
 valid_hit(const se_element s, const uint32_t readlen) {
   return s.diffs < static_cast<score_t>(se_element::invalid_hit_frac*readlen);
 }
 
-template <class T> inline T
+template <class T>
+static inline T
 max16(const T x, const T y) {
   return (x>y)? x:y;
 }
@@ -352,7 +353,7 @@ struct se_candidates {
 };
 const uint32_t se_candidates::max_size = 50u;
 
-inline bool
+static inline bool
 chrom_and_posn(const ChromLookup &cl, const string &cig, const uint32_t p,
                uint32_t &r_p, uint32_t &r_e, uint32_t &r_chr) {
   const uint32_t ref_ops = cigar_rseq_ops(cig);
@@ -389,8 +390,6 @@ format_se(const bool allow_ambig, const se_element &res, const ChromLookup &cl,
   out << sr.tostring() << "\n";
   return ambig ? map_ambig : map_unique;
 }
-
-
 
 struct pe_element {
   pe_element() :
@@ -449,8 +448,7 @@ struct pe_element {
 uint32_t pe_element::min_dist = 32;
 uint32_t pe_element::max_dist = 3000;
 
-
-inline bool
+static inline bool
 valid_pair(const pe_element &best,
            const uint32_t readlen1, const uint32_t readlen2,
            const uint32_t aln_len1, const uint32_t aln_len2) {
@@ -790,7 +788,7 @@ select_output(const bool allow_ambig,
  * behavior in some hardware architectures, so the compiler ignores
  * the directive and the number remains unchanged. This is a
  * workaround and there is probably a better way to do it. */
-score_t
+static score_t
 full_compare(const score_t cutoff, const PackedRead::const_iterator read_end,
              const uint32_t offset, PackedRead::const_iterator read_itr,
              Genome::const_iterator genome_itr) {
@@ -807,7 +805,7 @@ full_compare(const score_t cutoff, const PackedRead::const_iterator read_end,
 }
 
 template <const uint16_t strand_code, const bool specific, class result_type>
-inline void
+static inline void
 check_hits(const uint32_t offset,
            const PackedRead::const_iterator read_st,
            const PackedRead::const_iterator read_end,
@@ -845,7 +843,7 @@ struct compare_bases {
 };
 
 template<const uint32_t start_length>
-uint32_t
+static uint32_t
 find_candidates(const uint32_t max_candidates,
                 const Read::const_iterator read_start,
                 const genome_iterator gi,
@@ -890,7 +888,7 @@ struct compare_bases_three {
 
 template<const uint32_t start_length,
          const three_conv_type the_conv>
-uint32_t
+static uint32_t
 find_candidates_three(const uint32_t max_candidates,
                       const Read::const_iterator read_start,
                       const genome_iterator gi,
@@ -929,7 +927,7 @@ find_candidates_three(const uint32_t max_candidates,
   return p;
 }
 
-constexpr three_conv_type
+static constexpr three_conv_type
 get_conv_type(const uint16_t strand_code) {
   return(
     (samflags::check(strand_code, bsflags::read_is_a_rich)^
@@ -938,7 +936,7 @@ get_conv_type(const uint16_t strand_code) {
 }
 
 template <const uint16_t strand_code, class result_type>
-void
+static void
 process_seeds(const uint32_t max_candidates,
               const vector<uint32_t>::const_iterator counter_st,
               const vector<uint32_t>::const_iterator counter_three_st,
@@ -1102,7 +1100,7 @@ pack_read(const Read &pread, PackedRead &packed_pread) {
     *it |= base_match_any << ((j++) << 2);
 }
 
-inline bool
+static inline bool
 same_pos(const uint32_t pos1, const uint32_t pos2) {
   const uint32_t diff = (pos1 > pos2) ? (pos1 - pos2) : (pos2 - pos1);
   static const uint32_t MIN_DIFF_FOR_EQUAL = 3;
@@ -1172,7 +1170,7 @@ align_se_candidates(const Read &pread_t, const Read &pread_t_rc,
 }
 
 template <const  conversion_type conv>
-inline void
+static void
 map_single_ended(const bool VERBOSE, const bool allow_ambig,
                  const AbismalIndex &abismal_index, ReadLoader &rl,
                  se_map_stats &se_stats, ostream &out,
@@ -1279,7 +1277,7 @@ map_single_ended(const bool VERBOSE, const bool allow_ambig,
   }
 }
 
-inline void
+static void
 map_single_ended_rand(const bool VERBOSE, const bool allow_ambig,
                       const AbismalIndex &abismal_index, ReadLoader &rl,
                       se_map_stats &se_stats, ostream &out,
@@ -1406,7 +1404,7 @@ map_single_ended_rand(const bool VERBOSE, const bool allow_ambig,
 }
 
 template <const conversion_type conv, const bool random_pbat>
-void
+static void
 run_single_ended(const bool VERBOSE,
                  const bool allow_ambig,
                  const string &reads_file,
@@ -1557,7 +1555,7 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
 }
 
 template <const bool swap_ends>
-bool
+static bool
 select_maps(const Read &pread1, const Read &pread2,
             string &cig1, string &cig2,
             pe_candidates &res1, pe_candidates &res2,
@@ -1579,7 +1577,7 @@ select_maps(const Read &pread1, const Read &pread2,
 
 template <const bool cmp, const bool swap_ends,
           const uint16_t strand_code1, const uint16_t strand_code2>
-bool
+static inline bool
 map_fragments(const uint32_t max_candidates,
               const string &read1, const string &read2,
               const vector<uint32_t>::const_iterator counter_st,
@@ -1622,7 +1620,7 @@ map_fragments(const uint32_t max_candidates,
 }
 
 template <const conversion_type conv>
-inline void
+static void
 map_paired_ended(const bool VERBOSE,
                  const bool allow_ambig,
                  const AbismalIndex &abismal_index,
@@ -1777,7 +1775,7 @@ map_paired_ended(const bool VERBOSE,
   }
 }
 
-inline void
+static void
 map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
                       const AbismalIndex &abismal_index,
                       ReadLoader &rl1, ReadLoader &rl2,
@@ -1949,7 +1947,7 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
 }
 
 template <const conversion_type conv, const bool random_pbat>
-void
+static void
 run_paired_ended(const bool VERBOSE,
                  const bool allow_ambig,
                  const string &reads_file1,
@@ -1984,11 +1982,13 @@ run_paired_ended(const bool VERBOSE,
 
 // this is used to fail before reading the index if
 // any input FASTQ file does not exist
-inline bool
+static inline bool
 file_exists(const string &filename) {
   return (access(filename.c_str(), F_OK) == 0);
 }
-int main(int argc, const char **argv) {
+
+int
+main_abismal(int argc, const char **argv) {
 
   try {
     static const string ABISMAL_VERSION = "3.0.0";
@@ -2182,3 +2182,10 @@ int main(int argc, const char **argv) {
   }
   return EXIT_SUCCESS;
 }
+
+#ifndef NO_MAIN
+int
+main(int argc, const char **argv) {
+  return main_abismal(argc, argv);
+}
+#endif

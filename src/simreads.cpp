@@ -143,7 +143,7 @@ size_t FragInfo::frag_count = 0;
 size_t FragInfo::read_length = 100;
 
 
-ostream &
+static ostream &
 operator<<(ostream &out, FragInfo &the_info) {
   const bool rc = the_info.rc();
   uint16_t flags_read = 0;
@@ -204,17 +204,6 @@ operator<<(ostream &out, FragInfo &the_info) {
              << -tlen << '\t'
              << seq2 << "\t"
              << "*";
-}
-
-istream &
-operator>>(istream &in, FragInfo &the_info) {
-  string line;
-  getline(in, line);
-  istringstream iss;
-  iss.rdbuf()->pubsetbuf(&line[0], line.length());
-  return iss >> the_info.chrom >> the_info.start_pos >> the_info.end_pos
-             >> the_info.name >> the_info.score >> the_info.strand
-             >> the_info.seq >> the_info.cigar;
 }
 
 
@@ -278,16 +267,6 @@ struct FragSampler {
   size_t min_length;
   size_t max_length;
 };
-
-
-ostream &
-operator<<(ostream &out, FragSampler &the_samp) {
-  return out << "strand_code=" << the_samp.strand_code << '\n'
-             << "min_length=" << the_samp.min_length << '\n'
-             << "max_length=" << the_samp.max_length << '\n'
-             << "cl=" << endl
-             << the_samp.cl.tostring();
-}
 
 
 struct FragMutator {
@@ -359,12 +338,6 @@ struct FragMutator {
 };
 
 
-ostream &
-operator<<(ostream &out, FragMutator &the_mut) {
-  return out << the_mut.tostring();
-}
-
-
 static void
 extract_change_type_vals(const string &change_type_vals,
                          double &substitution_rate,
@@ -382,7 +355,8 @@ extract_change_type_vals(const string &change_type_vals,
 }
 
 
-int main(int argc, const char **argv) {
+int
+main_simreads(int argc, const char **argv) {
 
   try {
     string chrom_file;
@@ -554,3 +528,10 @@ int main(int argc, const char **argv) {
   }
   return EXIT_SUCCESS;
 }
+
+#ifndef NO_MAIN
+int
+main(int argc, const char **argv) {
+  return main_simreads(argc, argv);
+}
+#endif

@@ -23,6 +23,9 @@ $(error src/smithlab_cpp does not have a Makefile. \
 endif
 
 PROGS = abismal abismalidx simreads
+ifdef NO_MAIN
+	PROGS = abismal.o abismalidx.o simreads.o
+endif
 
 CXX = g++
 CXXFLAGS = -Wall -std=c++11 -fopenmp
@@ -48,7 +51,7 @@ install: $(PROGS)
 $(PROGS): AbismalIndex.o \
 	$(addprefix $(SMITHLAB_CPP)/, libsmithlab_cpp.a)
 
-%: %.cpp
+%: %.o
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(CPPFLAGS) $(LDLIBS)
 
 clean:
