@@ -142,9 +142,6 @@ load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
   for (size_t i = 0; i < seed::padding_size; ++i)
     genome.push_back('Z');
   cl.starts.push_back(genome.size());
-
-  std::cerr << "Ns: " << num_ns << "\n";
-  std::cerr << "genome size: " << cl.get_genome_size() << "\n";
 }
 
 std::ostream &
