@@ -15,16 +15,21 @@
 # License for more details.
 #
 SMITHLAB_CPP=$(abspath $(dir $(MAKEFILE_LIST)))/src/smithlab_cpp
-
-ifeq (,$(wildcard $(SMITHLAB_CPP)/Makefile))
-$(error src/smithlab_cpp does not have a Makefile. \
-	      Did you use --recursive when running git clone?)
-endif
-
 SRC_ROOT=$(shell pwd)
+
+ifndef NO_MAIN
+	ifeq (,$(wildcard $(SMITHLAB_CPP)/Makefile))
+	$(error src/smithlab_cpp does not have a Makefile. \
+					Did you use --recursive when running git clone?)
+	endif
 all:
 	@make -C $(SMITHLAB_CPP) all
 	@make -C src OPT=1
+else
+all:
+	@make -C src OPT=1
+
+endif
 
 install:
 	@make -C src SRC_ROOT=$(SRC_ROOT) OPT=1 install

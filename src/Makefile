@@ -17,9 +17,11 @@
 # check if recursive clone was done
 SMITHLAB_CPP=$(abspath $(dir $(MAKEFILE_LIST)))/smithlab_cpp
 
-ifeq (,$(wildcard $(SMITHLAB_CPP)/Makefile))
-$(error src/smithlab_cpp does not have a Makefile. \
-	      Did you use --recursive when running git clone?)
+ifndef NO_MAIN
+	ifeq (,$(wildcard $(SMITHLAB_CPP)/Makefile))
+	$(error src/smithlab_cpp does not have a Makefile. \
+					Did you use --recursive when running git clone?)
+	endif
 endif
 
 PROGS = abismal abismalidx simreads
@@ -35,7 +37,7 @@ OPTFLAGS = -O3
 DEBUGFLAGS = -g
 
 ifdef NO_MAIN
-	OPTFLAGS += -DNO_MAIN
+	CXXFLAGS += -DNO_MAIN
 endif
 
 ifdef DEBUG
