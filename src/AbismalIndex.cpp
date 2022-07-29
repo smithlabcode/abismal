@@ -30,8 +30,6 @@
 #include <fstream>
 #include <utility>
 
-#include "kdq.h"
-
 using std::pair;
 using std::make_pair;
 using std::ofstream;
@@ -339,13 +337,6 @@ struct dp_sol {
 
 typedef pair<dp_sol, uint32_t> helper_sol;
 
-struct q_sol {
-  dp_sol sol;
-  uint32_t pos;
-  q_sol(const dp_sol &_sol, const uint32_t p) : sol(_sol), pos(p) {}
-};
-
-/*
 void
 add_sol(deque<helper_sol> &helper, const uint32_t pos, const dp_sol &cand) {
   while (!helper.empty() && helper.back().first.cost > cand.cost)
@@ -358,28 +349,6 @@ add_sol(deque<helper_sol> &helper, const uint32_t pos, const dp_sol &cand) {
   //assert(helper.size() <= seed::window_size);
   //assert(!helper.empty());
   //assert(is_helper_sorted(helper));
-}*/
-
-KDQ_INIT(q_sol);
-
-static void
-add_sol_klib(kdq_t(q_sol) *q, const uint32_t pos, const dp_sol &cand) {
-
-  while (kdq_size(q) != 0 && kdq_last(q).sol.cost > cand.cost)
-    kdq_pop(q_sol, q);
-
-  kdq_push(q_sol, q, q_sol(cand, pos));
-
-  while (kdq_first(q).pos + seed::window_size <= pos)
-    kdq_shift(q_sol, q);
-
-  // GS TODO: comment this out once everything works
-  //assert(kdq_size(q) <= seed::window_size);
-  //assert(kdq_size(q) != 0);
-  //assert(is_helper_sorted(helper));
-
-  if (kdq_size(q) == seed::window_size)
-    kdq_shift(q_sol, q);
 }
 
 inline uint32_t
@@ -400,11 +369,8 @@ AbismalIndex::compress_dp() {
 
   // the dp memory allocation
   static const size_t BLOCK_SIZE = 1000000;
-  //deque<helper_sol> helper;
-  kdq_t(q_sol) *helper = kdq_init(q_sol);
-  kdq_resize(q_sol, helper, 5); // 5 bits, 2^5 > w. Can reduce this later if it's faster
+  deque<helper_sol> helper;
   vector<dp_sol> opt(BLOCK_SIZE);
-
 
   ProgressBar progress(lim, "solving dynamic prog.");
 
@@ -453,8 +419,7 @@ AbismalIndex::compress_dp() {
         get_hybrid_cost(is_two_letter[beg + i],
             counter[hash_two], counter_t[hash_t], counter_a[hash_a]);
       opt[i].prev = dp_sol::NIL;
-      //add_sol(helper, i, opt[i]);
-      add_sol_klib(helper, i, opt[i]);
+      add_sol(helper, i, opt[i]);
     }
 
     // main dp loop
@@ -466,12 +431,12 @@ AbismalIndex::compress_dp() {
       shift_three_key<c_to_t>(*gi_three, hash_t);
       shift_three_key<g_to_a>(*gi_three++, hash_a);
 
-      opt[i].cost = kdq_first(helper).sol.cost +
+      opt[i].cost = helper.front().first.cost +
         get_hybrid_cost(is_two_letter[beg + i],
                          counter[hash_two], counter_t[hash_t], counter_a[hash_a]);
 
-      opt[i].prev = kdq_first(helper).pos;
-      add_sol_klib(helper, i, opt[i]);
+      opt[i].prev = helper.front().second;
+      add_sol(helper, i, opt[i]);
     }
 
     size_t opt_ans = std::numeric_limits<size_t>::max();
