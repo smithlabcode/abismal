@@ -36,8 +36,11 @@ CPPFLAGS = -I $(SMITHLAB_CPP)
 OPTFLAGS = -O3
 DEBUGFLAGS = -g
 
+LIBDEPS=
 ifdef NO_MAIN
 	CXXFLAGS += -DNO_MAIN
+else
+	LIBDEPS=$(addprefix $(SMITHLAB_CPP)/, libsmithlab_cpp.a)
 endif
 
 ifdef DEBUG
@@ -54,8 +57,7 @@ install: $(PROGS)
 %.o: %.cpp %.hpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $< $(CPPFLAGS)
 
-$(PROGS): AbismalIndex.o \
-	$(addprefix $(SMITHLAB_CPP)/, libsmithlab_cpp.a)
+$(PROGS): AbismalIndex.o $(LIBDEPS)
 
 %: %.o
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(CPPFLAGS) $(LDLIBS)
