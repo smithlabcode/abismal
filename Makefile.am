@@ -34,7 +34,8 @@ abismal_SOURCES = \
 	src/AbismalIndex.cpp \
 	src/AbismalAlign.hpp \
 	src/AbismalIndex.hpp \
-	src/dna_four_bit_bisulfite.hpp
+	src/dna_four_bit_bisulfite.hpp \
+	src/popcnt.h
 
 abismalidx_SOURCES = \
 	src/abismalidx.cpp \
