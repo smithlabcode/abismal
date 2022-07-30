@@ -17,21 +17,14 @@
 SMITHLAB_CPP=$(abspath $(dir $(MAKEFILE_LIST)))/src/smithlab_cpp
 SRC_ROOT=$(shell pwd)
 
-ifdef NO_MAIN
 	ifeq (,$(wildcard $(SMITHLAB_CPP)/Makefile))
 	$(error src/smithlab_cpp does not have a Makefile. \
 					Did you use --recursive when running git clone?)
 	endif
-endif
 
-ifndef NO_MAIN
 all:
 	@$(MAKE) -C $(SMITHLAB_CPP) all
-	@$(MAKE) -C src OPT=1
-else
-all:
-	@$(MAKE) -C src OPT=1 NO_MAIN=1
-endif
+	@$(MAKE) -C src SRC_ROOT=$(SRC_ROOT) OPT=1 all
 
 install:
 	@$(MAKE) -C src SRC_ROOT=$(SRC_ROOT) OPT=1 install

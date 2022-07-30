@@ -16,7 +16,7 @@
 
 # check if recursive clone was done
 SMITHLAB_CPP=$(abspath $(dir $(MAKEFILE_LIST)))/smithlab_cpp
-STATIC_LIB = libabismal.a
+STATIC_LIB = $(addprefix $(SRC_ROOT)/, libabismal.a)
 
 BINARIES = abismal abismalidx simreads
 OBJECTS = abismal.o abismalidx.o simreads.o AbismalIndex.o
@@ -42,6 +42,7 @@ else
 CXXFLAGS += $(OPTFLAGS)
 endif
 
+static : $(STATIC_LIB)
 all: $(PROGS) $(LIBDEPS)
 install: $(PROGS)
 	@mkdir -p $(SRC_ROOT)/bin
