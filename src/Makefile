@@ -19,12 +19,11 @@ SMITHLAB_CPP=$(abspath $(dir $(MAKEFILE_LIST)))/smithlab_cpp
 STATIC_LIB = libabismal.a
 
 BINARIES = abismal abismalidx simreads
-#OBJECTS = $(addsuffix .o, $(BINARIES))
-OBJECTS = abismal.o abismalidx.o simreads.o
+OBJECTS = abismal.o abismalidx.o simreads.o AbismalIndex.o
 
 ifeq (,$(wildcard $(SMITHLAB_CPP)/Makefile))
 $(error src/smithlab_cpp does not have a Makefile. \
-				Did you use --recursive when running git clone?)
+	Did you use --recursive when running git clone?)
 endif
 
 PROGS = $(BINARIES)
@@ -43,7 +42,7 @@ else
 CXXFLAGS += $(OPTFLAGS)
 endif
 
-all: $(PROGS) static
+all: $(PROGS) $(LIBDEPS)
 install: $(PROGS)
 	@mkdir -p $(SRC_ROOT)/bin
 	@install -m 755 $(PROGS) $(SRC_ROOT)/bin
@@ -51,13 +50,13 @@ install: $(PROGS)
 %.o: %.cpp %.hpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $< $(CPPFLAGS)
 
-static : $(STATIC_LIB)
+# static : $(STATIC_LIB)
 $(STATIC_LIB) : $(OBJECTS)
 	ar cr $(STATIC_LIB) $^
 
-$(BINARIES): AbismalIndex.o $(LIBDEPS)
+$(BINARIES): $(LIBDEPS)
 
-%: %_main.cpp %.hpp %(LIBDEPS)
+%: %_main.cpp %.hpp $(LIBDEPS)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(CPPFLAGS) $(LDLIBS)
 
 clean:
