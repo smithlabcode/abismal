@@ -22,12 +22,12 @@ SRC_ROOT=$(shell pwd)
 					Did you use --recursive when running git clone?)
 	endif
 
-libabismal.a :
-	@$(MAKE) -C src SRC_ROOT=$(SRC_ROOT) libabismal.a
-
 all:
 	@$(MAKE) -C $(SMITHLAB_CPP) all
 	@$(MAKE) -C src SRC_ROOT=$(SRC_ROOT) OPT=1 all
+
+libabismal.a:
+	@$(MAKE) -C src SRC_ROOT=$(SRC_ROOT) libabismal.a
 
 install:
 	@$(MAKE) -C src SRC_ROOT=$(SRC_ROOT) OPT=1 install
