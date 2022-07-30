@@ -356,7 +356,7 @@ extract_change_type_vals(const string &change_type_vals,
 
 
 int
-main_simreads(int argc, const char **argv) {
+simreads(int argc, const char **argv) {
 
   try {
     string chrom_file;
@@ -532,6 +532,6 @@ main_simreads(int argc, const char **argv) {
 #ifndef NO_MAIN
 int
 main(int argc, const char **argv) {
-  return main_simreads(argc, argv);
+  return simreads(argc, argv);
 }
 #endif

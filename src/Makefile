@@ -16,19 +16,18 @@
 
 # check if recursive clone was done
 SMITHLAB_CPP=$(abspath $(dir $(MAKEFILE_LIST)))/smithlab_cpp
+STATIC_LIB = libabismal.a
 
-ifndef NO_MAIN
-	ifeq (,$(wildcard $(SMITHLAB_CPP)/Makefile))
-	$(error src/smithlab_cpp does not have a Makefile. \
-					Did you use --recursive when running git clone?)
-	endif
+BINARIES = abismal abismalidx simreads
+#OBJECTS = $(addsuffix .o, $(BINARIES))
+OBJECTS = abismal.o abismalidx.o simreads.o
+
+ifeq (,$(wildcard $(SMITHLAB_CPP)/Makefile))
+$(error src/smithlab_cpp does not have a Makefile. \
+				Did you use --recursive when running git clone?)
 endif
 
-PROGS = abismal abismalidx simreads
-ifdef NO_MAIN
-	PROGS = abismal.o abismalidx.o simreads.o
-endif
-
+PROGS = $(BINARIES)
 CXX = g++
 CXXFLAGS = -Wall -std=c++11 -fopenmp
 LDLIBS = -lz
@@ -36,12 +35,7 @@ CPPFLAGS = -I $(SMITHLAB_CPP)
 OPTFLAGS = -O3
 DEBUGFLAGS = -g
 
-LIBDEPS=
-ifdef NO_MAIN
-	CXXFLAGS += -DNO_MAIN
-else
-	LIBDEPS=$(addprefix $(SMITHLAB_CPP)/, libsmithlab_cpp.a)
-endif
+LIBDEPS = $(STATIC_LIB) $(addprefix $(SMITHLAB_CPP)/, libsmithlab_cpp.a)
 
 ifdef DEBUG
 CXXFLAGS += $(DEBUGFLAGS)
@@ -49,7 +43,7 @@ else
 CXXFLAGS += $(OPTFLAGS)
 endif
 
-all: $(PROGS)
+all: $(PROGS) static
 install: $(PROGS)
 	@mkdir -p $(SRC_ROOT)/bin
 	@install -m 755 $(PROGS) $(SRC_ROOT)/bin
@@ -57,11 +51,15 @@ install: $(PROGS)
 %.o: %.cpp %.hpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $< $(CPPFLAGS)
 
-$(PROGS): AbismalIndex.o $(LIBDEPS)
+static : $(STATIC_LIB)
+$(STATIC_LIB) : $(OBJECTS)
+	ar cr $(STATIC_LIB) $^
 
-%: %.o
+$(BINARIES): AbismalIndex.o $(LIBDEPS)
+
+%: %_main.cpp %.hpp %(LIBDEPS)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(CPPFLAGS) $(LDLIBS)
 
 clean:
-	@-rm -f $(PROGS) *.o *.so *.a *~
+	@-rm -f $(PROGS)  *.o *.so *.a *~
 .PHONY: clean

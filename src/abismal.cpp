@@ -1988,7 +1988,7 @@ file_exists(const string &filename) {
 }
 
 int
-main_abismal(int argc, const char **argv) {
+abismal(int argc, const char **argv) {
 
   try {
     static const string ABISMAL_VERSION = "3.0.0";
@@ -2186,6 +2186,6 @@ main_abismal(int argc, const char **argv) {
 #ifndef NO_MAIN
 int
 main(int argc, const char **argv) {
-  return main_abismal(argc, argv);
+  return abismal(argc, argv);
 }
 #endif

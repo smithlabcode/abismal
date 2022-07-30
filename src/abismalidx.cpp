@@ -39,7 +39,7 @@ using std::endl;
 using std::unordered_set;
 
 int
-main_abismalidx(int argc, const char **argv) {
+abismalidx(int argc, const char **argv) {
 
   try {
     bool VERBOSE = false;
@@ -51,7 +51,7 @@ main_abismalidx(int argc, const char **argv) {
     opt_parse.set_show_defaults();
     opt_parse.add_opt("threads", 't', "number of threads", false, n_threads);
     opt_parse.add_opt("verbose", 'v', "print more run info", false, VERBOSE);
-    
+
     vector<string> leftover_args;
     opt_parse.parse(argc, argv, leftover_args);
     if (argc == 1 || opt_parse.help_requested()) {
@@ -105,6 +105,6 @@ main_abismalidx(int argc, const char **argv) {
 #ifndef NO_MAIN
 int
 main(int argc, const char **argv) {
-  return main_abismalidx(argc, argv);
+  return abismalidx(argc, argv);
 }
 #endif
