@@ -30,14 +30,21 @@ AX_CXX_COMPILE_STDCXX_11([noext], [mandatory])
 
 AM_PROG_AR
 AC_PROG_RANLIB
+
+AC_ARG_ENABLE([library],
+  [AS_HELP_STRING([--enable-library], [Build only library @<:@no@:>@])],
+  [enable_library=yes], [enable_library=no])
+
+AS_IF([test "x$enable_library" = "xno"],
+      AC_CONFIG_SUBDIRS([src/smithlab_cpp]))
+AM_CONDITIONAL([LIBRARY_ONLY], [test "x$enable_library" = "xyes"])
+AM_CONDITIONAL([BINARIES_ONLY], [test "x$enable_library" = "xno"])
+
 AC_OPENMP([C++]) dnl make sure we have openmp for multi-core in abismal
 
 dnl check for the Zlib library
 AC_CHECK_LIB([z], [zlibVersion], [],
   [AC_MSG_FAILURE([Zlib must be installed to build abismal])], [])
-
-dnl recursively configure htslib
-AC_CONFIG_SUBDIRS([src/smithlab_cpp])
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT
