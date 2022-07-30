@@ -20,12 +20,15 @@ AC_INIT([abismal], [3.0.0], [andrewds@usc.edu],
 dnl the config.h is not currently #included in the source, and only
 dnl used to keep command lines short.
 AC_CONFIG_HEADERS([config.h])
+AC_PREREQ([2.63])  dnl 4-argument AC_CHECK_HEADER
 AM_INIT_AUTOMAKE([subdir-objects foreign])
 
 AC_CONFIG_MACRO_DIR([m4])
 AC_LANG(C++)
 AC_PROG_CXX
 AX_CXX_COMPILE_STDCXX_11([noext], [mandatory])
+
+AM_PROG_AR
 AC_PROG_RANLIB
 AC_OPENMP([C++]) dnl make sure we have openmp for multi-core in abismal
 
