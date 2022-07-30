@@ -26,17 +26,17 @@ endif
 
 ifndef NO_MAIN
 all:
-	@make -C $(SMITHLAB_CPP) all
-	@make -C src OPT=1
+	@$(MAKE) -C $(SMITHLAB_CPP) all
+	@$(MAKE) -C src OPT=1
 else
 all:
-	@make -C src OPT=1 NO_MAIN=1
+	@$(MAKE) -C src OPT=1 NO_MAIN=1
 endif
 
 install:
-	@make -C src SRC_ROOT=$(SRC_ROOT) OPT=1 install
+	@$(MAKE) -C src SRC_ROOT=$(SRC_ROOT) OPT=1 install
 
 clean:
-	@make -C $(SMITHLAB_CPP) clean
-	@make -C src clean
+	@$(MAKE) -C $(SMITHLAB_CPP) clean
+	@$(MAKE) -C src clean
 .PHONY: clean
