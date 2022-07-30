@@ -102,9 +102,3 @@ abismalidx(int argc, const char **argv) {
   return EXIT_SUCCESS;
 }
 
-#ifndef NO_MAIN
-int
-main(int argc, const char **argv) {
-  return abismalidx(argc, argv);
-}
-#endif

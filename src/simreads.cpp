@@ -529,9 +529,3 @@ simreads(int argc, const char **argv) {
   return EXIT_SUCCESS;
 }
 
-#ifndef NO_MAIN
-int
-main(int argc, const char **argv) {
-  return simreads(argc, argv);
-}
-#endif
