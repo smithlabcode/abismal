@@ -17,20 +17,13 @@
 EXTRA_DIST = README.md LICENSE docs
 ACLOCAL_AMFLAGS = -I m4
 
-if BINARIES_ONLY
 SUBDIRS := src/smithlab_cpp
-endif
-
 install installdirs: SUBDIRS := $(filter-out src/smithlab_cpp, $(SUBDIRS))
 AM_CPPFLAGS = -I $(top_srcdir)/src/smithlab_cpp
 
 CXXFLAGS = -O3 $(OPENMP_CXXFLAGS) # default has optimization on
 
-if LIBRARY_ONLY
-lib_LIBRARIES = libabismal.a
-else
 noinst_LIBRARIES = libabismal.a
-endif
 
 libabismal_a_SOURCES = \
 	src/abismal.cpp \
@@ -47,11 +40,9 @@ libabismal_a_SOURCES += \
 	src/dna_four_bit_bisulfite.hpp \
 	src/popcnt.hpp
 
-if BINARIES_ONLY
 LDADD = libabismal.a src/smithlab_cpp/libsmithlab_cpp.a
 
 bin_PROGRAMS = abismal abismalidx simreads
 abismal_SOURCES = src/abismal_main.cpp
 abismalidx_SOURCES = src/abismalidx_main.cpp
 simreads_SOURCES = src/simreads_main.cpp
-endif
