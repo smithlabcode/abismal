@@ -20,6 +20,7 @@
 #include "OptionParser.hpp"
 #include "dna_four_bit.hpp"
 
+#include "abismalidx.hpp"
 #include "AbismalIndex.hpp"
 #include <omp.h>
 

@@ -20,6 +20,7 @@
 #include "smithlab_utils.hpp"
 #include "OptionParser.hpp"
 
+#include "simreads.hpp"
 #include "AbismalIndex.hpp"
 #include "cigar_utils.hpp"
 #include "sam_record.hpp"

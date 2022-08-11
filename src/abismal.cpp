@@ -33,6 +33,7 @@
 #include "bisulfite_utils.hpp"
 #include "popcnt.hpp"
 
+#include "abismal.hpp"
 #include "dna_four_bit_bisulfite.hpp"
 #include "AbismalIndex.hpp"
 #include "AbismalAlign.hpp"
