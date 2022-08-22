@@ -2084,7 +2084,25 @@ abismal(int argc, const char **argv) {
     }
     /****************** END COMMAND LINE OPTIONS *****************/
 
+    /****************** BEGIN THREAD VALIDATION *****************/
     omp_set_num_threads(n_threads);
+    const int n_procs = omp_get_num_procs();
+    int num_threads_fulfilled = 1;
+#pragma omp parallel
+    {
+      num_threads_fulfilled = omp_get_num_threads();
+    }
+
+    if (VERBOSE && n_threads > n_procs)
+      print_with_time("[WARNING] requesting more threads than the "
+          "maximum of " + to_string(n_procs) + " processors available in "
+          "this device");
+
+    if (VERBOSE)
+      print_with_time("using " + to_string(num_threads_fulfilled) +
+          " threads to map reads.");
+    /****************** END THREAD VALIDATION *****************/
+
     AbismalIndex::VERBOSE = VERBOSE;
 
     if (VERBOSE) {
@@ -2119,8 +2137,7 @@ abismal(int argc, const char **argv) {
     }
 
     if (max_candidates != 0) {
-      cerr << "[manually setting max_candidates to "
-           << max_candidates << "]" << endl;
+      print_with_time("manually setting max_candidates to " + max_candidates);
       abismal_index.max_candidates = max_candidates;
     }
 
