@@ -56,7 +56,7 @@ $(STATIC_LIB) : $(OBJECTS)
 
 $(BINARIES): $(LIBDEPS)
 
-%: %_main.cpp %.hpp $(LIBDEPS)
+%: %_main.cpp $(LIBDEPS)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(CPPFLAGS) $(LDLIBS)
 
 clean:
