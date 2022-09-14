@@ -28,11 +28,22 @@ endif
 
 PROGS = $(BINARIES)
 CXX = g++
-CXXFLAGS = -Wall -std=c++11 -fopenmp
+CXXFLAGS = -Wall -std=c++11
 LDLIBS = -lz
 CPPFLAGS = -I $(SMITHLAB_CPP)
 OPTFLAGS = -O3
 DEBUGFLAGS = -g
+
+COMPILER := $(shell $(CXX) --version)
+
+# clang++ -> add -lomp to link openmp
+ifneq '' '$(findstring clang, $(COMPILER))'
+	LDLIBS += lomp
+
+# GNU g++ -> add -fopenmp
+else ifneq '' '$(findstring g++, $(COMPILER))'
+	CXXFLAGS += -fopenmp
+endif
 
 LIBDEPS = $(STATIC_LIB) $(addprefix $(SMITHLAB_CPP)/, libsmithlab_cpp.a)
 
