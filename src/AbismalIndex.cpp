@@ -379,7 +379,6 @@ AbismalIndex::compress_dp() {
   uint32_t hash_two = 0;
   uint32_t hash_t = 0;
   uint32_t hash_a = 0;
-  size_t hit_rate = 0;
   size_t num_bases = 0;
 
   // fast forward padding positions
@@ -450,8 +449,6 @@ AbismalIndex::compress_dp() {
         last = i;
       }
     }
-
-    hit_rate += opt_ans;
 
     // build traceback
     while (last != dp_sol::NIL) {

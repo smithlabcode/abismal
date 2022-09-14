@@ -2137,7 +2137,7 @@ abismal(int argc, const char **argv) {
     }
 
     if (max_candidates != 0) {
-      print_with_time("manually setting max_candidates to " + max_candidates);
+      print_with_time("manually setting max_candidates to " + to_string(max_candidates));
       abismal_index.max_candidates = max_candidates;
     }
 
