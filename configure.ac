@@ -33,11 +33,15 @@ AC_PROG_RANLIB
 
 AC_CONFIG_SUBDIRS([src/smithlab_cpp])
 
-AC_OPENMP([C++]) dnl make sure we have openmp for multi-core in abismal
+AX_OPENMP([], [AC_MSG_FAILURE([OpenMP must be installed to build abismal])]) dnl make sure we have openmp for multi-core in abismal
 
 dnl check for the Zlib library
 AC_CHECK_LIB([z], [zlibVersion], [],
   [AC_MSG_FAILURE([Zlib must be installed to build abismal])], [])
+
+dnl check for OpenMP
+AC_CHECK_LIB([gomp], [omp_get_num_threads], [],
+  [AC_MSG_FAILURE([OpenMP must be installed to build abismal])], [])
 
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT
