@@ -1488,7 +1488,7 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
   for (; j1 != j1_end && j1->empty(); ++j1, ++a1);
   for (; j2 != j2_end && j2->empty(); ++j2);
 
-  for (; j2 != j2_end; ++j2) {
+  for (; j2 != j2_end && !best.sure_ambig(); ++j2) {
     s2 = *j2;
     scr2 = 0;
 
@@ -1500,7 +1500,7 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
            --j1, --a1);
 
     for (; j1 != j1_end && j1->pos + pe_element::max_dist < lim; ++j1, ++a1);
-    for (; j1 != j1_end && j1->pos + pe_element::min_dist <= lim; ++j1, ++a1) {
+    for (; j1 != j1_end && j1->pos + pe_element::min_dist <= lim && !best.sure_ambig(); ++j1, ++a1) {
       s1 = *j1;
 
       if (scr2 == 0) { // ensures elements in j2 are aligned only once
@@ -1522,7 +1522,7 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
         best_pos2 = j2->pos;
       }
 
-      if (best.sure_ambig()) return;
+      //if (best.sure_ambig()) return;
     }
   }
 
