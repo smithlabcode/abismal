@@ -79,7 +79,7 @@ ax_cv_[]_AC_LANG_ABBREV[]_openmp=unknown
 #                -xopenmp (Sun), -omp (Tru64),
 #                -qsmp=omp (AIX),
 #                none
-ax_openmp_flags="-fopenmp -openmp -qopenmp -mp -xopenmp -omp -lomp -qsmp=omp none"
+ax_openmp_flags="-fopenmp -openmp -qopenmp -mp -xopenmp -omp -lomp -lgomp -qsmp=omp none"
 if test "x$OPENMP_[]_AC_LANG_PREFIX[]FLAGS" != x; then
   ax_openmp_flags="$OPENMP_[]_AC_LANG_PREFIX[]FLAGS $ax_openmp_flags"
 fi
