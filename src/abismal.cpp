@@ -1689,6 +1689,16 @@ map_paired_ended(const bool VERBOSE,
       the_byte = rl1.get_current_byte();
     }
 
+    if (reads1.size() != reads2.size()) {
+      throw runtime_error(
+          "paired-end batch sizes differ. Batch 1: "
+          + to_string(reads1.size()) +
+          ", batch 2: " + to_string(reads2.size()) +
+          ". Are you sure your paired-end inputs "
+          "have the same number of reads?"
+        );
+    }
+
     size_t max_batch_read_length = 0;
     update_max_read_length(max_batch_read_length, reads1);
     update_max_read_length(max_batch_read_length, reads2);
@@ -1838,6 +1848,16 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
       rl1.load_reads(names1, reads1);
       rl2.load_reads(names2, reads2);
       the_byte = rl1.get_current_byte();
+    }
+
+    if (reads1.size() != reads2.size()) {
+      throw runtime_error(
+          "paired-end batch sizes differ. Batch 1: "
+          + to_string(reads1.size()) +
+          ", batch 2: " + to_string(reads2.size()) +
+          ". Are you sure your paired-end inputs "
+          "have the same number of reads?"
+        );
     }
 
     size_t max_batch_read_length = 0;
