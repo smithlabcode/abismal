@@ -40,9 +40,5 @@ dnl check for the Zlib library
 AC_CHECK_LIB([z], [zlibVersion], [],
   [AC_MSG_FAILURE([Zlib must be installed to build abismal])], [])
 
-dnl check for OpenMP
-AC_CHECK_LIB([gomp], [omp_get_num_threads], [],
-  [AC_MSG_FAILURE([OpenMP must be installed to build abismal])], [])
-
 AC_CONFIG_FILES([Makefile])
 AC_OUTPUT
