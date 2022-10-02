@@ -1,8 +1,8 @@
 dnl This file is part of abismal
 dnl
-dnl Copyright (C) 2019: Andrew D. Smith
+dnl Copyright (C) 2019-2022: Andrew D. Smith and Guilherme de Sena Brandine
 dnl
-dnl Authors: Andrew D. Smith
+dnl Authors: Andrew D. Smith and Guilherme de Sena Brandine
 dnl
 dnl This is free software: you can redistribute it and/or modify it
 dnl under the terms of the GNU General Public License as published by
@@ -14,7 +14,7 @@ dnl but WITHOUT ANY WARRANTY; without even the implied warranty of
 dnl MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 dnl General Public License for more details.
 
-AC_INIT([abismal], [3.1.0], [andrewds@usc.edu],
+AC_INIT([abismal], [3.1.1], [andrewds@usc.edu],
         [abismal], [https://github.com/smithlabcode/abismal])
 
 dnl the config.h is not currently #included in the source, and only
@@ -33,8 +33,14 @@ AC_PROG_RANLIB
 
 AC_CONFIG_SUBDIRS([src/smithlab_cpp])
 
+dnl OpenMP happens here
 AC_OPENMP([C++])
-AX_OPENMP([], [AC_MSG_FAILURE([OpenMP must be installed to build abismal])]) dnl make sure we have openmp for multi-core in abismal
+dnl check for the OpenMP library; can't be later
+AC_SEARCH_LIBS([omp_get_num_threads], [gomp omp], [],
+               [AC_MSG_FAILURE([OpenMP library not found])])
+dnl now we get setup for the right OpenMP flags
+ADS_OPENMP([], [AC_MSG_FAILURE([OpenMP must be installed to build abismal])])
+dnl end of OpenMP stuff
 
 dnl check for the Zlib library
 AC_CHECK_LIB([z], [zlibVersion], [],

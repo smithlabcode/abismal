@@ -2012,7 +2012,7 @@ int
 abismal(int argc, const char **argv) {
 
   try {
-    static const string ABISMAL_VERSION = "3.1.0";
+    static const string ABISMAL_VERSION = "3.1.1";
     bool VERBOSE = false;
     bool GA_conversion = false;
     bool allow_ambig = false;
@@ -2220,4 +2220,3 @@ abismal(int argc, const char **argv) {
   }
   return EXIT_SUCCESS;
 }
-
