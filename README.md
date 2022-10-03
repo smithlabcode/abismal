@@ -1,5 +1,5 @@
 
-[![GitHub Downloads](https://img.shields.io/github/downloads/smithlabcode/abismal/v3.0.0/total?style=social)](https://github.com/smithlabcode/abismal/releases/v3.0.0)
+[![GitHub Downloads](https://img.shields.io/github/downloads/smithlabcode/abismal/total?style=social)](https://github.com/smithlabcode/abismal/releases/v3.0.0)
 [![Install with Conda](https://anaconda.org/bioconda/abismal/badges/platforms.svg)](https://anaconda.org/bioconda/abismal)
 [![Install with Conda](https://img.shields.io/conda/dn/bioconda/abismal?color=red&label=conda%20downloads&style=flat-square)](https://anaconda.org/bioconda/abismal)
 
