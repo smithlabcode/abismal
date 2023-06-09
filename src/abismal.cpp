@@ -2008,6 +2008,29 @@ file_exists(const string &filename) {
   return (access(filename.c_str(), F_OK) == 0);
 }
 
+
+static void
+abismal_write_sam_header(const ChromLookup &cl,
+                         const string program_name,
+                         const string program_version,
+                         const int argc, const char **argv,
+                         std::ostream &out) {
+  /* This function exists because the ChromLookup includes extra
+     chroms to pad the beginning and ending of the genome. The
+     original approach accounted for this in the code in smithlab_cpp
+     but with that approach the function can't be used generally for
+     writing a SAM header. */
+  assert(cl.names.size() > 2); // two entries exist for the padding
+  assert(cl.starts.size() == cl.names.size() + 1);
+  const vector<string> names(begin(cl.names) + 1, end(cl.names) - 1);
+  vector<size_t> sizes(names.size());
+  for (size_t i = 0; i < names.size(); ++i)
+    sizes[i] = cl.starts[i+2] - cl.starts[i+1];
+  write_sam_header(names, sizes, program_name, program_version,
+                   argc, argv, out);
+}
+
+
 int
 abismal(int argc, const char **argv) {
 
@@ -2131,7 +2154,8 @@ abismal(int argc, const char **argv) {
       else
         print_with_time("input (SE): " + reads_file);
 
-      print_with_time("output (SAM): " + (outfile.empty() ? "[stdout]" : outfile));
+      print_with_time("output (SAM): " +
+                      (outfile.empty() ? "[stdout]" : outfile));
 
       if (!stats_outfile.empty())
         print_with_time("map statistics (YAML): " + stats_outfile);
@@ -2146,18 +2170,21 @@ abismal(int argc, const char **argv) {
       abismal_index.read(index_file);
 
       if (VERBOSE)
-        print_with_time("loading time: " + to_string(omp_get_wtime() - start_time) + "s");
+        print_with_time("loading time: " +
+                        to_string(omp_get_wtime() - start_time) + "s");
     }
     else {
       if (VERBOSE)
         print_with_time("indexing genome " + genome_file);
       abismal_index.create_index(genome_file);
       if (VERBOSE)
-        print_with_time("indexing time: " + to_string(omp_get_wtime() - start_time) + "s");
+        print_with_time("indexing time: " +
+                        to_string(omp_get_wtime() - start_time) + "s");
     }
 
     if (max_candidates != 0) {
-      print_with_time("manually setting max_candidates to " + to_string(max_candidates));
+      print_with_time("manually setting max_candidates to " +
+                      to_string(max_candidates));
       abismal_index.max_candidates = max_candidates;
     }
 
@@ -2172,8 +2199,8 @@ abismal(int argc, const char **argv) {
     if (!out)
       throw runtime_error("failed to open output file: " + outfile);
 
-    write_sam_header(abismal_index.cl.names, abismal_index.cl.starts,
-                     "ABISMAL", ABISMAL_VERSION, argc, argv, out);
+    abismal_write_sam_header(abismal_index.cl, "ABISMAL", ABISMAL_VERSION,
+                             argc, argv, out);
 
     if (reads_file2.empty()) {
       if (GA_conversion || pbat_mode)
