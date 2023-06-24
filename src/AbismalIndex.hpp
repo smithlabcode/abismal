@@ -124,7 +124,7 @@ load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
   while (getline(in, line))
     if (line[0] != '>') {
       for (auto it(begin(line)); it != end(line); ++it) {
-        if (base2int(*it) == 4) { // non-acgts become random bases 
+        if (base2int(*it) == 4) { // non-acgts become random bases
           ++num_ns;
           *it = random_base();
         }
@@ -135,6 +135,9 @@ load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
       cl.names.push_back(line.substr(1, line.find_first_of(" \t") - 1));
       cl.starts.push_back(genome.size());
     }
+
+  if (cl.names.size() < 2)
+    throw std::runtime_error("no names found in genome file");
 
   // now pad the end of the concatenated sequence
   cl.names.push_back("pad_end");
