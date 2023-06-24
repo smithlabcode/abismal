@@ -273,7 +273,8 @@ AbismalIndex::hash_genome() {
   index.resize(index_size, 0);
   index_t.resize(index_size_three, 0);
   index_a.resize(index_size_three, 0);
-  cerr << "[index sizes: " << index_size << " " << index_size_three << "]\n";
+  if (VERBOSE)
+    cerr << "[index sizes: " << index_size << " " << index_size_three << "]\n";
 
   const size_t genome_st = seed::padding_size;
   const size_t lim = cl.get_genome_size() - seed::key_weight - seed::padding_size;
@@ -514,7 +515,8 @@ AbismalIndex::sort_buckets() {
       sort(b + counter[i], b + counter[i + 1], bucket_less);
     }
 
-  cerr << "[sorting three-letter buckets C-to-T]" << endl;
+  if (VERBOSE)
+    cerr << "[sorting three-letter buckets C-to-T]" << endl;
   const vector<uint32_t>::iterator b_t(begin(index_t));
   const BucketLessThree<c_to_t> bucket_less_t(genome);
 #pragma omp parallel for
@@ -523,7 +525,8 @@ AbismalIndex::sort_buckets() {
       sort(b_t + counter_t[i], b_t + counter_t[i + 1], bucket_less_t);
     }
 
-  cerr << "[sorting three-letter buckets G-to-A]" << endl;
+  if (VERBOSE)
+    cerr << "[sorting three-letter buckets G-to-A]" << endl;
   const vector<uint32_t>::iterator b_a(begin(index_a));
   const BucketLessThree<g_to_a> bucket_less_a(genome);
 #pragma omp parallel for
