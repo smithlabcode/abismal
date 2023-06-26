@@ -21,7 +21,7 @@ SUBDIRS := src/smithlab_cpp
 install installdirs: SUBDIRS := $(filter-out src/smithlab_cpp, $(SUBDIRS))
 AM_CPPFLAGS = -I $(top_srcdir)/src/smithlab_cpp
 
-CXXFLAGS = -O3 $(OPENMP_CXXFLAGS) # default has optimization on
+CXXFLAGS = -Wall -O3 $(OPENMP_CXXFLAGS) # default has optimization on
 
 noinst_LIBRARIES = libabismal.a
 
