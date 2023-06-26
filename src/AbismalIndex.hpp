@@ -29,6 +29,7 @@
 #include <cassert>
 #include <climits>
 #include <cmath>
+#include <cstdint>
 
 #include "smithlab_utils.hpp"
 #include "dna_four_bit.hpp"

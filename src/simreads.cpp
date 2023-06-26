@@ -33,6 +33,7 @@
 #include <random>
 #include <functional>
 #include <algorithm>
+#include <cstdint> // for the int8_t and friends
 
 #include <unistd.h>
 
@@ -529,4 +530,3 @@ simreads(int argc, const char **argv) {
   }
   return EXIT_SUCCESS;
 }
-

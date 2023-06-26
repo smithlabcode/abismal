@@ -22,6 +22,7 @@
 #include <vector>
 #include <algorithm>
 #include <array>
+#include <cstdint> // for uint8_t and friends
 
 #include "cigar_utils.hpp"
 #include "dna_four_bit.hpp"

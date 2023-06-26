@@ -17,7 +17,8 @@
 
 #ifndef _DNA_FOUR_BIT_BISULFITE
 #define _DNA_FOUR_BIT_BISULFITE
-#include <stdint.h>
+#include <cstdint> // for the int8_t and friends
+
 /* encoding of ASCII characters into T-rich bases, used
  * in encoding reads.
  * A: 0001 = 1
