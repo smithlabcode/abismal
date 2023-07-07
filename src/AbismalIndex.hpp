@@ -39,7 +39,15 @@ typedef std::vector<element_t> Genome;
 typedef bool two_letter_t;
 typedef uint8_t three_letter_t;
 
-static inline char random_base() {return "ACGT"[rand() & 3];}
+// ADS: This below was RNG and it was behaving differently on
+// different systems (e.g. macos vs ubuntu) and caused problems for
+// comparing results when testing. This is the original "rand" code
+// using a seed of 1. Probably not a great solution.
+static unsigned long _rng_next = 1;
+static inline char random_base() {
+  _rng_next = _rng_next * 1103515245 + 12345;
+  return "ACGT"[(_rng_next % ((unsigned long)RAND_MAX + 1)) & 3];
+}
 
 namespace seed {
   // number of positions in the hashed portion of the seed
