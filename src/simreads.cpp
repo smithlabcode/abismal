@@ -51,7 +51,34 @@ using std::ostringstream;
 using std::istringstream;
 using std::to_string;
 
-double rand_double() { return ((double) rand() / (RAND_MAX)); }
+
+namespace simreads_random {
+  // ADS: I made this namespace and functions because different
+  // implementations of rand() on different OS meant that even with
+  // the same seed, the results could be different. This meant testing
+  // didn't work.
+  bool initialized = false;
+  std::default_random_engine e;
+  std::uniform_real_distribution<double> dr;
+  std::uniform_int_distribution<int> di;
+  void initialize(const size_t the_seed) {
+    e = std::default_random_engine(the_seed);
+    initialized = true;
+  }
+  int rand() {
+    assert(initialized);
+    // ADS: should have same range as ordinary rand() by properties of
+    // std::uniform_int_distribution default constructor.
+    return di(e);
+  }
+  double rand_double() { // ADS: in the interval [0, 1]
+    assert(initialized);
+    // ADS: default constructor for std::uniform_real_distribution
+    // sets a range of [0,1)
+    return dr(e);
+  }
+}
+
 
 static string
 format_fastq_record(const string &name, const string &read) {
@@ -110,15 +137,15 @@ struct FragInfo {
   void
   bisulfite_conversion(const bool random_pbat,
                        const double bs_conv) {
-    if (pbat || (random_pbat && rand_double() < 0.5)) {
+    if (pbat || (random_pbat && simreads_random::rand_double() < 0.5)) {
       for (auto it(begin(seq)); it != end(seq); ++it) {
-        if (*it == 'G' && (rand_double() < bs_conv))
+        if (*it == 'G' && (simreads_random::rand_double() < bs_conv))
           *it = 'A';
       }
     }
     else {
       for (auto it(begin(seq)); it != end(seq); ++it) {
-        if (*it == 'C' && (rand_double() < bs_conv))
+        if (*it == 'C' && (simreads_random::rand_double() < bs_conv))
           *it = 'T';
       }
     }
@@ -217,7 +244,7 @@ sim_frag_position(const string &genome, const size_t frag_len,
 
   const size_t lim = genome.length() - frag_len + 1;
   do {
-    the_position = rand() % lim;
+    the_position = simreads_random::rand() % lim;
     the_frag = string(begin(genome) + the_position,
                       begin(genome) + the_position + frag_len);
   }
@@ -231,7 +258,7 @@ sim_frag_length(const size_t min_length, const size_t max_length) {
   assert(max_length >= min_length);
   if (min_length == max_length) return min_length;
   const size_t diff = max_length - min_length;
-  return min_length + (rand() % diff);
+  return min_length + (simreads_random::rand() % diff);
 }
 
 
@@ -259,7 +286,7 @@ struct FragSampler {
   char sim_strand() const {
     if (strand_code == 'f') return '+';
     else if (strand_code == 'r') return '-';
-    else if (strand_code == 'b') return (rand() & 1) ? '+' : '-';
+    else if (strand_code == 'b') return (simreads_random::rand() & 1) ? '+' : '-';
     else throw runtime_error("bad strand code: " + to_string(strand_code));
     return '\0';
   }
@@ -316,10 +343,10 @@ struct FragMutator {
     swap(seq, the_info.seq);
   }
   char sample_mutation() const {
-    double x  = (double)rand()/(double)RAND_MAX;
+    const double x  = simreads_random::rand_double();
     if (x > mutation_rate) return '=';
     else {
-      double y  = (double)rand()/(double)RAND_MAX;
+      const double y  = simreads_random::rand_double();
       if (y < substitution_rate) return 'M';
       else if (y < insertion_rate) return 'I';
       else return 'D';
@@ -441,14 +468,12 @@ simreads(int argc, const char **argv) {
     extract_change_type_vals(change_type_vals,
                              substitution_rate, insertion_rate, deletion_rate);
 
-    /* standard mersenne_twister_engine seeded with rd()*/
     if (rng_seed == std::numeric_limits<size_t>::max()) {
       rng_seed = time(0) + getpid();
     }
     if (VERBOSE)
       cerr << "rng seed: " << rng_seed << endl;
-    srand(rng_seed);
-
+    simreads_random::initialize(rng_seed);
 
     if (VERBOSE)
       cerr << "[loading genome]" << endl;
