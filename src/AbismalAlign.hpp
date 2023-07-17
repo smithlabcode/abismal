@@ -222,6 +222,12 @@ get_best_score(const std::vector<score_t> &table,
   return *best_cell_itr;
 }
 
+// ADS: it seems like with g++-13, on macos ventura on intel hardware
+// the dynamic vectorized optimization of -O3 might be too aggressive
+// and makes this function have strange behavior. Placing this pragma
+// here helps, and below we restore it to the `-O3` default.
+#pragma GCC optimize("vect-cost-model=very-cheap")
+
 template <score_t (*scr_fun)(const uint8_t, const uint8_t),
           class T, class QueryConstItr>
 void
@@ -290,6 +296,7 @@ from_left(T left_itr, T target, const T target_end, U traceback) {
     ++traceback; ++left_itr; ++target;
   }
 }
+#pragma GCC optimize("vect-cost-model=dynamic")
 
 
 inline void
