@@ -47,5 +47,12 @@ dnl check for the Zlib library
 AC_CHECK_LIB([z], [zlibVersion], [],
   [AC_MSG_FAILURE([Zlib must be installed to build abismal])], [])
 
-AC_CONFIG_FILES([Makefile])
+AC_CONFIG_FILES([
+Makefile
+])
+dnl make the test data files available in the build tree
+AC_CONFIG_LINKS([
+tests/md5sum.txt:data/md5sum.txt
+tests/tRex1.fa:data/tRex1.fa
+])
 AC_OUTPUT

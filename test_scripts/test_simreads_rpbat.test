@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+infile=tests/tRex1.fa
+outfile1=tests/reads_rpbat_pe_1.fq
+outfile2=tests/reads_rpbat_pe_2.fq
+outprefix=tests/reads_rpbat_pe
+if [[ -e "${infile}" ]]; then
+    ./simreads -R -seed 1 -o ${outprefix} -n 10000 -m 0.01 -b 0.98 ${infile};
+    x1=$(md5sum -c tests/md5sum.txt | grep "${outfile1}:" | cut -d ' ' -f 2)
+    x2=$(md5sum -c tests/md5sum.txt | grep "${outfile2}:" | cut -d ' ' -f 2)
+    if [[ "${x1}" != "OK" || "${x2}" != "OK" ]]; then
+        exit 1;
+    fi
+elif [[ ! -e "${infile}" ]]; then
+    echo "missing input file; skipping test";
+    exit 77;
+fi

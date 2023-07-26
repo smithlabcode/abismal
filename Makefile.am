@@ -14,7 +14,22 @@
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 # General Public License for more details.
 
-EXTRA_DIST = README.md LICENSE docs
+EXTRA_DIST = \
+	README.md \
+	LICENSE \
+	docs \
+	data/tRex1.fa \
+        data/md5sum.txt \
+	test_scripts/test_abismalidx.test \
+	test_scripts/test_simreads.test \
+	test_scripts/test_abismal.test \
+	test_scripts/test_simreads_pe.test \
+	test_scripts/test_abismal_pe.test \
+	test_scripts/test_simreads_pbat.test \
+	test_scripts/test_abismal_pbat.test \
+	test_scripts/test_simreads_rpbat.test \
+	test_scripts/test_abismal_rpbat.test
+
 ACLOCAL_AMFLAGS = -I m4
 
 SUBDIRS := src/smithlab_cpp
@@ -46,3 +61,46 @@ bin_PROGRAMS = abismal abismalidx simreads
 abismal_SOURCES = src/abismal_main.cpp
 abismalidx_SOURCES = src/abismalidx_main.cpp
 simreads_SOURCES = src/simreads_main.cpp
+
+TESTS = test_scripts/test_abismalidx.test \
+	test_scripts/test_simreads.test \
+	test_scripts/test_abismal.test \
+	test_scripts/test_simreads_pe.test \
+	test_scripts/test_abismal_pe.test \
+	test_scripts/test_simreads_pbat.test \
+	test_scripts/test_abismal_pbat.test \
+	test_scripts/test_simreads_rpbat.test \
+	test_scripts/test_abismal_rpbat.test
+
+TEST_EXTENSIONS = .test
+
+test_scripts/test_abismal.log: \
+	test_scripts/test_abismalidx.log \
+	test_scripts/test_simreads.log
+test_scripts/test_abismal_pe.log: \
+	test_scripts/test_abismalidx.log \
+	test_scripts/test_simreads_pe.log
+test_scripts/test_abismal_pbat.log: \
+	test_scripts/test_abismalidx.log \
+	test_scripts/test_simreads_pbat.log
+test_scripts/test_abismal_rpbat.log: \
+	test_scripts/test_abismalidx.log \
+	test_scripts/test_simreads_rpbat.log
+
+CLEANFILES = \
+    tests/tRex1.idx \
+    tests/reads_1.fq
+    tests/reads.mstats \
+    tests/reads.sam \
+    tests/reads_pe_1.fq \
+    tests/reads_pe_2.fq \
+    tests/reads_pe.mstats \
+    tests/reads_pe.sam \
+    tests/reads_pbat_pe_1.fq \
+    tests/reads_pbat_pe_2.fq \
+    tests/reads_pbat_pe.mstats \
+    tests/reads_pbat_pe.sam \
+    tests/reads_rpbat_pe_1.fq \
+    tests/reads_rpbat_pe_2.fq \
+    tests/reads_rpbat_pe.mstats \
+    tests/reads_rpbat_pe.sam
