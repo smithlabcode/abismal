@@ -1724,8 +1724,8 @@ map_paired_ended(const bool VERBOSE,
       bests_se1[i].reset(readlen1);
       bests_se2[i].reset(readlen2);
 
-      const bool orientation1_attempt =
-        !map_fragments<conv, false,
+      const bool strand_pm_success =
+        map_fragments<conv, false,
                      get_strand_code('+',conv),
                      get_strand_code('-', flip_conv(conv))>(
           max_candidates, reads1[i], reads2[i],
@@ -1738,8 +1738,8 @@ map_paired_ended(const bool VERBOSE,
           res_se1, res_se2, bests[i]
         );
 
-      const bool orientation2_attempt =
-        !map_fragments<!conv, true,
+      const bool strand_mp_success =
+        map_fragments<!conv, true,
                      get_strand_code('+', flip_conv(conv)),
                      get_strand_code('-', conv)>(
           max_candidates, reads2[i], reads1[i],
@@ -1751,7 +1751,7 @@ map_paired_ended(const bool VERBOSE,
           cigar2[i], cigar1[i], aln, res2, res1, mem_scr1,
           res_se2, res_se1, bests[i]
         );
-      if (orientation1_attempt && orientation2_attempt) {
+      if (!strand_pm_success && !strand_mp_success) {
         bests[i].reset();
         res_se1.reset();
         res_se2.reset();
@@ -1886,9 +1886,9 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
       bests_se1[i].reset(readlen1);
       bests_se2[i].reset(readlen2);
 
-      if (
       // GS: (1) T/A-rich +/- strand
-      !map_fragments<t_rich, false,
+      const bool richness_ta_strand_pm_success =
+       map_fragments<t_rich, false,
                    get_strand_code('+', t_rich),
                    get_strand_code('-', a_rich)>(
         max_candidates, reads1[i], reads2[i],
@@ -1896,11 +1896,10 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
         index_st, index_t_st,
         genome_st, pread1_t, pread2_t_rc, packed_pread,
         cigar1[i], cigar2[i], aln, res1, res2, mem_scr1,
-        res_se1, res_se2, bests[i]
-        ) ||
-
+        res_se1, res_se2, bests[i]);
       // GS: (2) T/A-rich, -/+ strand
-      !map_fragments<a_rich, true,
+      const bool richness_ta_strand_mp_success =
+       map_fragments<a_rich, true,
                    get_strand_code('+', a_rich),
                    get_strand_code('-', t_rich)>(
         max_candidates, reads2[i], reads1[i],
@@ -1908,11 +1907,10 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
         index_st, index_a_st,
         genome_st, pread2_a, pread1_a_rc, packed_pread,
         cigar2[i], cigar1[i], aln, res2, res1, mem_scr1,
-        res_se2, res_se1, bests[i]
-      ) ||
-
+        res_se2, res_se1, bests[i]);
       // GS: (3) A/T-rich +/- strand
-      !map_fragments<a_rich, false,
+      const bool richness_at_strand_pm_success =
+       map_fragments<a_rich, false,
                    get_strand_code('+', a_rich),
                    get_strand_code('-', t_rich)>(
         max_candidates, reads1[i], reads2[i],
@@ -1920,11 +1918,10 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
         index_st, index_a_st,
         genome_st, pread1_a, pread2_a_rc, packed_pread,
         cigar1[i], cigar2[i], aln, res1, res2, mem_scr1,
-        res_se1, res_se2, bests[i]
-      ) ||
-
+        res_se1, res_se2, bests[i]);
       // GS: (4) A/T-rich, -/+ strand
-      !map_fragments<t_rich, true,
+      const bool richness_at_strand_mp_success =
+       map_fragments<t_rich, true,
                    get_strand_code('+', t_rich),
                    get_strand_code('-', a_rich)>(
         max_candidates, reads2[i], reads1[i],
@@ -1932,8 +1929,12 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
         index_st, index_t_st,
         genome_st, pread2_t, pread1_t_rc, packed_pread,
         cigar2[i], cigar1[i], aln, res2, res1, mem_scr1,
-        res_se2, res_se1, bests[i]
-      )) {
+        res_se2, res_se1, bests[i]);
+
+      if (!richness_ta_strand_pm_success &&
+          !richness_ta_strand_mp_success &&
+          !richness_at_strand_pm_success &&
+          !richness_at_strand_mp_success) {
         bests[i].reset();
         res_se1.reset();
         res_se2.reset();
