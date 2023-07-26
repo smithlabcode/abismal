@@ -89,7 +89,7 @@ test_scripts/test_abismal_rpbat.log: \
 
 CLEANFILES = \
     tests/tRex1.idx \
-    tests/reads_1.fq
+    tests/reads_1.fq \
     tests/reads.mstats \
     tests/reads.sam \
     tests/reads_pe_1.fq \
