@@ -3,6 +3,8 @@
 3edbf931e6f0da55a50b24e01a975565  tests/reads_pbat.mstats
 b9699416969133224b620f05af97ac90  tests/reads_pbat_pe_1.fq
 12c9d36ab3bf2b9ecb5683d7a093a10d  tests/reads_pbat_pe_2.fq
+3edbf931e6f0da55a50b24e01a975565  tests/reads_pbat_pe.mstats
+51b695cd3aeb3cead392821628acf0f1  tests/reads_pbat_pe.sam
 58d6c1157b187a66d43087fe3e70a38c  tests/reads_pbat.sam
 8e5ad0faefe241de9c2c5748e005e2e8  tests/reads_pe_1.fq
 4ebacfec717182fafce46b037591b228  tests/reads_pe_2.fq
