@@ -3,8 +3,8 @@
 infile1=tests/reads_pbat_pe_1.fq
 infile2=tests/reads_pbat_pe_2.fq
 infile3=tests/tRex1.idx
-outfile1=tests/reads_pbat.sam
-outfile2=tests/reads_pbat.mstats
+outfile1=tests/reads_pbat_pe.sam
+outfile2=tests/reads_pbat_pe.mstats
 if [[ -e "${infile1}" && -e "${infile2}" && -e "${infile3}" ]]; then
     ./abismal -P -s ${outfile2} -o ${outfile1} -i ${infile3} ${infile1} ${infile2};
     x1=$(md5sum -c tests/md5sum.txt | grep "${outfile1}:" | cut -d ' ' -f 2)
