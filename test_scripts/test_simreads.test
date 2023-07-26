@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 
 infile=tests/tRex1.fa
-outfile=tests/tRex1.idx
+outfile=tests/reads_1.fq
+outprefix=tests/reads
 if [[ -e "${infile}" ]]; then
-    ./abismalidx ${infile} ${outfile}
+    ./simreads -single -seed 1 -o ${outprefix} -n 10000 -m 0.01 -b 0.98 ${infile};
     x=$(md5sum -c tests/md5sum.txt | grep "${outfile}:" | cut -d ' ' -f 2)
     if [[ "${x}" != "OK" ]]; then
         exit 1;
     fi
-else
-    echo "${infile} not found; skipping test";
+elif [[ ! -e "${infile}" ]]; then
+    echo "missing input file; skipping test";
     exit 77;
 fi
