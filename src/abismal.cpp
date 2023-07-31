@@ -1,6 +1,6 @@
-/* Copyright (C) 2018-2020 Andrew D. Smith
+/* Copyright (C) 2018-2023 Andrew D. Smith and Guil Sena
  *
- * Authors: Andrew D. Smith
+ * Authors: Andrew D. Smith and Guil Sena
  *
  * This file is part of ABISMAL.
  *
@@ -63,7 +63,8 @@ using std::chrono::system_clock;
 
 static inline bool
 ready_to_report(const size_t the_read) {
-  return the_read % 25000 == 0;
+  static const size_t inverse_report_frequency = 25000;
+  return the_read % inverse_report_frequency == 0;
 }
 
 using AbismalAlignSimple =
@@ -127,7 +128,7 @@ struct ReadLoader {
     int ret_code = 0;
     while (line_count < num_lines_to_read &&
            (ret_code = bgzf_getline(in, '\n', &buf)) >= 0) {
-      string line(buf.s);  // ADS: slow?
+      string line(buf.s);  // ADS: slow, but not bottleneck
       if (line_count % 4 == 0) {
         if (line.empty())
           throw runtime_error("file " + filename + " contains an empty " +
@@ -363,8 +364,33 @@ struct se_candidates {
 
 const uint32_t se_candidates::max_size = 50u;
 
+inline bool
+cigar_eats_ref(const uint32_t c) {
+  return bam_cigar_type(bam_cigar_op(c)) & 2;
+}
+inline bool
+cigar_eats_query(const uint32_t c) {
+  return bam_cigar_type(bam_cigar_op(c)) & 1;
+}
+
+inline uint32_t
+cigar_rseq_ops(const bam_cigar_t &cig) {
+  return accumulate(begin(cig), end(cig), 0u,
+                    [](const uint32_t total, const uint32_t x)
+                    { return total + (cigar_eats_ref(x) ? bam_cigar_oplen(x) : 0); }
+                    );
+}
+
+inline uint32_t
+cigar_qseq_ops(const bam_cigar_t &cig) {
+  return accumulate(begin(cig), end(cig), 0u,
+                    [](const uint32_t total, const uint32_t x)
+                    { return total + (cigar_eats_query(x) ? bam_cigar_oplen(x) : 0); }
+                    );
+}
+
 static inline bool
-chrom_and_posn(const ChromLookup &cl, const string &cig, const uint32_t p,
+chrom_and_posn(const ChromLookup &cl, const bam_cigar_t &cig, const uint32_t p,
                uint32_t &r_p, uint32_t &r_e, uint32_t &r_chr) {
   const uint32_t ref_ops = cigar_rseq_ops(cig);
   if (!cl.get_chrom_idx_and_offset(p, ref_ops, r_chr, r_p)) return false;
@@ -372,21 +398,13 @@ chrom_and_posn(const ChromLookup &cl, const string &cig, const uint32_t p,
   return true;
 }
 
-static inline void
-compress_cigar(const string &cig, vector<uint32_t> &compressed) {
-  std::istringstream iss(cig);
-  size_t n;
-  char op;
-  while (iss >> n >> op)
-    compressed.emplace_back(bam_cigar_gen(n, bam_cigar_table[uint8_t(op)]));
-}
-
 enum map_type { map_unmapped, map_unique, map_ambig };
 
 static map_type
 format_se(const bool allow_ambig, const se_element &res, const ChromLookup &cl,
-          const string &read, const string &read_name, const string &cigar,
+          const string &read, const string &read_name, const bam_cigar_t &cigar,
           bam_rec &sr) {
+
   const bool ambig = res.ambig();
   const bool valid = !res.empty();
   if (!allow_ambig && ambig) return map_ambig;
@@ -403,9 +421,6 @@ format_se(const bool allow_ambig, const se_element &res, const ChromLookup &cl,
 
   // flag |= BAM_FREAD1;  // ADS: this might be wrong...
 
-  vector<uint32_t> compressed;
-  compress_cigar(cigar, compressed);
-
   sr.b = bam_init1();
   int ret = bam_set1(sr.b,
                      read_name.size(),   // size_t l_qname,
@@ -414,8 +429,8 @@ format_se(const bool allow_ambig, const se_element &res, const ChromLookup &cl,
                      chrom_idx - 1,      // int32_t tid (-1 for padding)
                      ref_s,              // hts_pos_t pos,
                      255,                // uint8_t mapq,
-                     compressed.size(),  // size_t n_cigar,
-                     compressed.data(),  // const uint32_t *cigar,
+                     cigar.size(),       // size_t n_cigar,
+                     cigar.data(),       // const uint32_t *cigar,
                      -1,                 // int32_t mtid,
                      -1,                 //  hts_pos_t mpos,
                      0,                  // hts_pos_t isize,
@@ -521,7 +536,9 @@ valid_pair(const pe_element &best, const uint32_t readlen1,
 static map_type
 format_pe(const bool allow_ambig, const pe_element &p, const ChromLookup &cl,
           const string &read1, const string &read2, const string &name1,
-          const string &name2, const string &cig1, const string &cig2,
+          const string &name2,
+          const bam_cigar_t &cig1,
+          const bam_cigar_t &cig2,
           bam_rec &sr1, bam_rec &sr2) {
   static const uint8_t cv[2] = {'T', 'A'};
 
@@ -532,7 +549,6 @@ format_pe(const bool allow_ambig, const pe_element &p, const ChromLookup &cl,
 
   uint32_t r_s1 = 0, r_e1 = 0, chr1 = 0;  // positions in chroms (0-based)
   uint32_t r_s2 = 0, r_e2 = 0, chr2 = 0;
-
   // PE chromosomes differ or couldn't be found, treat read as unmapped
   if (!chrom_and_posn(cl, cig1, p.r1.pos, r_s1, r_e1, chr1) ||
       !chrom_and_posn(cl, cig2, p.r2.pos, r_s2, r_e2, chr2) || chr1 != chr2)
@@ -565,27 +581,23 @@ format_pe(const bool allow_ambig, const pe_element &p, const ChromLookup &cl,
   flag1 |= BAM_FREAD1;
   flag2 |= BAM_FREAD2;
 
-  // ADS: slowness here
-  vector<uint32_t> compressed1;
-  compress_cigar(cig1, compressed1);
-
   sr1.b = bam_init1();
   int ret = bam_set1(sr1.b,
-                     name1.size(),        // size_t l_qname,
-                     name1.data(),        // const char *qname,
-                     flag1,               // uint16_t flag,
-                     chr1 - 1,            // (-1 for padding) int32_t tid
-                     r_s1,                // hts_pos_t pos,
-                     255,                 // uint8_t mapq,
-                     compressed1.size(),  // size_t n_cigar,
-                     compressed1.data(),  // const uint32_t *cigar,
-                     chr2 - 1,            // (-1 for padding) int32_t mtid,
-                     r_s2,                //  hts_pos_t mpos,
-                     isize,               // hts_pos_t isize,
-                     read1.size(),        // size_t l_seq,
-                     read1.data(),        // const char *seq,
-                     nullptr,             // const char *qual,
-                     16);                 // size_t l_aux);
+                     name1.size(), // size_t l_qname,
+                     name1.data(), // const char *qname,
+                     flag1,        // uint16_t flag,
+                     chr1 - 1,     // (-1 for padding) int32_t tid
+                     r_s1,         // hts_pos_t pos,
+                     255,          // uint8_t mapq,
+                     cig1.size(),  // size_t n_cigar,
+                     cig1.data(),  // const uint32_t *cigar,
+                     chr2 - 1,     // (-1 for padding) int32_t mtid,
+                     r_s2,         //  hts_pos_t mpos,
+                     isize,        // hts_pos_t isize,
+                     read1.size(), // size_t l_seq,
+                     read1.data(), // const char *seq,
+                     nullptr,      // const char *qual,
+                     16);          // size_t l_aux);
   if (ret < 0) throw runtime_error("error formatting bam");
 
   ret = bam_aux_update_int(sr1.b, "NM", p.r1.diffs);
@@ -594,26 +606,23 @@ format_pe(const bool allow_ambig, const pe_element &p, const ChromLookup &cl,
   ret = bam_aux_append(sr1.b, "CV", 'A', 1, cv + p.r1.elem_is_a_rich());
   if (ret < 0) throw runtime_error("error adding aux field");
 
-  vector<uint32_t> compressed2;
-  compress_cigar(cig2, compressed2);
-
   sr2.b = bam_init1();
   ret = bam_set1(sr2.b,
-                 name2.size(),        // size_t l_qname,
-                 name2.data(),        // const char *qname,
-                 flag2,               // uint16_t flag,
-                 chr2 - 1,            // (-1 for padding) int32_t tid
-                 r_s2,                // hts_pos_t pos,
-                 255,                 // uint8_t mapq,
-                 compressed2.size(),  // size_t n_cigar,
-                 compressed2.data(),  // const uint32_t *cigar,
-                 chr1 - 1,            // (-1 for padding) int32_t mtid,
-                 r_s1,                //  hts_pos_t mpos,
-                 -isize,              // hts_pos_t isize,
-                 read2.size(),        // size_t l_seq,
-                 read2.data(),        // const char *seq,
-                 nullptr,             // const char *qual,
-                 16);                 // size_t l_aux);
+                 name2.size(),     // size_t l_qname,
+                 name2.data(),     // const char *qname,
+                 flag2,            // uint16_t flag,
+                 chr2 - 1,         // (-1 for padding) int32_t tid
+                 r_s2,             // hts_pos_t pos,
+                 255,              // uint8_t mapq,
+                 cig2.size(),      // size_t n_cigar,
+                 cig2.data(),      // const uint32_t *cigar,
+                 chr1 - 1,         // (-1 for padding) int32_t mtid,
+                 r_s1,             //  hts_pos_t mpos,
+                 -isize,           // hts_pos_t isize,
+                 read2.size(),     // size_t l_seq,
+                 read2.data(),     // const char *seq,
+                 nullptr,          // const char *qual,
+                 16);              // size_t l_aux);
   if (ret < 0) throw runtime_error("failed to format bam");
 
   ret = bam_aux_update_int(sr2.b, "NM", p.r2.diffs);
@@ -673,9 +682,9 @@ struct pe_candidates {
   }
 
   void prepare_for_mating() {
-    sort(
-      begin(v), begin(v) + sz,  // no sort_heap here as heapify used "diffs"
-      [](const se_element &a, const se_element &b) { return a.pos < b.pos; });
+    sort(begin(v), begin(v) + sz,  // no sort_heap here as heapify used "diffs"
+         [](const se_element &a, const se_element &b)
+         { return a.pos < b.pos; } );
     sz = unique(begin(v), begin(v) + sz) - begin(v);
   }
 
@@ -709,7 +718,7 @@ struct se_map_stats {
   size_t edit_distance;
   size_t total_bases;
 
-  void update(const bool allow_ambig, const string &read, const string &cigar,
+  void update(const bool allow_ambig, const string &read, const bam_cigar_t &cigar,
               const se_element s) {
     ++tot_rds;
     const bool valid = !s.empty();
@@ -722,7 +731,7 @@ struct se_map_stats {
     if (valid && (allow_ambig || !ambig)) update_error_rate(s.diffs, cigar);
   }
 
-  void update_error_rate(const score_t diffs, const string &cigar) {
+  void update_error_rate(const score_t diffs, const bam_cigar_t &cigar) {
     edit_distance += diffs;
     total_bases += cigar_rseq_ops(cigar);
   }
@@ -776,7 +785,8 @@ struct pe_map_stats {
   se_map_stats end2_stats;
 
   void update(const bool allow_ambig, const string &reads1,
-              const string &reads2, const string &cig1, const string &cig2,
+              const string &reads2,
+              const bam_cigar_t &cig1, const bam_cigar_t &cig2,
               const pe_element &p, const se_element s1, const se_element s2) {
     const bool valid = !p.empty();
     const bool ambig = p.ambig();
@@ -795,8 +805,8 @@ struct pe_map_stats {
     }
   }
 
-  void update_error_rate(const score_t d1, const score_t d2, const string &cig1,
-                         const string &cig2) {
+  void update_error_rate(const score_t d1, const score_t d2, const bam_cigar_t &cig1,
+                         const bam_cigar_t &cig2) {
     edit_distance += d1 + d2;
     total_bases += cigar_rseq_ops(cig1) + cigar_rseq_ops(cig2);
   }
@@ -837,7 +847,9 @@ struct pe_map_stats {
 static void
 select_output(const bool allow_ambig, const ChromLookup &cl,
               const string &read1, const string &name1, const string &read2,
-              const string &name2, const string &cig1, const string &cig2,
+              const string &name2,
+              const bam_cigar_t &cig1,
+              const bam_cigar_t &cig2,
               pe_element &best, se_element &se1, se_element &se2, bam_rec &sr1,
               bam_rec &sr2) {
   const map_type pe_map_type = format_pe(allow_ambig, best, cl, read1, read2,
@@ -854,6 +866,7 @@ select_output(const bool allow_ambig, const ChromLookup &cl,
       se2.reset();
   }
 }
+
 
 /* GS: this function counts mismatches between read and genome when
  * they are packed as 64-bit integers, with 16 characters per integer.
@@ -1175,7 +1188,7 @@ static void
 align_se_candidates(const Read &pread_t, const Read &pread_t_rc,
                     const Read &pread_a, const Read &pread_a_rc,
                     const double cutoff, se_candidates &res, se_element &best,
-                    string &cigar, AbismalAlignSimple &aln) {
+                    bam_cigar_t &cigar, AbismalAlignSimple &aln) {
   const score_t readlen = static_cast<score_t>(pread_t.size());
   const score_t max_diffs = valid_diffs_cutoff(readlen, cutoff);
   const score_t max_scr = simple_aln::best_single_score(readlen);
@@ -1226,15 +1239,15 @@ align_se_candidates(const Read &pread_t, const Read &pread_t_rc,
 
     uint32_t len = 0;
     aln.build_cigar_len_and_pos(best.diffs, max_diffs, cigar, len, best.pos);
-
     best.diffs = simple_aln::edit_distance(best_scr, len, cigar);
+
     // do not report and count it as unmapped if not valid
     if (!valid(best, len, readlen, cutoff)) best.reset();
   }
-
   else
     best.reset();
 }
+
 
 static inline bool
 valid_bam_rec(const bam_rec &b) {
@@ -1266,7 +1279,7 @@ map_single_ended(const bool VERBOSE, const bool allow_ambig,
   // batch variables used in reporting the SAM entry
   vector<string> names;
   vector<string> reads;
-  vector<string> cigar;
+  vector<bam_cigar_t> cigar;
   vector<se_element> bests;
   vector<bam_rec> mr;
 
@@ -1332,13 +1345,15 @@ map_single_ended(const bool VERBOSE, const bool allow_ambig,
     }
 #pragma omp critical
     {
-      for (size_t i = 0; i < n_reads; ++i)
+      for (size_t i = 0; i < n_reads; ++i) {
         if (valid_bam_rec(mr[i]) && !out.write(hdr, mr[i]))
           throw runtime_error("failed to write bam");
+      }
     }
     for (size_t i = 0; i < n_reads; ++i) {
       if (valid_bam_rec(mr[i])) reset_bam_rec(mr[i]);
       se_stats.update(allow_ambig, reads[i], cigar[i], bests[i]);
+      cigar[i].clear();
     }
     if (VERBOSE && ready_to_report(the_read))
 #pragma omp critical
@@ -1367,7 +1382,7 @@ map_single_ended_rand(const bool VERBOSE, const bool allow_ambig,
 
   vector<string> names;
   vector<string> reads;
-  vector<string> cigar;
+  vector<bam_cigar_t> cigar;
   vector<se_element> bests;
   vector<bam_rec> mr;
 
@@ -1449,6 +1464,7 @@ map_single_ended_rand(const bool VERBOSE, const bool allow_ambig,
     for (size_t i = 0; i < n_reads; ++i) {
       if (valid_bam_rec(mr[i])) reset_bam_rec(mr[i]);
       se_stats.update(allow_ambig, reads[i], cigar[i], bests[i]);
+      cigar[i].clear();
     }
     if (VERBOSE && ready_to_report(the_read))
 #pragma omp critical
@@ -1477,7 +1493,8 @@ run_single_ended(const bool VERBOSE, const bool allow_ambig,
                              hdr, out, progress);
   }
   if (VERBOSE) {
-    cerr << "reads mapped: " << rl.get_current_read() << endl;
+    print_with_time(
+      "reads mapped: " + to_string(rl.get_current_read()));
     print_with_time(
       "total mapping time: " + to_string(omp_get_wtime() - start_time) + "s");
   }
@@ -1492,7 +1509,8 @@ best_single(const pe_candidates &pres, se_candidates &res) {
 
 template<const bool swap_ends> static void
 best_pair(const pe_candidates &res1, const pe_candidates &res2,
-          const Read &pread1, const Read &pread2, string &cig1, string &cig2,
+          const Read &pread1, const Read &pread2,
+          bam_cigar_t &cigar1, bam_cigar_t &cigar2,
           vector<score_t> &mem_scr1, AbismalAlignSimple &aln,
           pe_element &best) {
   vector<se_element>::const_iterator j1(begin(res1.v));
@@ -1574,22 +1592,23 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
   }
 
   if (best_pos1 != 0) {  // a new better alignment was found
+
     s1 = (swap_ends) ? (best.r2) : (best.r1);
     s2 = (swap_ends) ? (best.r1) : (best.r2);
 
     // re-aligns pos 1 with traceback
     uint32_t len1 = 0;
     aln.align<true>(s1.diffs, max_diffs1, pread1, best_pos1);
-    aln.build_cigar_len_and_pos(s1.diffs, max_diffs1, cig1, len1, best_pos1);
+    aln.build_cigar_len_and_pos(s1.diffs, max_diffs1, cigar1, len1, best_pos1);
     s1.pos = best_pos1;
-    s1.diffs = simple_aln::edit_distance(best_scr1, len1, cig1);
+    s1.diffs = simple_aln::edit_distance(best_scr1, len1, cigar1);
 
     // re-aligns pos 2 with traceback
     uint32_t len2 = 0;
     aln.align<true>(s2.diffs, max_diffs2, pread2, best_pos2);
-    aln.build_cigar_len_and_pos(s2.diffs, max_diffs2, cig2, len2, best_pos2);
+    aln.build_cigar_len_and_pos(s2.diffs, max_diffs2, cigar2, len2, best_pos2);
     s2.pos = best_pos2;
-    s2.diffs = simple_aln::edit_distance(best_scr2, len2, cig2);
+    s2.diffs = simple_aln::edit_distance(best_scr2, len2, cigar2);
 
     // last check if, after alignment, mates are still concordant
     const uint32_t frag_end = best_pos2 + len2;
@@ -1604,7 +1623,8 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
 }
 
 template<const bool swap_ends> static bool
-select_maps(const Read &pread1, const Read &pread2, string &cig1, string &cig2,
+select_maps(const Read &pread1, const Read &pread2,
+            bam_cigar_t &cig1, bam_cigar_t &cig2,
             pe_candidates &res1, pe_candidates &res2, vector<score_t> &mem_scr1,
             se_candidates &res_se1, se_candidates &res_se2,
             AbismalAlignSimple &aln, pe_element &best) {
@@ -1629,7 +1649,8 @@ map_fragments(const uint32_t max_candidates, const string &read1,
               const vector<uint32_t>::const_iterator index_st,
               const vector<uint32_t>::const_iterator index_three_st,
               const genome_iterator genome_st, Read &pread1, Read &pread2,
-              PackedRead &packed_pread, string &cigar1, string &cigar2,
+              PackedRead &packed_pread,
+              bam_cigar_t &cigar1, bam_cigar_t &cigar2,
               AbismalAlignSimple &aln, pe_candidates &res1, pe_candidates &res2,
               vector<score_t> &mem_scr1, se_candidates &res_se1,
               se_candidates &res_se2, pe_element &best) {
@@ -1659,6 +1680,7 @@ map_fragments(const uint32_t max_candidates, const string &read1,
                                 mem_scr1, res_se1, res_se2, aln, best);
 }
 
+
 template<const conversion_type conv> static void
 map_paired_ended(const bool VERBOSE, const bool allow_ambig,
                  const AbismalIndex &abismal_index, ReadLoader &rl1,
@@ -1678,8 +1700,11 @@ map_paired_ended(const bool VERBOSE, const bool allow_ambig,
 
   // GS: objects used to report reads, need as many copies as
   // the batch size
-  vector<string> names1, reads1, cigar1;
-  vector<string> names2, reads2, cigar2;
+  vector<string> names1, reads1;
+  vector<string> names2, reads2;
+
+  vector<bam_cigar_t> cigar1;
+  vector<bam_cigar_t> cigar2;
 
   vector<pe_element> bests;
   vector<se_element> bests_se1;
@@ -1770,6 +1795,7 @@ map_paired_ended(const bool VERBOSE, const bool allow_ambig,
           (conv == t_rich) ? index_a_st : index_t_st, genome_st, pread2,
           pread1_rc, packed_pread, cigar2[i], cigar1[i], aln, res2, res1,
           mem_scr1, res_se2, res_se1, bests[i]);
+
       if (!strand_pm_success && !strand_mp_success) {
         bests[i].reset();
         res_se1.reset();
@@ -1777,9 +1803,8 @@ map_paired_ended(const bool VERBOSE, const bool allow_ambig,
       }
 
       if (!valid_pair(bests[i], reads1[i].size(), reads2[i].size(),
-                      cigar_rseq_ops(cigar1[i]), cigar_rseq_ops(cigar2[i]))) {
+                      cigar_rseq_ops(cigar1[i]), cigar_rseq_ops(cigar2[i])))
         bests[i].reset();
-      }
 
       if (!bests[i].should_report(allow_ambig)) {
         align_se_candidates(pread1, pread1_rc, pread1, pread1_rc,
@@ -1810,6 +1835,8 @@ map_paired_ended(const bool VERBOSE, const bool allow_ambig,
       if (valid_bam_rec(mr2[i])) reset_bam_rec(mr2[i]);
       pe_stats.update(allow_ambig, reads1[i], reads2[i], cigar1[i], cigar2[i],
                       bests[i], bests_se1[i], bests_se2[i]);
+      cigar1[i].clear();
+      cigar2[i].clear();
     }
     if (VERBOSE && ready_to_report(the_read))
 #pragma omp critical
@@ -1836,8 +1863,11 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
 
   const genome_iterator genome_st(begin(abismal_index.genome));
 
-  vector<string> names1, reads1, cigar1;
-  vector<string> names2, reads2, cigar2;
+  vector<string> names1, reads1;
+  vector<string> names2, reads2;
+
+  vector<bam_cigar_t> cigar1;
+  vector<bam_cigar_t> cigar2;
 
   vector<pe_element> bests;
   vector<se_element> bests_se1;
@@ -1979,6 +2009,8 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
       if (valid_bam_rec(mr2[i])) reset_bam_rec(mr2[i]);
       pe_stats.update(allow_ambig, reads1[i], reads2[i], cigar1[i], cigar2[i],
                       bests[i], bests_se1[i], bests_se2[i]);
+      cigar1[i].clear();
+      cigar2[i].clear();
     }
     if (VERBOSE && ready_to_report(the_read))
 #pragma omp critical
@@ -1997,9 +2029,6 @@ run_paired_ended(const bool VERBOSE, const bool allow_ambig,
   ReadLoader rl2(reads_file2);
   ProgressBar progress(get_filesize(reads_file1), "mapping reads");
 
-  // if (VERBOSE)
-  //   progress.report(cerr, 0);
-
   double start_time = omp_get_wtime();
 
 #pragma omp parallel for
@@ -2012,9 +2041,12 @@ run_paired_ended(const bool VERBOSE, const bool allow_ambig,
       map_paired_ended<conv>(VERBOSE, allow_ambig, abismal_index, rl1, rl2,
                              pe_stats, hdr, out, progress);
   }
-  if (VERBOSE)
+  if (VERBOSE) {
+    print_with_time(
+      "reads mapped: " + to_string(rl1.get_current_read()));
     print_with_time(
       "total mapping time: " + to_string(omp_get_wtime() - start_time) + "s");
+  }
 }
 
 // this is used to fail before reading the index if
