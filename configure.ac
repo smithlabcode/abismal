@@ -33,6 +33,17 @@ AC_PROG_RANLIB
 
 AC_CONFIG_SUBDIRS([src/smithlab_cpp])
 
+dnl check for HTSLib if requested
+hts_fail_msg="
+Failed to locate HTSLib on your system. Please use the LDFLAGS and
+CPPFLAGS variables to specify the directories where the HTSLib library
+and headers can be found.
+"
+
+dnl check for required libraries
+AC_SEARCH_LIBS([hts_version], [hts], [], [AC_MSG_FAILURE([$hts_fail_msg])])
+
+
 dnl OpenMP happens here
 AC_OPENMP([C++])
 AS_VAR_IF(OPENMP_CXXFLAGS, [], [
