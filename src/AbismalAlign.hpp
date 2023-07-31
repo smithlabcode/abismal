@@ -1,6 +1,6 @@
-/* Copyright (C) 2019-2023 Andrew D. Smith and Guil Sena
+/* Copyright (C) 2019-2023 Andrew D. Smith and Guilherme Sena
  *
- * Authors: Andrew D. Smith and Guil Sena
+ * Authors: Andrew D. Smith and Guilherme Sena
  *
  * This file is part of ABISMAL.
  *
