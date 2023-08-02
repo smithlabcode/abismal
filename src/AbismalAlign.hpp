@@ -18,8 +18,6 @@
 #ifndef ABISMAL_ALIGN_HPP
 #define ABISMAL_ALIGN_HPP
 
-#include <htslib/sam.h>
-
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -27,6 +25,7 @@
 #include <string>
 #include <vector>
 
+#include "abismal_cigar_utils.hpp"
 #include "dna_four_bit.hpp"
 
 // AbismalAlign class has a templated function for the comparison
@@ -40,22 +39,18 @@ typedef std::vector<uint32_t> bam_cigar_t;
 static inline score_t
 count_deletions(const bam_cigar_t &cigar) {
   score_t ans = 0;
-  const auto lim(std::end(cigar));
-  for (auto it(begin(cigar)); it != lim; ++it) {
-    const auto x = *it;
-    if (bam_cigar_op(x) == BAM_CDEL) ans += bam_cigar_oplen(x);
-  }
+  for (const auto &x : cigar)
+    if (abismal_bam_cigar_op(x) == ABISMAL_BAM_CDEL)
+      ans += abismal_bam_cigar_oplen(x);
   return ans;
 }
 
 static inline score_t
 count_insertions(const bam_cigar_t &cigar) {
   score_t ans = 0;
-  const auto lim(std::end(cigar));
-  for (auto it(begin(cigar)); it != lim; ++it) {
-    const auto x = *it;
-    if (bam_cigar_op(x) == BAM_CINS) ans += bam_cigar_oplen(x);
-  }
+  for (const auto &x : cigar)
+    if (abismal_bam_cigar_op(x) == ABISMAL_BAM_CINS)
+      ans += abismal_bam_cigar_oplen(x);
   return ans;
 }
 
@@ -104,8 +99,8 @@ namespace simple_aln {
 template<score_t (*scr_fun)(const uint8_t, const uint8_t),
          score_t indel_pen = -1>
 struct AbismalAlign {
-  AbismalAlign(const genome_iterator &target_start)
-    : target(target_start), bw(2 * max_off_diag + 1) {}
+  explicit AbismalAlign(const genome_iterator &target_start)
+      : target(target_start), bw(2 * max_off_diag + 1) {}
 
   template<const bool do_traceback>
   score_t align(const score_t diffs, const score_t max_diffs,
@@ -118,8 +113,7 @@ struct AbismalAlign {
   void reset(const uint32_t max_read_length);
 
   std::vector<score_t> table;
-  std::vector<uint8_t> traceback;
-  std::vector<uint8_t> cigar_scratch;
+  std::vector<int8_t> traceback;
   const genome_iterator target;
   const size_t bw;
 
@@ -141,33 +135,32 @@ AbismalAlign<scr_fun, indel_pen>::reset(
   // length times the width of the band around the diagonal
   const size_t n_cells = (q_sz_max + bw) * bw;
   table.resize(n_cells);
-  traceback.resize(n_cells, ' ');
-
-  // the largest cigar is 1I1D for each qseq_op
-  cigar_scratch.resize(4 * q_sz_max);
+  traceback.resize(n_cells, -1);  // ADS: -1 no meaning for traceback
 }
 
 // for making the CIGAR string
-static const uint8_t left_symbol = 'I';
-static const uint8_t above_symbol = 'D';
-static const uint8_t diag_symbol = 'M';
-static const uint8_t soft_clip_symbol = 'S';
+static const uint8_t left_symbol = ABISMAL_BAM_CINS;             // I
+static const uint8_t above_symbol = ABISMAL_BAM_CDEL;            // D
+static const uint8_t diag_symbol = ABISMAL_BAM_CMATCH;           // M
+static const uint8_t soft_clip_symbol = ABISMAL_BAM_CSOFT_CLIP;  // S
 
-static inline bool
+static inline bool  // consumes reference
 is_deletion(const uint8_t c) {
-  return c == above_symbol;  // consumes reference
+  return c == above_symbol;
 }
 
-static inline bool
+static inline bool  // does not consume reference
 is_insertion(const uint8_t c) {
-  return c == left_symbol;  // does not consume reference
+  return c == left_symbol;
 }
 
 static inline void
 get_traceback(const size_t n_col, const std::vector<score_t> &table,
-              const std::vector<uint8_t> &traceback,
+              // const std::vector<uint8_t> &traceback,
+              const std::vector<int8_t> &traceback,
               std::vector<uint32_t> &cigar, size_t &the_row, size_t &the_col) {
-  uint8_t prev_arrow = traceback[the_row * n_col + the_col];
+  int8_t prev_arrow = traceback[the_row * n_col + the_col];
+  // int8_t prev_arrow = traceback[the_row * n_col + the_col];
   const bool is_del = is_deletion(prev_arrow);
   const bool is_ins = is_insertion(prev_arrow);
   the_row -= !is_ins;
@@ -175,20 +168,20 @@ get_traceback(const size_t n_col, const std::vector<score_t> &table,
   the_col += is_del;  // ADS: straight up IS diagonal!
   uint32_t n = 1;
   while (table[the_row * n_col + the_col] > 0) {
-    const uint8_t arrow = traceback[the_row * n_col + the_col];
+    const int8_t arrow = traceback[the_row * n_col + the_col];
     const bool is_del = is_deletion(arrow);
     const bool is_ins = is_insertion(arrow);
     the_row -= !is_ins;
     the_col -= is_ins;
     the_col += is_del;
     if (arrow != prev_arrow) {
-      cigar.emplace_back(bam_cigar_gen(n, bam_cigar_table[prev_arrow]));
+      cigar.emplace_back(abismal_bam_cigar_gen(n, prev_arrow));
       n = 0;
     }
     ++n;
     prev_arrow = arrow;
   }
-  cigar.emplace_back(bam_cigar_gen(n, bam_cigar_table[prev_arrow]));
+  cigar.emplace_back(abismal_bam_cigar_gen(n, prev_arrow));
 }
 
 template<class T> inline void
@@ -298,7 +291,8 @@ make_default_cigar(const uint32_t len, std::string &cigar) {
 
 inline void
 make_default_cigar(const uint32_t len, bam_cigar_t &cigar) {
-  cigar = {bam_cigar_gen(len, 0)};
+  // ADS: below is = { abismal_bam_cigar_gen(len, 0)};
+  cigar = {(len << ABISMAL_BAM_CIGAR_SHIFT)};
 }
 
 template<score_t (*scr_fun)(const uint8_t, const uint8_t), score_t indel_pen>
@@ -318,7 +312,7 @@ AbismalAlign<scr_fun, indel_pen>::align(const score_t diffs,
 
   std::fill(std::begin(table), std::begin(table) + n_cells, 0);
   if (do_traceback)
-    std::fill(std::begin(traceback), std::begin(traceback) + n_cells, ' ');
+    std::fill(std::begin(traceback), std::begin(traceback) + n_cells, -1);
 
   // GS: non-negative because of padding. The mapper
   // must ensure t_pos is large enough when calling the function
@@ -398,16 +392,22 @@ AbismalAlign<scr_fun, indel_pen>::build_cigar_len_and_pos(  // uses cigar
   // soft clip "S" at the end of the (reverse) uncompressed cigar
   const size_t soft_clip_top = (the_row + the_col) - (bandwidth - 1);
 
+  // if there is any soft clip at the top, now append it
   if (soft_clip_top > 0)
-    cigar.emplace_back(bam_cigar_gen(soft_clip_top, BAM_CSOFT_CLIP));
+    cigar.emplace_back(abismal_bam_cigar_gen(soft_clip_top, soft_clip_symbol));
 
+  // cigar was formed working backwards so reverse it
   std::reverse(std::begin(cigar), std::end(cigar));
 
+  // if any soft clip at the bottm, append now after reversing
   if (soft_clip_bottom > 0)
-    cigar.emplace_back(bam_cigar_gen(soft_clip_bottom, BAM_CSOFT_CLIP));
+    cigar.emplace_back(
+      abismal_bam_cigar_gen(soft_clip_bottom, soft_clip_symbol));
 
+  // length of alignment: query size minus soft clip on both ends
   len = q_sz - soft_clip_bottom - soft_clip_top;
 
+  // ADS: should have documented this better the first time around...
   const size_t t_beg = t_pos - ((bandwidth - 1) / 2);
   t_pos = t_beg + the_row;
 }
