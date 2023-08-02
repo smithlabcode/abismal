@@ -364,16 +364,17 @@ struct se_candidates {
 
 const uint32_t se_candidates::max_size = 50u;
 
-inline bool
+static inline bool
 cigar_eats_ref(const uint32_t c) {
   return bam_cigar_type(bam_cigar_op(c)) & 2;
 }
-inline bool
+
+static inline bool
 cigar_eats_query(const uint32_t c) {
   return bam_cigar_type(bam_cigar_op(c)) & 1;
 }
 
-inline uint32_t
+static inline uint32_t
 cigar_rseq_ops(const bam_cigar_t &cig) {
   return accumulate(begin(cig), end(cig), 0u,
                     [](const uint32_t total, const uint32_t x)
@@ -381,7 +382,7 @@ cigar_rseq_ops(const bam_cigar_t &cig) {
                     );
 }
 
-inline uint32_t
+static inline uint32_t
 cigar_qseq_ops(const bam_cigar_t &cig) {
   return accumulate(begin(cig), end(cig), 0u,
                     [](const uint32_t total, const uint32_t x)
@@ -699,7 +700,7 @@ struct pe_candidates {
   static const uint32_t max_size_large = (max_size_small) << 10u;
 };
 
-inline double
+static inline double
 pct(const double a, const double b) {
   return ((b == 0) ? 0.0 : 100.0 * a / b);
 }
