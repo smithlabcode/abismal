@@ -33,6 +33,17 @@ AC_PROG_RANLIB
 
 AC_CONFIG_SUBDIRS([src/smithlab_cpp])
 
+dnl check for HTSLib if requested
+hts_fail_msg="
+Failed to locate HTSLib on your system. Please use the LDFLAGS and
+CPPFLAGS variables to specify the directories where the HTSLib library
+and headers can be found.
+"
+
+dnl check for required libraries
+AC_SEARCH_LIBS([hts_version], [hts], [], [AC_MSG_FAILURE([$hts_fail_msg])])
+
+
 dnl OpenMP happens here
 AC_OPENMP([C++])
 AS_VAR_IF(OPENMP_CXXFLAGS, [], [
@@ -42,10 +53,6 @@ AC_SEARCH_LIBS([omp_get_num_threads], [gomp omp], [],
 dnl now we get setup for the right OpenMP flags
 ADS_OPENMP([], [AC_MSG_FAILURE([OpenMP must be installed to build abismal])])
 ])dnl end of OpenMP stuff
-
-dnl check for the Zlib library
-AC_CHECK_LIB([z], [zlibVersion], [],
-  [AC_MSG_FAILURE([Zlib must be installed to build abismal])], [])
 
 AC_CONFIG_FILES([
 Makefile
