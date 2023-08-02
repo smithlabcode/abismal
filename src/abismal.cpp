@@ -17,7 +17,6 @@
 
 #include "abismal.hpp"
 
-#include <bam_record.hpp>
 #include <htslib/bgzf.h>
 #include <htslib/sam.h>
 #include <omp.h>
@@ -30,6 +29,8 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+#include <bamxx.hpp>
 
 #include "AbismalAlign.hpp"
 #include "AbismalIndex.hpp"
@@ -60,6 +61,8 @@ using std::string;
 using std::to_string;
 using std::vector;
 using std::chrono::system_clock;
+
+using bamxx::bam_rec;
 
 static inline bool
 ready_to_report(const size_t the_read) {
@@ -1264,7 +1267,7 @@ reset_bam_rec(bam_rec &b) {
 template<const conversion_type conv> static void
 map_single_ended(const bool VERBOSE, const bool allow_ambig,
                  const AbismalIndex &abismal_index, ReadLoader &rl,
-                 se_map_stats &se_stats, bam_header &hdr, bam_outfile &out,
+                 se_map_stats &se_stats, bamxx::bam_header &hdr, bamxx::bam_out &out,
                  ProgressBar &progress) {
   const auto counter_st(begin(abismal_index.counter));
   const auto counter_t_st(begin(abismal_index.counter_t));
@@ -1367,7 +1370,7 @@ map_single_ended(const bool VERBOSE, const bool allow_ambig,
 static void
 map_single_ended_rand(const bool VERBOSE, const bool allow_ambig,
                       const AbismalIndex &abismal_index, ReadLoader &rl,
-                      se_map_stats &se_stats, bam_header &hdr, bam_outfile &out,
+                      se_map_stats &se_stats, bamxx::bam_header &hdr, bamxx::bam_out &out,
                       ProgressBar &progress) {
   const auto counter_st(begin(abismal_index.counter));
   const auto counter_t_st(begin(abismal_index.counter_t));
@@ -1478,7 +1481,7 @@ map_single_ended_rand(const bool VERBOSE, const bool allow_ambig,
 template<const conversion_type conv, const bool random_pbat> static void
 run_single_ended(const bool VERBOSE, const bool allow_ambig,
                  const string &reads_file, const AbismalIndex &abismal_index,
-                 se_map_stats &se_stats, bam_header &hdr, bam_outfile &out) {
+                 se_map_stats &se_stats, bamxx::bam_header &hdr, bamxx::bam_out &out) {
   ReadLoader rl(reads_file);
   ProgressBar progress(get_filesize(reads_file), "mapping reads");
 
@@ -1685,8 +1688,8 @@ map_fragments(const uint32_t max_candidates, const string &read1,
 template<const conversion_type conv> static void
 map_paired_ended(const bool VERBOSE, const bool allow_ambig,
                  const AbismalIndex &abismal_index, ReadLoader &rl1,
-                 ReadLoader &rl2, pe_map_stats &pe_stats, bam_header &hdr,
-                 bam_outfile &out, ProgressBar &progress) {
+                 ReadLoader &rl2, pe_map_stats &pe_stats, bamxx::bam_header &hdr,
+                 bamxx::bam_out &out, ProgressBar &progress) {
   const auto counter_st(begin(abismal_index.counter));
   const auto counter_t_st(begin(abismal_index.counter_t));
   const auto counter_a_st(begin(abismal_index.counter_a));
@@ -1850,8 +1853,8 @@ map_paired_ended(const bool VERBOSE, const bool allow_ambig,
 static void
 map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
                       const AbismalIndex &abismal_index, ReadLoader &rl1,
-                      ReadLoader &rl2, pe_map_stats &pe_stats, bam_header &hdr,
-                      bam_outfile &out, ProgressBar &progress) {
+                      ReadLoader &rl2, pe_map_stats &pe_stats, bamxx::bam_header &hdr,
+                      bamxx::bam_out &out, ProgressBar &progress) {
   const auto counter_st(begin(abismal_index.counter));
   const auto counter_t_st(begin(abismal_index.counter_t));
   const auto counter_a_st(begin(abismal_index.counter_a));
@@ -2025,7 +2028,7 @@ template<const conversion_type conv, const bool random_pbat> static void
 run_paired_ended(const bool VERBOSE, const bool allow_ambig,
                  const string &reads_file1, const string &reads_file2,
                  const AbismalIndex &abismal_index, pe_map_stats &pe_stats,
-                 bam_header &hdr, bam_outfile &out) {
+                 bamxx::bam_header &hdr, bamxx::bam_out &out) {
   ReadLoader rl1(reads_file1);
   ReadLoader rl2(reads_file2);
   ProgressBar progress(get_filesize(reads_file1), "mapping reads");
@@ -2060,7 +2063,7 @@ file_exists(const string &filename) {
 static int
 abismal_make_sam_header(const ChromLookup &cl, const string program_name,
                         const string program_version, const int argc,
-                        const char **argv, bam_header &hdr) {
+                        const char **argv, bamxx::bam_header &hdr) {
   assert(cl.names.size() > 2);  // two entries exist for the padding
   assert(cl.starts.size() == cl.names.size() + 1);
   const vector<string> names(begin(cl.names) + 1, end(cl.names) - 1);
@@ -2257,10 +2260,10 @@ abismal(int argc, const char **argv) {
     se_map_stats se_stats;
     pe_map_stats pe_stats;
 
-    bam_outfile out(outfile, write_bam_fmt);
+    bamxx::bam_out out(outfile, write_bam_fmt);
     if (!out) throw runtime_error("failed to open output file: " + outfile);
 
-    bam_header hdr;
+    bamxx::bam_header hdr;
     int ret = abismal_make_sam_header(abismal_index.cl, "ABISMAL",
                                       ABISMAL_VERSION, argc, argv, hdr);
 
