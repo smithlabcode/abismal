@@ -54,10 +54,6 @@ dnl now we get setup for the right OpenMP flags
 ADS_OPENMP([], [AC_MSG_FAILURE([OpenMP must be installed to build abismal])])
 ])dnl end of OpenMP stuff
 
-dnl check for the Zlib library
-AC_CHECK_LIB([z], [zlibVersion], [],
-  [AC_MSG_FAILURE([Zlib must be installed to build abismal])], [])
-
 AC_CONFIG_FILES([
 Makefile
 ])
