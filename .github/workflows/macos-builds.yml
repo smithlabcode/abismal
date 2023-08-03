@@ -17,6 +17,6 @@ jobs:
     - name: Generate configure script
       run: ./autogen.sh
     - name: configure with g++-12
-      run: ./configure CXX="g++-12"
+      run: ./configure CXX="g++-12" CPPFLAGS="-I$(brew --prefix)/include" LDFLAGS="-L$(brew --prefix)/lib"
     - name: make
       run: make
