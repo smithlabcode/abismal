@@ -17,7 +17,7 @@ jobs:
     - name: Install autotools
       run: brew install autoconf automake libtool
     - name: Install dependencies
-      run: brew install htslib gsl samtools
+      run: brew install htslib gsl
     - name: Generate configure script
       run: ./autogen.sh
     - name: configure with g++-12
