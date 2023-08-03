@@ -12,7 +12,7 @@ and development versions are available at the abismal GitHub
 
 # SYNOPSIS
 
-abismal [OPTIONS] <input-1.fastq> [<input-2.fastq>]
+abismal [OPTIONS] -o output.sam <input-1.fastq> [<input-2.fastq>]
 
 ## Examples
 ```
@@ -49,9 +49,9 @@ substantially.
 
 Run the following commands to install abismal
 ```
-wget https://github.com/smithlabcode/abismal/releases/download/v3.0.0/abismal-3.0.0.tar.gz
-tar -xvzf abismal-3.0.0.tar.gz
-cd abismal-3.0.0
+wget https://github.com/smithlabcode/abismal/releases/download/v3.1.1/abismal-3.1.1.tar.gz
+tar -xvzf abismal-3.1.1.tar.gz
+cd abismal-3.1.1
 ./configure --prefix=$(pwd)
 make
 make install
@@ -81,9 +81,11 @@ the -i flag.
 
 -o FILE, -outfile FILE
 
-Output file in SAM format. If not provided, output will be printed to
-STDOUT, which can be piped to other tools like samtools (e.g. to
-convert output to BAM)
+Output file in SAM format by default. This argument is required.
+
+-B, -bam
+
+Using this argument, the output will be in BAM format.
 
 -s FILE, -stats FILE
 
@@ -208,7 +210,6 @@ considered concordant. The schematic below depics how L is calculated.
 |---------------------------L----------------------------|
 ```
 
-
 -m MAX-FRACTION, -max-distance MAX-FRACTION [default : 0.1]
 
 The maximum edit distance allowed for a read to be considered
@@ -220,20 +221,17 @@ soft-clipped bases). For instance, if a read of 150 bp is mapped to a
 location with CIGAR string 20S100M30S, the read is allowed to have
 at most 10 mismatches.
 
-
 -a -ambig
 
 If this flag is provided, abismal will report a random location to
 reads that mapped ambiguously. These reads can be identified by the
 presence of bit 0x100 in the SAM flags.
 
-
 -P -pbat
 
 **For paired-end mapping only**. Assumes the bisulfite conversion
 of the first end to be G>A and the bisulfite conversion of the
 second end to be C>T.
-
 
 -R -random-pbat
 
@@ -248,13 +246,11 @@ For paired-end mapping, abismal will attempt to map reads assuming end
 map the same reads assuming end 1 has G>A conversion. The conversion
 that attains highest sum of alignment scores is kept.
 
-
 -A -a-rich
 
 **For single-end mapping only**. Indicates that reads are A-rich.
 Mapping with this flags assumes that the bisulfite conversion is G>A
 instead of C>T.
-
 
 -v -verbose
 
@@ -297,6 +293,8 @@ to be mates.
 abismal representes mapped reads in the Sequence Alignment/Map
 (SAM) format. Detailed specification of SAM is available at
 [the samtools documentation page](https://samtools.github.io).
+BAM format is also supported, but the BAM format can be converted
+to SAM using samtools if desired.
 
 The output starts with SAM headers. Headers contain metadata
 information on the reference genome. Each header line starts with the
@@ -308,11 +306,9 @@ The first line in the SAM output file is given by
 ```
 followed by one line per chromosome in the input FASTA file, encoding
 the chromosome length. Each line is in the format
-
 ```
 @SQ SN:[chrom-name] LN:[chrom-length]
 ```
-
 where [chrom-name] is given by the first word of the chromosome name
 in the FASTA file (anything after the first white space is deleted),
 and [chrom-length] is the number of bases in the chromosome
@@ -320,11 +316,9 @@ sequence.
 
 The last line of the headers is a copy of how the program was called
 to generate the SAM output, and is of the form
-
 ```
-@PG ID:ABISMAL  VN:3.0.0  CL:"[command-call]"
+@PG ID:ABISMAL  VN:3.1.1  CL:"[command-call]"
 ```
-
 where [command-call] is the shell command used to run abismal.
 
 ## Output mapped lines
@@ -412,8 +406,6 @@ mapped reads).
 ```
 awk '$1 ~ /^@/ || $7 == "*"' out.sam >out_single.sam
 ```
-
-
 
 # NOTATION USED BY ABISMAL
 
@@ -548,7 +540,7 @@ follow the expectations, but in cases where they map with high
 quality, they will be reported. If read pairs are not concordant,
 abismal maps each end independently as single-end reads. If users do
 not which to keep single-end alignments in paired-end data, they can
-filter out single-end reads of an output file out.sam 
+filter out single-end reads of an output file out.sam
 though the following command.
 ```
 samtools view out.sam | awk '$7 == "="' >out_paired.sam
@@ -575,7 +567,7 @@ used so we can reproduce the issue and find the source of the problem.
 
 # COPYRIGHT
 
-Copyright (C) 2018-2021 Andrew D. Smith and Guilherme Sena
+Copyright (C) 2018-2023 Andrew D. Smith and Guilherme Sena
 
 abismal is free software: you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the

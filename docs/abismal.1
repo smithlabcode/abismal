@@ -11,7 +11,7 @@ available at the abismal GitHub
 repo (https://github.com/smithlabcode/abismal).
 .SH SYNOPSIS
 .PP
-abismal OPTIONS <input-1.fastq> [<input-2.fastq>]
+abismal OPTIONS -o output.sam <input-1.fastq> [<input-2.fastq>]
 .SS Examples
 .IP
 .nf
@@ -57,9 +57,9 @@ Run the following commands to install abismal
 .IP
 .nf
 \f[C]
-wget https://github.com/smithlabcode/abismal/releases/download/v3.0.0/abismal-3.0.0.tar.gz
-tar -xvzf abismal-3.0.0.tar.gz
-cd abismal-3.0.0
+wget https://github.com/smithlabcode/abismal/releases/download/v3.1.1/abismal-3.1.1.tar.gz
+tar -xvzf abismal-3.1.1.tar.gz
+cd abismal-3.1.1
 \&./configure --prefix=$(pwd)
 make
 make install
@@ -95,9 +95,12 @@ through the -i flag.
 .PP
 -o FILE, -outfile FILE
 .PP
-Output file in SAM format.
-If not provided, output will be printed to STDOUT, which can be piped to
-other tools like samtools (e.g.\ to convert output to BAM)
+Output file in SAM format by default.
+This argument is required.
+.PP
+-B, -bam
+.PP
+Using this argument, the output will be in BAM format.
 .PP
 -s FILE, -stats FILE
 .PP
@@ -327,6 +330,8 @@ abismal representes mapped reads in the Sequence Alignment/Map (SAM)
 format.
 Detailed specification of SAM is available at the samtools documentation
 page (https://samtools.github.io).
+BAM format is also supported, but the BAM format can be converted to SAM
+using samtools if desired.
 .PP
 The output starts with SAM headers.
 Headers contain metadata information on the reference genome.
@@ -359,7 +364,7 @@ generate the SAM output, and is of the form
 .IP
 .nf
 \f[C]
-\[at]PG ID:ABISMAL  VN:3.0.0  CL:\[dq][command-call]\[dq]
+\[at]PG ID:ABISMAL  VN:3.1.1  CL:\[dq][command-call]\[dq]
 \f[R]
 .fi
 .PP
@@ -402,7 +407,7 @@ and negative otherwise.
 For discordant or single-end reads a value of 0 is reported.
 .IP \[bu] 2
 SEQ: The input sequence identical to the FASTQ input (see \[lq]important
-note on SEQ reaads reported in the SAM output\[rq] below)
+note on SEQ reads reported in the SAM output\[rq] below)
 .IP \[bu] 2
 QUAL: An asterisk (*).
 QUAL values are discarded on mapping and not reported
@@ -434,6 +439,39 @@ This standard allows downstream analyses on letter frequencies and
 conversion types.
 Tools to reverse-complement the SEQ field and the letter in the CV tag
 can be used if properly formatted SAM files are necessary.
+.SS Filtering concordant/discordant pairs in paired-end SAM
+.PP
+In paired-end mapping, abismal will try to mate concordant pairs and
+find pairs whose sum of edit distances is below the user-defined cut-off
+(set to 10% of the mapped read length by default).
+If it cannot find such concordant pair (either due to ambiguity or low
+alignment score), abismal will map each end as single-end reads and
+report locations with sufficiently high similarity.
+In many cases, one may want to only keep concordant pairs, or even
+isolate discordant pairs to analyze their sequence patterns, mapping
+quality, etc.
+.PP
+To isolate concordant pairs from paired-end output \f[C]out.sam\f[R],
+use the following awk script, which isolates the SAM header and reads
+with an equal (=) symbol in the RNEXT field (reserved only for
+concordant pairs).
+.IP
+.nf
+\f[C]
+awk \[aq]$1 \[ti] /\[ha]\[at]/ || $7 == \[dq]=\[dq]\[aq] out.sam >out_paired.sam
+\f[R]
+.fi
+.PP
+To isolate discordantly mapped reads from paired-end output
+\f[C]out.sam\f[R], use the following awk script, which isolates the SAM
+header and reads with an asterisk (*) in the RNEXT field (reserved for
+discordantly mapped reads).
+.IP
+.nf
+\f[C]
+awk \[aq]$1 \[ti] /\[ha]\[at]/ || $7 == \[dq]*\[dq]\[aq] out.sam >out_single.sam
+\f[R]
+.fi
 .SH NOTATION USED BY ABISMAL
 .PP
 Below we explain in more detail some of the notation used in the abismal
@@ -512,15 +550,15 @@ indels.
 In other words, if an alignment has M matches, m mismatches, I
 insertions and D deletions, the alignment score A is given by
 .PP
-A = M - m - I - D
+.RS
+\f[I]A\f[R]\[u2004]=\[u2004]\f[I]a\f[R]\[u2005]\[mi]\[u2005]\f[I]I\f[R]\[u2005]\[mi]\[u2005]\f[I]D\f[R]
+.RE
 .PP
 and the edit distance E is given by
-.IP
-.nf
-\f[C]
-A = m + I + D
-\f[R]
-.fi
+.PP
+.RS
+\f[I]E\f[R]\[u2004]=\[u2004]\f[I]m\f[R]\[u2005]+\[u2005]\f[I]I\f[R]\[u2005]+\[u2005]\f[I]D\f[R]
+.RE
 .PP
 Abismal selects the best alignment score, and only reports it if the
 edit distance is below a fraction m (set under the -m or -max-fraction
@@ -541,20 +579,25 @@ Some application-specific cases may require more or less acceptable
 error, so this parameter can be adjusted by the user.
 .SS Concordant pairs
 .PP
-On paired-end input, we say reads r1 and r2 with lengths n1 and n2,
-respectively, are a corresponding pair are concordant if there exist
-positions p1 and p2 such that
+On paired-end input, we say reads \f[I]r\f[R]~1~ and \f[I]r\f[R]~2~ with
+lengths \f[I]n\f[R]~1~ and \f[I]n\f[R]~2~, respectively, are a
+corresponding pair are concordant if there exist positions
+\f[I]p\f[R]~1~ and \f[I]p\f[R]~2~ such that
 .IP "1." 3
-p1 is a valid alignment for r1 and p2 is a valid alignment for r2
+\f[I]p\f[R]~1~ is a valid alignment for \f[I]r\f[R]~1~ and
+\f[I]p\f[R]~2~ is a valid alignment for \f[I]r\f[R]~2~
 .IP "2." 3
-p1 and p2 are in opposite strands of the genome, and
+\f[I]p\f[R]~1~ and \f[I]p\f[R]~2~ are in opposite strands of the genome,
+and
 .IP "3." 3
-p2 - p1 >= l and p2 - p1 <= L - n2.
+\f[I]p\f[R]~2~\[u2005]\[mi]\[u2005]\f[I]p\f[R]~1~\[u2004]\[>=]\[u2004]\f[I]l\f[R]
+and
+\f[I]p\f[R]~2~\[u2005]\[mi]\[u2005]\f[I]p\f[R]~1~\[u2004]\[<=]\[u2004]\f[I]L\f[R]\[u2005]\[mi]\[u2005]\f[I]n\f[R]2.
 .PP
 This means that the fragment lengths from which the pair originates is
-at least l and at most L.
-The default values of l and L are 32 and 3000, respectively, and can be
-set by the -l and -L flags.
+at least \f[I]l\f[R] and at most \f[I]L\f[R].
+The default values of \f[I]l\f[R] and \f[I]L\f[R] are 32 and 3000,
+respectively, and can be set by the \f[C]-l\f[R] and \f[C]-L\f[R] flags.
 Those are conservative values that cover most of the current protocols.
 We will incorporate automatic calculations of these values in the future
 based on the first high-quality read pairs that are mapped.
@@ -606,7 +649,7 @@ the genome used so we can reproduce the issue and find the source of the
 problem.
 .SH COPYRIGHT
 .PP
-Copyright (C) 2018-2021 Andrew D.
+Copyright (C) 2018-2023 Andrew D.
 Smith and Guilherme Sena
 .PP
 abismal is free software: you can redistribute it and/or modify it under

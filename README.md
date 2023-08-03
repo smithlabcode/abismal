@@ -19,13 +19,16 @@ See how to [get started](https://github.com/smithlabcode/abismal/blob/master/doc
 
 Currently abismal requires a C++ compiler that supports the C++11
 standard and OpenMP. The default compiler assumed is g++ (comes with
-GCC, available on your Linux or OS X machine). The g++ compiler has
+GCC, available on your Linux or macOS machine). The g++ compiler has
 supported the C++11 standard since roughly 2012 (GCC 4.7) so this
 should not cause any problems. It also requires an OMP library and
-headers to be available, which rarely causes problems. abismal also is
-capable of reading input files (FASTQ format) that are gzip
-compressed.  This requires that the ZLib library is installed on the
-system; this is also rarely a problem.
+headers to be available, which rarely causes problems.
+
+Abismal uses the HTSlib library for making BAM format files, and also
+for reading compressed FASTQ input files. If you have `samtools`
+installed, then you might already have this library. Otherwise
+instructions to get, for macOS or Ubuntu/Debian linux systems, can be
+found below.
 
 If you have trouble with the `make` part of the installation procedure
 described below, please contact us via e-mail or through a [GitHub
@@ -34,40 +37,51 @@ issue](https://github.com/smithlabcode/abismal/issues).
 ### Documentation ###
 
 The full documentation for abismal can be found
-[here](https://github.com/smithlabcode/abismal/blob/master/docs/MANUAL.md). This explains
-the use of each parameter in full detail. Below we describe the most common use cases,
-specifically installing the software, indexing a genome and mapping single- and paired-end
-reads.
-
-### Installation from a clone of the repo ###
-
-(1) make sure you clone with the ``--recursive`` flag, which also
-clones the `smithlab_cpp` subdirectory
-
-```
-$ cd /where/you_want/the_code
-$ git clone --recursive git@github.com:smithlabcode/abismal.git
-```
-
-(2) Build the `abismal` and `abismalidx` programs:
-```
-$ make all
-$ make install
-```
+[here](https://github.com/smithlabcode/abismal/blob/master/docs/MANUAL.md). This
+explains the use of each parameter in full detail. Below we describe
+the most common use cases, specifically installing the software,
+indexing a genome and mapping single- and paired-end reads.
 
 ### Installation from a release download
 
+This is the preferred method if you want to build abismal yourself.
 (1) Extract the compressed file to a directory (e.g.
-`/path/to/abismal`). Once in the directory, run
+`/path/to/abismal`). Once in the directory, run:
 
-```
+```console
 $ ./configure --prefix=/where/you/want/abismal
-$ make all
+$ make
 $ make install
 ```
 
 This will install `abismal`, `abismalidx` and `simreads`
 inside the `bin` directory in the output location.
+
+### Installation from a clone of the repo ###
+
+This method is likely only useful if you need the most recent update.
+(1) make sure you clone with the ``--recursive`` flag, which also
+clones the `smithlab_cpp` subdirectory
+```console
+$ cd /where/you_want/the_code
+$ git clone --recursive git@github.com:smithlabcode/abismal.git
+```
+(2) Build the `abismal` and `abismalidx` programs:
+```console
+$ make
+$ make install
+```
+
+### How to get the dependencies ###
+
+On linux, the usual way to get the dependencies is as follows:
+```
+sudo apt-get install libhts-dev
+```
+This should be enough to ensure you can build and run abismal, but it
+does require adminstrator privileges. It is also possible to get this
+library through conda, and then set your environment variables as
+follows:
 
 ### Indexing the genome ###
 
@@ -94,7 +108,7 @@ $ abismal [options] -i <index-file> -o <output-file> <read_1.fq> <read_2.fq>
 |:-----|:----------------|:--------|------------------:|:--------------------------------------|
 | -i   | -index          | string  |                   | genome index file                     |
 | -g   | -genome         | string  |                   | genome file (FASTA)                   |
-| -o   | -outfile        | string  | stdout            | output file (SAM)                     |
+| -o   | -outfile        | string  |                   | output file (default SAM format)      |
 | -s   | -stats          | string  |                   | mapping statistics output file (YAML) |
 | -c   | -max-candidates | integer | 100               | max candidates per seed*              |
 | -l   | -min-frag       | integer | 32                | minimum fragment length (PE mode)     |
@@ -106,12 +120,15 @@ $ abismal [options] -i <index-file> -o <output-file> <read_1.fq> <read_2.fq>
 | -A   | -a-rich         | boolean |                   | reads are A-rich (SE mode)            |
 | -t   | -threads        | integer | 1                 | number of mapping threads             |
 | -v   | -verbose        | boolean |                   | print more run info                   |
+| -B   | -bam            | boolean | output SAM format | write output in BAM format            |
 
-\* the max candidates parameter controls the amount of "effort" in mapping. In the "sensitive" step,
-which aligns reads with smaller exact match seeds, abismal skips seeds that
-retrieves more than `c` candidates. The higher the value of `c`, the more alignments abismal
-performs. Note that abismal still aligns reads to every exact match hit that spans more than
-half of the read ("specific step"). The specific step does not change with the value set by `c`.
+\* the max candidates parameter controls the amount of "effort" in
+mapping. In the "sensitive" step, which aligns reads with smaller
+exact match seeds, abismal skips seeds that retrieves more than `c`
+candidates. The higher the value of `c`, the more alignments abismal
+performs. Note that abismal still aligns reads to every exact match
+hit that spans more than half of the read ("specific step"). The
+specific step does not change with the value set by `c`.
 
 ### Examples ###
 (1) **Indexing the genome**
@@ -135,9 +152,9 @@ To map paired-end reads in files `reads-1.fq` and `reads-2.fq` to human genome h
 $ abismal -i hg38.abismalidx -o reads.sam reads-1.fq reads-2.fq
 ```
 
-To map reads in BAM format (requires [samtools](https://www.htslib.org))
+To map reads in BAM format:
 ```
-$ abismal -i hg38.abismalidx reads.fq | samtools view -b >reads.bam
+$ abismal -B -i hg38.abismalidx -o reads.bam reads.fq
 ```
 
 To map reads to human genome without requiring a separate index file
@@ -190,4 +207,3 @@ abismal is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
 FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
 for more details.
-
