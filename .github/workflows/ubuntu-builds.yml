@@ -1,7 +1,11 @@
-name: Abismal Ubuntu Builds
+name: Abismal builds on Ubuntu
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
 
 jobs:
   build:

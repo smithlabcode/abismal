@@ -1,4 +1,4 @@
-name: Distribution check on Ubuntu
+name: Abismal distribution check on Ubuntu
 
 on:
   workflow_dispatch:
