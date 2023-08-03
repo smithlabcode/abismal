@@ -23,6 +23,6 @@ jobs:
     - name: cleanup after g++
       run: make clean
     - name: make with clang++
-      run: make CXX="clang++"
+      run: make CXX="clang++" CXXFLAGS="-fopenmp=libomp"
     - name: cleanup after clang++
       run: make clean
