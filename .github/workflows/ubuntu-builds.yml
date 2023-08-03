@@ -20,3 +20,9 @@ jobs:
       run: ./configure
     - name: make with g++
       run: make CXX="g++"
+    - name: cleanup after g++
+      run: make clean
+    - name: make with clang++
+      run: make CXX="clang++"
+    - name: cleanup after clang++
+      run: make clean
