@@ -22,13 +22,8 @@ standard and OpenMP. The default compiler assumed is g++ (comes with
 GCC, available on your Linux or macOS machine). The g++ compiler has
 supported the C++11 standard since roughly 2012 (GCC 4.7) so this
 should not cause any problems. It also requires an OMP library and
-headers to be available, which rarely causes problems.
-
-Abismal uses the HTSlib library for making BAM format files, and also
-for reading compressed FASTQ input files. If you have `samtools`
-installed, then you might already have this library. Otherwise
-instructions to get, for macOS or Ubuntu/Debian linux systems, can be
-found below.
+headers to be available, which rarely causes problems. Instructions to
+get HTSlib, for macOS or Linux systems, can be found below.
 
 If you have trouble with the `make` part of the installation procedure
 described below, please contact us via e-mail or through a [GitHub
@@ -38,50 +33,121 @@ issue](https://github.com/smithlabcode/abismal/issues).
 
 The full documentation for abismal can be found
 [here](https://github.com/smithlabcode/abismal/blob/master/docs/MANUAL.md). This
-explains the use of each parameter in full detail. Below we describe
-the most common use cases, specifically installing the software,
-indexing a genome and mapping single- and paired-end reads.
+explains the use of each parameter in full detail. Below, after
+installation instructions, we describe the most common use cases:
+indexing a genome and mapping single-end and paired-end reads.
 
-### Installation from a release download
+### Installation on Linux ###
 
-This is the preferred method if you want to build abismal yourself.
-(1) Extract the compressed file to a directory (e.g.
-`/path/to/abismal`). Once in the directory, run:
+These instructions are for building abismal from source, rather than
+obtaining it through a package manager like conda.
 
+These instructions assume you have access to `apt` which is installed
+on Ubuntu-based and Debian-based distributions. The only difference
+for other linux distributions is how you get the dependencies. Likely
+all you need is:
 ```console
-$ ./configure --prefix=/where/you/want/abismal
+$ sudo apt-get install -y libhts-dev
+```
+If you don't have adminstrator privileges, there are other options.
+If you have the `libhts-dev` installed, to build `abismal` the
+following should work:
+```console
+$ wget https://github.com/smithlabcode/abismal/releases/download/v3.1.1/abismal-3.1.1.tar.gz
+$ tar -zxvf abismal-3.1.1.tar.gz
+$ cd abismal-3.1.1
+$ mkdir build && cd build
+$ ../configure --prefix=/where/you/want/abismal
 $ make
 $ make install
 ```
+Be sure that you have permissions to write files to
+`/where/you/want/abismal`.  This will install `abismal`, `abismalidx`
+and `simreads` inside the `bin` directory of the specified location.
 
-This will install `abismal`, `abismalidx` and `simreads`
-inside the `bin` directory in the output location.
+### Installation on macOS ###
+
+The GitHub repo for abismal includes tests that run on macOS 13
+(Ventura), and we use the following steps. Although our tests begin
+with a "fresh" macOS installation, they have certain tools already
+available. In particular, [Homebrew](https://brew.sh) is already
+available and possibly some other tools. Homebrew is necessary as the
+first step to get the tools and dependencies:
+```console
+$ brew update
+$ brew install gcc
+$ brew install htslib gsl
+$ brew list --versions gcc
+```
+At this point, keep the version of `gcc` in mind, because it will probably
+be needed below. If you don't already have `abismal` downloaded, the next
+step is to download it. Here we will assume you are using a release rather
+than a clone. To build from a clone involves at least one more step.
+```console
+$ wget https://github.com/smithlabcode/abismal/releases/download/v3.1.1/abismal-3.1.1.tar.gz
+$ tar -zxvf abismal-3.1.1.tar.gz
+$ cd abismal-3.1.1
+```
+Finally, these steps build the software:
+```console
+$ mkdir build && build
+$ ../configure \
+    --prefix=/path/to/install \
+    CXX="g++-13" \
+    CPPFLAGS="-I$(brew --prefix)/include" \
+    LDFLAGS="-L$(brew --prefix)/lib"
+$ make
+$ make install
+```
+Notice the `g++-13` in the `../configure` command. This is the version
+number referenced above. If you have a different version number (e.g.,
+when gcc-14 is the default), you will need to update that number to
+correspond to the major version number. Be sure you have permissions
+to write to the directory `/path/to/install`.
+
+### How to get the dependencies through conda ###
+
+If you are on linux and do not have adminstrator privileges to get the
+dependencies (e.g., HTSlib), you can get them either by building them
+directly from source, or through conda. In particular, for obtaining HTSlib
+through conda, do the following:
+```
+$ conda install -c bioconda htslib
+```
+as explained here at [htslib](https://anaconda.org/bioconda/htslib).
+I used conda obtained through miniconda3, which means the default
+location for HTSlib to be installed is `~/miniconda3` and then inside
+the `lib` and `include` subdirectores. So once this is done, you can
+build `abismal` by replacing the `configure` step in the earlier
+explanations by
+```console
+../configure --prefix=/path/to/install \
+    CPPFLAGS="-I${HOME}/miniconda3/include" \
+    LDFLAGS="-L${HOME}/miniconda3/lib"
+```
+Note that you can use this approach with both Linux or macOS, but in
+the case of macOS you can replace the `LDFLAGS` and `CPPFLAGS` for
+conda, but keep the `CXX` variable. Remember not to use tilde (`~`) in
+place of the `${HOME}` variable above. It might work, but shouldn't.
 
 ### Installation from a clone of the repo ###
 
-This method is likely only useful if you need the most recent update.
-(1) make sure you clone with the ``--recursive`` flag, which also
-clones the `smithlab_cpp` subdirectory
+This method is likely only useful if you need the most recent update,
+and is not recommended for most users. The only difference from the
+above explanations for linux and macos is that you will need to clone
+the repo, which means you need `git` installed, and you will also need
+to build the sources in place and without much reporting in case of any
+problems.
 ```console
 $ cd /where/you_want/the_code
 $ git clone --recursive git@github.com:smithlabcode/abismal.git
-```
-(2) Build the `abismal` and `abismalidx` programs:
-```console
+$ cd abismal
 $ make
 $ make install
 ```
-
-### How to get the dependencies ###
-
-On linux, the usual way to get the dependencies is as follows:
-```
-sudo apt-get install libhts-dev
-```
-This should be enough to ensure you can build and run abismal, but it
-does require adminstrator privileges. It is also possible to get this
-library through conda, and then set your environment variables as
-follows:
+If you are building from the source in a cloned repo, you will likely
+see other ways to accomplish it by examining the files in the root of
+the repo.
 
 ### Indexing the genome ###
 
@@ -194,7 +260,7 @@ NAR Genomics and Bioinformatics, 3(4), lqab115.
 
 ### Copyright ###
 
-Copyright (C) 2018-2022 Andrew D. Smith and Guilherme de Sena Brandine
+Copyright (C) 2018-2023 Andrew D. Smith and Guilherme de Sena Brandine
 
 Authors: Andrew D. Smith and Guilherme de Sena Brandine
 
