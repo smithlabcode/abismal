@@ -11,7 +11,7 @@ e66339e591563032af436ca2af9b75b1  tests/reads_rpbat_pe_1.fq
 aed5705c4a99601d5799fc8ee42af5b2  tests/reads_rpbat_pe_2.fq
 da00a63969113e09406b61cbe280daa5  tests/reads_rpbat_pe.mstats
 3ba5a1c4c420ca7a2dbd88290033c3bc  tests/tRex1.idx
-cd4a9d6b8c9b00254c53e3e5e5cd249e  tests/reads_pbat_pe.sam
-c466e11e3ed0bfe32c4baa1f16096a95  tests/reads_pe.sam
-c5bf84d3e4e01e27804d39321569c11c  tests/reads_rpbat_pe.sam
-9cab40d2130b4eb9d95f5694d184a5e1  tests/reads.sam
+b2bbf813bd045ce468c6a502119b84c7  tests/reads_pbat_pe.sam
+0fc7571074323cebd0f3671703b39812  tests/reads_pe.sam
+f6c552d9ae442b009ac65a11bbee1be3  tests/reads_rpbat_pe.sam
+e48e01ad6ce78cae5aaccbe1d42556db  tests/reads.sam
