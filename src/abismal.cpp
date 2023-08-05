@@ -18,6 +18,7 @@
 #include "abismal.hpp"
 
 #include <bamxx.hpp>
+#include <config.h>
 #include <htslib/bgzf.h>
 #include <htslib/hfile.h>
 #include <htslib/sam.h>
@@ -171,9 +172,9 @@ update_max_read_length(size_t &max_length, const vector<string> &reads) {
 }
 
 struct se_element {  // size = 8
-  score_t diffs;  // 2 bytes
-  flags_t flags;  // 2 bytes
-  uint32_t pos;   // 4 bytes
+  score_t diffs;     // 2 bytes
+  flags_t flags;     // 2 bytes
+  uint32_t pos;      // 4 bytes
 
   se_element(): diffs(MAX_DIFFS), flags(0), pos(0) {}
 
@@ -2041,8 +2042,7 @@ file_exists(const string &filename) {
 }
 
 static int
-abismal_make_sam_header(const ChromLookup &cl, const string program_name,
-                        const string program_version, const int argc,
+abismal_make_sam_header(const ChromLookup &cl, const int argc,
                         const char **argv, bamxx::bam_header &hdr) {
   assert(cl.names.size() > 2);  // two entries exist for the padding
   assert(cl.starts.size() == cl.names.size() + 1);
@@ -2060,14 +2060,13 @@ abismal_make_sam_header(const ChromLookup &cl, const string program_name,
 
   // chromosome sizes
   const size_t n_chroms = names.size();
-  for (size_t i = 0; i < n_chroms; ++i) {
+  for (size_t i = 0; i < n_chroms; ++i)
     out << "@SQ" << '\t' << "SN:" << names[i] << '\t' << "LN:" << sizes[i]
         << '\n';
-  }
 
   // program details
-  out << "@PG" << '\t' << "ID:" << program_name << '\t'
-      << "VN:" << program_version << '\t';
+  out << "@PG" << '\t' << "ID:"
+      << "ABISMAL" << '\t' << "VN:" << VERSION << '\t';
 
   // how the program was run
   std::ostringstream the_command;
@@ -2082,7 +2081,6 @@ abismal_make_sam_header(const ChromLookup &cl, const string program_name,
 int
 abismal(int argc, const char **argv) {
   try {
-    static const string ABISMAL_VERSION = "3.1.1";
     bool VERBOSE = false;
     bool GA_conversion = false;
     bool allow_ambig = false;
@@ -2248,8 +2246,7 @@ abismal(int argc, const char **argv) {
     if (!out) throw runtime_error("failed to open output file: " + outfile);
 
     bamxx::bam_header hdr;
-    int ret = abismal_make_sam_header(abismal_index.cl, "ABISMAL",
-                                      ABISMAL_VERSION, argc, argv, hdr);
+    int ret = abismal_make_sam_header(abismal_index.cl, argc, argv, hdr);
 
     if (ret < 0) throw runtime_error("error formatting header");
 
