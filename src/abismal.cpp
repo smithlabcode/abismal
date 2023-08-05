@@ -17,7 +17,9 @@
 
 #include "abismal.hpp"
 
+#include <bamxx.hpp>
 #include <htslib/bgzf.h>
+#include <htslib/hfile.h>
 #include <htslib/sam.h>
 #include <omp.h>
 
@@ -29,8 +31,6 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
-
-#include <bamxx.hpp>
 
 #include "AbismalAlign.hpp"
 #include "AbismalIndex.hpp"
@@ -101,15 +101,7 @@ get_strand_code(const char strand, const conversion_type conv) {
 }
 
 struct ReadLoader {
-  ReadLoader(const string &fn)
-      : cur_line{0}, filename{fn}, in{bgzf_open(fn.c_str(), "r")} {}
-
-  ~ReadLoader() {
-    if (in) {
-      bgzf_close(in);
-      in = nullptr;
-    }
-  }
+  ReadLoader(const string &fn): cur_line{0}, filename{fn}, in{fn, "r"} {}
 
   bool good() const { return in; }
 
@@ -117,9 +109,7 @@ struct ReadLoader {
 
   size_t get_current_read() const { return cur_line / 4; }
 
-  size_t get_current_byte() const {
-    return in != nullptr ? bgzf_tell(in) : std::numeric_limits<size_t>::max();
-  }
+  size_t get_current_byte() const { return in.tellg(); }
 
   void load_reads(vector<string> &names, vector<string> &reads) {
     reads.clear();
@@ -127,11 +117,8 @@ struct ReadLoader {
 
     size_t line_count = 0;
     const size_t num_lines_to_read = 4 * batch_size;
-    kstring_t buf{0, 0, nullptr};
-    int ret_code = 0;
-    while (line_count < num_lines_to_read &&
-           (ret_code = bgzf_getline(in, '\n', &buf)) >= 0) {
-      string line(buf.s);  // ADS: slow, but not bottleneck
+    string line;
+    while (line_count < num_lines_to_read && in.getline(line)) {
       if (line_count % 4 == 0) {
         if (line.empty())
           throw runtime_error("file " + filename + " contains an empty " +
@@ -146,31 +133,23 @@ struct ReadLoader {
             ", which is too long. Maximum allowed read size = " +
             to_string(seed::padding_size));
 
-        // string line(buf.s);
         if (count_if(begin(line), end(line),
-                     [](const char c) { return c != 'N'; }) < min_read_length) {
+                     [](const char c) { return c != 'N'; }) < min_read_length)
           line.clear();
-        }
         else {
-          while (line.back() == 'N') line.pop_back();  // remove Ns from 3'
-          // removes Ns from 5'
-          line = line.substr(line.find_first_of("ACGT"));
+          while (line.back() == 'N') line.pop_back();      // remove Ns from 3'
+          line = line.substr(line.find_first_of("ACGT"));  // removes Ns from 5'
         }
         reads.emplace_back(line);
       }
       ++line_count;
       ++cur_line;
     }
-    if (ret_code < -1) throw runtime_error("error reading input");
-    if (ret_code == -1) {
-      bgzf_close(in);
-      in = nullptr;
-    }
   }
 
   uint32_t cur_line;
   string filename;
-  BGZF *in;
+  bamxx::bam_bgzf in;
 
   static const size_t batch_size;
   static const uint32_t min_read_length;
@@ -191,10 +170,10 @@ update_max_read_length(size_t &max_length, const vector<string> &reads) {
     max_length = max(max_length, it->size());
 }
 
-struct se_element {  // assert(sizeof(se_element) == 8)
-  score_t diffs;
-  flags_t flags;
-  uint32_t pos;
+struct se_element {  // size = 8
+  score_t diffs;  // 2 bytes
+  flags_t flags;  // 2 bytes
+  uint32_t pos;   // 4 bytes
 
   se_element(): diffs(MAX_DIFFS), flags(0), pos(0) {}
 
@@ -379,18 +358,18 @@ cigar_eats_query(const uint32_t c) {
 
 static inline uint32_t
 cigar_rseq_ops(const bam_cigar_t &cig) {
-  return accumulate(begin(cig), end(cig), 0u,
-                    [](const uint32_t total, const uint32_t x)
-                    { return total + (cigar_eats_ref(x) ? bam_cigar_oplen(x) : 0); }
-                    );
+  return accumulate(
+    begin(cig), end(cig), 0u, [](const uint32_t total, const uint32_t x) {
+      return total + (cigar_eats_ref(x) ? bam_cigar_oplen(x) : 0);
+    });
 }
 
 static inline uint32_t
 cigar_qseq_ops(const bam_cigar_t &cig) {
-  return accumulate(begin(cig), end(cig), 0u,
-                    [](const uint32_t total, const uint32_t x)
-                    { return total + (cigar_eats_query(x) ? bam_cigar_oplen(x) : 0); }
-                    );
+  return accumulate(
+    begin(cig), end(cig), 0u, [](const uint32_t total, const uint32_t x) {
+      return total + (cigar_eats_query(x) ? bam_cigar_oplen(x) : 0);
+    });
 }
 
 static inline bool
@@ -408,7 +387,6 @@ static map_type
 format_se(const bool allow_ambig, const se_element &res, const ChromLookup &cl,
           const string &read, const string &read_name, const bam_cigar_t &cigar,
           bam_rec &sr) {
-
   const bool ambig = res.ambig();
   const bool valid = !res.empty();
   if (!allow_ambig && ambig) return map_ambig;
@@ -427,21 +405,21 @@ format_se(const bool allow_ambig, const se_element &res, const ChromLookup &cl,
 
   sr.b = bam_init1();
   int ret = bam_set1(sr.b,
-                     read_name.size(),   // size_t l_qname,
-                     read_name.data(),   // const char *qname,
-                     flag,               // uint16_t flag,
-                     chrom_idx - 1,      // int32_t tid (-1 for padding)
-                     ref_s,              // hts_pos_t pos,
-                     255,                // uint8_t mapq,
-                     cigar.size(),       // size_t n_cigar,
-                     cigar.data(),       // const uint32_t *cigar,
-                     -1,                 // int32_t mtid,
-                     -1,                 //  hts_pos_t mpos,
-                     0,                  // hts_pos_t isize,
-                     read.size(),        // size_t l_seq,
-                     read.data(),        // const char *seq,
-                     nullptr,            // const char *qual,
-                     16);                // size_t l_aux);
+                     read_name.size(),  // size_t l_qname,
+                     read_name.data(),  // const char *qname,
+                     flag,              // uint16_t flag,
+                     chrom_idx - 1,     // int32_t tid (-1 for padding)
+                     ref_s,             // hts_pos_t pos,
+                     255,               // uint8_t mapq,
+                     cigar.size(),      // size_t n_cigar,
+                     cigar.data(),      // const uint32_t *cigar,
+                     -1,                // int32_t mtid,
+                     -1,                //  hts_pos_t mpos,
+                     0,                 // hts_pos_t isize,
+                     read.size(),       // size_t l_seq,
+                     read.data(),       // const char *seq,
+                     nullptr,           // const char *qual,
+                     16);               // size_t l_aux);
   if (ret < 0) throw runtime_error("failed to format bam");
 
   ret = bam_aux_update_int(sr.b, "NM", res.diffs);
@@ -540,9 +518,7 @@ valid_pair(const pe_element &best, const uint32_t readlen1,
 static map_type
 format_pe(const bool allow_ambig, const pe_element &p, const ChromLookup &cl,
           const string &read1, const string &read2, const string &name1,
-          const string &name2,
-          const bam_cigar_t &cig1,
-          const bam_cigar_t &cig2,
+          const string &name2, const bam_cigar_t &cig1, const bam_cigar_t &cig2,
           bam_rec &sr1, bam_rec &sr2) {
   static const uint8_t cv[2] = {'T', 'A'};
 
@@ -587,21 +563,21 @@ format_pe(const bool allow_ambig, const pe_element &p, const ChromLookup &cl,
 
   sr1.b = bam_init1();
   int ret = bam_set1(sr1.b,
-                     name1.size(), // size_t l_qname,
-                     name1.data(), // const char *qname,
-                     flag1,        // uint16_t flag,
-                     chr1 - 1,     // (-1 for padding) int32_t tid
-                     r_s1,         // hts_pos_t pos,
-                     255,          // uint8_t mapq,
-                     cig1.size(),  // size_t n_cigar,
-                     cig1.data(),  // const uint32_t *cigar,
-                     chr2 - 1,     // (-1 for padding) int32_t mtid,
-                     r_s2,         //  hts_pos_t mpos,
-                     isize,        // hts_pos_t isize,
-                     read1.size(), // size_t l_seq,
-                     read1.data(), // const char *seq,
-                     nullptr,      // const char *qual,
-                     16);          // size_t l_aux);
+                     name1.size(),  // size_t l_qname,
+                     name1.data(),  // const char *qname,
+                     flag1,         // uint16_t flag,
+                     chr1 - 1,      // (-1 for padding) int32_t tid
+                     r_s1,          // hts_pos_t pos,
+                     255,           // uint8_t mapq,
+                     cig1.size(),   // size_t n_cigar,
+                     cig1.data(),   // const uint32_t *cigar,
+                     chr2 - 1,      // (-1 for padding) int32_t mtid,
+                     r_s2,          //  hts_pos_t mpos,
+                     isize,         // hts_pos_t isize,
+                     read1.size(),  // size_t l_seq,
+                     read1.data(),  // const char *seq,
+                     nullptr,       // const char *qual,
+                     16);           // size_t l_aux);
   if (ret < 0) throw runtime_error("error formatting bam");
 
   ret = bam_aux_update_int(sr1.b, "NM", p.r1.diffs);
@@ -612,21 +588,21 @@ format_pe(const bool allow_ambig, const pe_element &p, const ChromLookup &cl,
 
   sr2.b = bam_init1();
   ret = bam_set1(sr2.b,
-                 name2.size(),     // size_t l_qname,
-                 name2.data(),     // const char *qname,
-                 flag2,            // uint16_t flag,
-                 chr2 - 1,         // (-1 for padding) int32_t tid
-                 r_s2,             // hts_pos_t pos,
-                 255,              // uint8_t mapq,
-                 cig2.size(),      // size_t n_cigar,
-                 cig2.data(),      // const uint32_t *cigar,
-                 chr1 - 1,         // (-1 for padding) int32_t mtid,
-                 r_s1,             //  hts_pos_t mpos,
-                 -isize,           // hts_pos_t isize,
-                 read2.size(),     // size_t l_seq,
-                 read2.data(),     // const char *seq,
-                 nullptr,          // const char *qual,
-                 16);              // size_t l_aux);
+                 name2.size(),  // size_t l_qname,
+                 name2.data(),  // const char *qname,
+                 flag2,         // uint16_t flag,
+                 chr2 - 1,      // (-1 for padding) int32_t tid
+                 r_s2,          // hts_pos_t pos,
+                 255,           // uint8_t mapq,
+                 cig2.size(),   // size_t n_cigar,
+                 cig2.data(),   // const uint32_t *cigar,
+                 chr1 - 1,      // (-1 for padding) int32_t mtid,
+                 r_s1,          //  hts_pos_t mpos,
+                 -isize,        // hts_pos_t isize,
+                 read2.size(),  // size_t l_seq,
+                 read2.data(),  // const char *seq,
+                 nullptr,       // const char *qual,
+                 16);           // size_t l_aux);
   if (ret < 0) throw runtime_error("failed to format bam");
 
   ret = bam_aux_update_int(sr2.b, "NM", p.r2.diffs);
@@ -686,9 +662,9 @@ struct pe_candidates {
   }
 
   void prepare_for_mating() {
-    sort(begin(v), begin(v) + sz,  // no sort_heap here as heapify used "diffs"
-         [](const se_element &a, const se_element &b)
-         { return a.pos < b.pos; } );
+    sort(
+      begin(v), begin(v) + sz,  // no sort_heap here as heapify used "diffs"
+      [](const se_element &a, const se_element &b) { return a.pos < b.pos; });
     sz = unique(begin(v), begin(v) + sz) - begin(v);
   }
 
@@ -722,8 +698,8 @@ struct se_map_stats {
   size_t edit_distance;
   size_t total_bases;
 
-  void update(const bool allow_ambig, const string &read, const bam_cigar_t &cigar,
-              const se_element s) {
+  void update(const bool allow_ambig, const string &read,
+              const bam_cigar_t &cigar, const se_element s) {
     ++tot_rds;
     const bool valid = !s.empty();
     const bool ambig = s.ambig();
@@ -789,9 +765,9 @@ struct pe_map_stats {
   se_map_stats end2_stats;
 
   void update(const bool allow_ambig, const string &reads1,
-              const string &reads2,
-              const bam_cigar_t &cig1, const bam_cigar_t &cig2,
-              const pe_element &p, const se_element s1, const se_element s2) {
+              const string &reads2, const bam_cigar_t &cig1,
+              const bam_cigar_t &cig2, const pe_element &p, const se_element s1,
+              const se_element s2) {
     const bool valid = !p.empty();
     const bool ambig = p.ambig();
     ++tot_pairs;
@@ -809,8 +785,8 @@ struct pe_map_stats {
     }
   }
 
-  void update_error_rate(const score_t d1, const score_t d2, const bam_cigar_t &cig1,
-                         const bam_cigar_t &cig2) {
+  void update_error_rate(const score_t d1, const score_t d2,
+                         const bam_cigar_t &cig1, const bam_cigar_t &cig2) {
     edit_distance += d1 + d2;
     total_bases += cigar_rseq_ops(cig1) + cigar_rseq_ops(cig2);
   }
@@ -851,11 +827,9 @@ struct pe_map_stats {
 static void
 select_output(const bool allow_ambig, const ChromLookup &cl,
               const string &read1, const string &name1, const string &read2,
-              const string &name2,
-              const bam_cigar_t &cig1,
-              const bam_cigar_t &cig2,
-              pe_element &best, se_element &se1, se_element &se2, bam_rec &sr1,
-              bam_rec &sr2) {
+              const string &name2, const bam_cigar_t &cig1,
+              const bam_cigar_t &cig2, pe_element &best, se_element &se1,
+              se_element &se2, bam_rec &sr1, bam_rec &sr2) {
   const map_type pe_map_type = format_pe(allow_ambig, best, cl, read1, read2,
                                          name1, name2, cig1, cig2, sr1, sr2);
 
@@ -870,7 +844,6 @@ select_output(const bool allow_ambig, const ChromLookup &cl,
       se2.reset();
   }
 }
-
 
 /* GS: this function counts mismatches between read and genome when
  * they are packed as 64-bit integers, with 16 characters per integer.
@@ -1252,7 +1225,6 @@ align_se_candidates(const Read &pread_t, const Read &pread_t_rc,
     best.reset();
 }
 
-
 static inline bool
 valid_bam_rec(const bam_rec &b) {
   return b.b;
@@ -1265,10 +1237,10 @@ reset_bam_rec(bam_rec &b) {
 }
 
 template<const conversion_type conv> static void
-map_single_ended(const bool VERBOSE, const bool allow_ambig,
-                 const AbismalIndex &abismal_index, ReadLoader &rl,
-                 se_map_stats &se_stats, bamxx::bam_header &hdr, bamxx::bam_out &out,
-                 ProgressBar &progress) {
+map_single_ended(const bool VERBOSE, const bool show_progress,
+                 const bool allow_ambig, const AbismalIndex &abismal_index,
+                 ReadLoader &rl, se_map_stats &se_stats, bamxx::bam_header &hdr,
+                 bamxx::bam_out &out, ProgressBar &progress) {
   const auto counter_st(begin(abismal_index.counter));
   const auto counter_t_st(begin(abismal_index.counter_t));
   const auto counter_a_st(begin(abismal_index.counter_a));
@@ -1300,13 +1272,13 @@ map_single_ended(const bool VERBOSE, const bool allow_ambig,
   se_candidates res;
   AbismalAlignSimple aln(genome_st);
 
-  size_t the_read = 0;
+  size_t the_byte = 0;
 
   while (rl) {
 #pragma omp critical
     {
       rl.load_reads(names, reads);
-      the_read = rl.get_current_read();
+      the_byte = rl.get_current_byte();
     }
 
     size_t max_batch_read_length = 0;
@@ -1359,18 +1331,19 @@ map_single_ended(const bool VERBOSE, const bool allow_ambig,
       se_stats.update(allow_ambig, reads[i], cigar[i], bests[i]);
       cigar[i].clear();
     }
-    if (VERBOSE && ready_to_report(the_read))
+    if (show_progress)
 #pragma omp critical
     {
-      cerr << "reads mapped: " << the_read << '\r';
+      if (progress.time_to_report(the_byte)) progress.report(cerr, the_byte);
     }
   }
 }
 
 static void
-map_single_ended_rand(const bool VERBOSE, const bool allow_ambig,
-                      const AbismalIndex &abismal_index, ReadLoader &rl,
-                      se_map_stats &se_stats, bamxx::bam_header &hdr, bamxx::bam_out &out,
+map_single_ended_rand(const bool VERBOSE, const bool show_progress,
+                      const bool allow_ambig, const AbismalIndex &abismal_index,
+                      ReadLoader &rl, se_map_stats &se_stats,
+                      bamxx::bam_header &hdr, bamxx::bam_out &out,
                       ProgressBar &progress) {
   const auto counter_st(begin(abismal_index.counter));
   const auto counter_t_st(begin(abismal_index.counter_t));
@@ -1403,13 +1376,13 @@ map_single_ended_rand(const bool VERBOSE, const bool allow_ambig,
   se_candidates res;
   AbismalAlignSimple aln(genome_st);
 
-  size_t the_read = 0;
+  size_t the_byte = 0;
 
   while (rl) {
 #pragma omp critical
     {
       rl.load_reads(names, reads);
-      the_read = rl.get_current_read();
+      the_byte = rl.get_current_byte();
     }
 
     size_t max_batch_read_length = 0;
@@ -1470,18 +1443,27 @@ map_single_ended_rand(const bool VERBOSE, const bool allow_ambig,
       se_stats.update(allow_ambig, reads[i], cigar[i], bests[i]);
       cigar[i].clear();
     }
-    if (VERBOSE && ready_to_report(the_read))
+    if (show_progress)
 #pragma omp critical
     {
-      cerr << "reads mapped: " << the_read << '\r';
+      if (progress.time_to_report(the_byte)) progress.report(cerr, the_byte);
     }
   }
 }
 
+static string
+format_time_in_sec(const double t) {
+  // assumes time is in seconds as floating point
+  std::ostringstream oss;
+  oss << std::fixed << std::setprecision(2) << t << "s";
+  return oss.str();
+}
+
 template<const conversion_type conv, const bool random_pbat> static void
-run_single_ended(const bool VERBOSE, const bool allow_ambig,
-                 const string &reads_file, const AbismalIndex &abismal_index,
-                 se_map_stats &se_stats, bamxx::bam_header &hdr, bamxx::bam_out &out) {
+run_single_ended(const bool VERBOSE, const bool show_progress,
+                 const bool allow_ambig, const string &reads_file,
+                 const AbismalIndex &abismal_index, se_map_stats &se_stats,
+                 bamxx::bam_header &hdr, bamxx::bam_out &out) {
   ReadLoader rl(reads_file);
   ProgressBar progress(get_filesize(reads_file), "mapping reads");
 
@@ -1490,17 +1472,16 @@ run_single_ended(const bool VERBOSE, const bool allow_ambig,
 #pragma omp parallel for
   for (int i = 0; i < omp_get_num_threads(); ++i) {
     if (random_pbat)
-      map_single_ended_rand(VERBOSE, allow_ambig, abismal_index, rl, se_stats,
-                            hdr, out, progress);
+      map_single_ended_rand(VERBOSE, show_progress, allow_ambig, abismal_index,
+                            rl, se_stats, hdr, out, progress);
     else
-      map_single_ended<conv>(VERBOSE, allow_ambig, abismal_index, rl, se_stats,
-                             hdr, out, progress);
+      map_single_ended<conv>(VERBOSE, show_progress, allow_ambig, abismal_index,
+                             rl, se_stats, hdr, out, progress);
   }
-  if (VERBOSE) {
-    print_with_time(
-      "reads mapped: " + to_string(rl.get_current_read()));
-    print_with_time(
-      "total mapping time: " + to_string(omp_get_wtime() - start_time) + "s");
+  if (show_progress) {
+    print_with_time("reads mapped: " + to_string(rl.get_current_read()));
+    print_with_time("total mapping time: " +
+                    format_time_in_sec((omp_get_wtime() - start_time)));
   }
 }
 
@@ -1513,10 +1494,9 @@ best_single(const pe_candidates &pres, se_candidates &res) {
 
 template<const bool swap_ends> static void
 best_pair(const pe_candidates &res1, const pe_candidates &res2,
-          const Read &pread1, const Read &pread2,
-          bam_cigar_t &cigar1, bam_cigar_t &cigar2,
-          vector<score_t> &mem_scr1, AbismalAlignSimple &aln,
-          pe_element &best) {
+          const Read &pread1, const Read &pread2, bam_cigar_t &cigar1,
+          bam_cigar_t &cigar2, vector<score_t> &mem_scr1,
+          AbismalAlignSimple &aln, pe_element &best) {
   vector<se_element>::const_iterator j1(begin(res1.v));
   vector<se_element>::const_iterator j2(begin(res2.v));
 
@@ -1627,11 +1607,10 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
 }
 
 template<const bool swap_ends> static bool
-select_maps(const Read &pread1, const Read &pread2,
-            bam_cigar_t &cig1, bam_cigar_t &cig2,
-            pe_candidates &res1, pe_candidates &res2, vector<score_t> &mem_scr1,
-            se_candidates &res_se1, se_candidates &res_se2,
-            AbismalAlignSimple &aln, pe_element &best) {
+select_maps(const Read &pread1, const Read &pread2, bam_cigar_t &cig1,
+            bam_cigar_t &cig2, pe_candidates &res1, pe_candidates &res2,
+            vector<score_t> &mem_scr1, se_candidates &res_se1,
+            se_candidates &res_se2, AbismalAlignSimple &aln, pe_element &best) {
   if (res1.should_align() && res2.should_align()) {
     res1.prepare_for_mating();
     res2.prepare_for_mating();
@@ -1653,11 +1632,11 @@ map_fragments(const uint32_t max_candidates, const string &read1,
               const vector<uint32_t>::const_iterator index_st,
               const vector<uint32_t>::const_iterator index_three_st,
               const genome_iterator genome_st, Read &pread1, Read &pread2,
-              PackedRead &packed_pread,
-              bam_cigar_t &cigar1, bam_cigar_t &cigar2,
-              AbismalAlignSimple &aln, pe_candidates &res1, pe_candidates &res2,
-              vector<score_t> &mem_scr1, se_candidates &res_se1,
-              se_candidates &res_se2, pe_element &best) {
+              PackedRead &packed_pread, bam_cigar_t &cigar1,
+              bam_cigar_t &cigar2, AbismalAlignSimple &aln, pe_candidates &res1,
+              pe_candidates &res2, vector<score_t> &mem_scr1,
+              se_candidates &res_se1, se_candidates &res_se2,
+              pe_element &best) {
   res1.reset(read1.size());
   res2.reset(read2.size());
 
@@ -1684,12 +1663,12 @@ map_fragments(const uint32_t max_candidates, const string &read1,
                                 mem_scr1, res_se1, res_se2, aln, best);
 }
 
-
 template<const conversion_type conv> static void
-map_paired_ended(const bool VERBOSE, const bool allow_ambig,
-                 const AbismalIndex &abismal_index, ReadLoader &rl1,
-                 ReadLoader &rl2, pe_map_stats &pe_stats, bamxx::bam_header &hdr,
-                 bamxx::bam_out &out, ProgressBar &progress) {
+map_paired_ended(const bool VERBOSE, const bool show_progress,
+                 const bool allow_ambig, const AbismalIndex &abismal_index,
+                 ReadLoader &rl1, ReadLoader &rl2, pe_map_stats &pe_stats,
+                 bamxx::bam_header &hdr, bamxx::bam_out &out,
+                 ProgressBar &progress) {
   const auto counter_st(begin(abismal_index.counter));
   const auto counter_t_st(begin(abismal_index.counter_t));
   const auto counter_a_st(begin(abismal_index.counter_a));
@@ -1744,14 +1723,14 @@ map_paired_ended(const bool VERBOSE, const bool allow_ambig,
   se_candidates res_se1;
   se_candidates res_se2;
 
-  size_t the_read = 0;
+  size_t the_byte = 0;
 
   while (rl1 && rl2) {
 #pragma omp critical
     {
       rl1.load_reads(names1, reads1);
       rl2.load_reads(names2, reads2);
-      the_read = rl1.get_current_read();
+      the_byte = rl1.get_current_byte();
     }
 
     if (reads1.size() != reads2.size()) {
@@ -1842,19 +1821,20 @@ map_paired_ended(const bool VERBOSE, const bool allow_ambig,
       cigar1[i].clear();
       cigar2[i].clear();
     }
-    if (VERBOSE && ready_to_report(the_read))
+    if (show_progress)
 #pragma omp critical
     {
-      cerr << "reads mapped: " << the_read << '\r';
+      if (progress.time_to_report(the_byte)) progress.report(cerr, the_byte);
     }
   }
 }
 
 static void
-map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
-                      const AbismalIndex &abismal_index, ReadLoader &rl1,
-                      ReadLoader &rl2, pe_map_stats &pe_stats, bamxx::bam_header &hdr,
-                      bamxx::bam_out &out, ProgressBar &progress) {
+map_paired_ended_rand(const bool VERBOSE, const bool show_progress,
+                      const bool allow_ambig, const AbismalIndex &abismal_index,
+                      ReadLoader &rl1, ReadLoader &rl2, pe_map_stats &pe_stats,
+                      bamxx::bam_header &hdr, bamxx::bam_out &out,
+                      ProgressBar &progress) {
   const auto counter_st(begin(abismal_index.counter));
   const auto counter_t_st(begin(abismal_index.counter_t));
   const auto counter_a_st(begin(abismal_index.counter_a));
@@ -1905,14 +1885,14 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
   se_candidates res_se1;
   se_candidates res_se2;
 
-  size_t the_read = 0;
+  size_t the_byte = 0;
 
   while (rl1 && rl2) {
 #pragma omp critical
     {
       rl1.load_reads(names1, reads1);
       rl2.load_reads(names2, reads2);
-      the_read = rl1.get_current_read();
+      the_byte = rl1.get_current_byte();
     }
 
     if (reads1.size() != reads2.size()) {
@@ -2016,19 +1996,20 @@ map_paired_ended_rand(const bool VERBOSE, const bool allow_ambig,
       cigar1[i].clear();
       cigar2[i].clear();
     }
-    if (VERBOSE && ready_to_report(the_read))
+    if (show_progress)
 #pragma omp critical
     {
-      cerr << "reads mapped: " << the_read << '\r';
+      if (progress.time_to_report(the_byte)) progress.report(cerr, the_byte);
     }
   }
 }
 
 template<const conversion_type conv, const bool random_pbat> static void
-run_paired_ended(const bool VERBOSE, const bool allow_ambig,
-                 const string &reads_file1, const string &reads_file2,
-                 const AbismalIndex &abismal_index, pe_map_stats &pe_stats,
-                 bamxx::bam_header &hdr, bamxx::bam_out &out) {
+run_paired_ended(const bool VERBOSE, const bool show_progress,
+                 const bool allow_ambig, const string &reads_file1,
+                 const string &reads_file2, const AbismalIndex &abismal_index,
+                 pe_map_stats &pe_stats, bamxx::bam_header &hdr,
+                 bamxx::bam_out &out) {
   ReadLoader rl1(reads_file1);
   ReadLoader rl2(reads_file2);
   ProgressBar progress(get_filesize(reads_file1), "mapping reads");
@@ -2038,23 +2019,22 @@ run_paired_ended(const bool VERBOSE, const bool allow_ambig,
 #pragma omp parallel for
   for (int i = 0; i < omp_get_num_threads(); ++i) {
     if (random_pbat)
-      map_paired_ended_rand(VERBOSE, allow_ambig, abismal_index, rl1, rl2,
-                            pe_stats, hdr, out, progress);
+      map_paired_ended_rand(VERBOSE, show_progress, allow_ambig, abismal_index,
+                            rl1, rl2, pe_stats, hdr, out, progress);
 
     else
-      map_paired_ended<conv>(VERBOSE, allow_ambig, abismal_index, rl1, rl2,
-                             pe_stats, hdr, out, progress);
+      map_paired_ended<conv>(VERBOSE, show_progress, allow_ambig, abismal_index,
+                             rl1, rl2, pe_stats, hdr, out, progress);
   }
-  if (VERBOSE) {
-    print_with_time(
-      "reads mapped: " + to_string(rl1.get_current_read()));
-    print_with_time(
-      "total mapping time: " + to_string(omp_get_wtime() - start_time) + "s");
+  if (show_progress) {
+    print_with_time("reads mapped: " + to_string(rl1.get_current_read()));
+    print_with_time("total mapping time: " +
+                    format_time_in_sec(omp_get_wtime() - start_time));
   }
 }
 
-// this is used to fail before reading the index if
-// any input FASTQ file does not exist
+// this is used to fail before reading the index if any input FASTQ
+// file does not exist
 static inline bool
 file_exists(const string &filename) {
   return (access(filename.c_str(), F_OK) == 0);
@@ -2113,7 +2093,7 @@ abismal(int argc, const char **argv) {
     uint32_t max_candidates = 0;
     string index_file = "";
     string genome_file = "";
-    string outfile = "";
+    string outfile("-");
     string stats_outfile = "";
 
     /****************** COMMAND LINE OPTIONS ********************/
@@ -2122,7 +2102,7 @@ abismal(int argc, const char **argv) {
     opt_parse.set_show_defaults();
     opt_parse.add_opt("index", 'i', "index file", false, index_file);
     opt_parse.add_opt("genome", 'g', "genome file (FASTA)", false, genome_file);
-    opt_parse.add_opt("outfile", 'o', "output file", true, outfile);
+    opt_parse.add_opt("outfile", 'o', "output file", false, outfile);
     opt_parse.add_opt("bam", 'B', "output BAM format", false, write_bam_fmt);
     opt_parse.add_opt("stats", 's', "map statistics file (YAML)", false,
                       stats_outfile);
@@ -2216,6 +2196,8 @@ abismal(int argc, const char **argv) {
                       " threads to map reads.");
     /****************** END THREAD VALIDATION *****************/
 
+    const bool show_progress = VERBOSE && isatty(fileno(stderr));
+
     AbismalIndex::VERBOSE = VERBOSE;
 
     if (VERBOSE) {
@@ -2224,8 +2206,10 @@ abismal(int argc, const char **argv) {
       else
         print_with_time("input (SE): " + reads_file);
 
-      print_with_time("output (SAM): " +
-                      (outfile.empty() ? "[stdout]" : outfile));
+      string output_msg = "output ";
+      output_msg += (write_bam_fmt ? "(BAM): " : "(SAM): ");
+      output_msg += (outfile == "-" ? "[stdout]" : outfile);
+      print_with_time(output_msg.c_str());
 
       if (!stats_outfile.empty())
         print_with_time("map statistics (YAML): " + stats_outfile);
@@ -2239,15 +2223,15 @@ abismal(int argc, const char **argv) {
       abismal_index.read(index_file);
 
       if (VERBOSE)
-        print_with_time(
-          "loading time: " + to_string(omp_get_wtime() - start_time) + "s");
+        print_with_time("loading time: " +
+                        format_time_in_sec(omp_get_wtime() - start_time));
     }
     else {
       if (VERBOSE) print_with_time("indexing genome " + genome_file);
       abismal_index.create_index(genome_file);
       if (VERBOSE)
-        print_with_time(
-          "indexing time: " + to_string(omp_get_wtime() - start_time) + "s");
+        print_with_time("indexing time: " +
+                        format_time_in_sec(omp_get_wtime() - start_time));
     }
 
     if (max_candidates != 0) {
@@ -2273,28 +2257,31 @@ abismal(int argc, const char **argv) {
 
     if (reads_file2.empty()) {
       if (GA_conversion || pbat_mode)
-        run_single_ended<a_rich, false>(VERBOSE, allow_ambig, reads_file,
-                                        abismal_index, se_stats, hdr, out);
+        run_single_ended<a_rich, false>(VERBOSE, show_progress, allow_ambig,
+                                        reads_file, abismal_index, se_stats,
+                                        hdr, out);
       else if (random_pbat)
-        run_single_ended<t_rich, true>(VERBOSE, allow_ambig, reads_file,
-                                       abismal_index, se_stats, hdr, out);
+        run_single_ended<t_rich, true>(VERBOSE, show_progress, allow_ambig,
+                                       reads_file, abismal_index, se_stats, hdr,
+                                       out);
       else
-        run_single_ended<t_rich, false>(VERBOSE, allow_ambig, reads_file,
-                                        abismal_index, se_stats, hdr, out);
+        run_single_ended<t_rich, false>(VERBOSE, show_progress, allow_ambig,
+                                        reads_file, abismal_index, se_stats,
+                                        hdr, out);
     }
     else {
       if (pbat_mode)
-        run_paired_ended<a_rich, false>(VERBOSE, allow_ambig, reads_file,
-                                        reads_file2, abismal_index, pe_stats,
-                                        hdr, out);
+        run_paired_ended<a_rich, false>(VERBOSE, show_progress, allow_ambig,
+                                        reads_file, reads_file2, abismal_index,
+                                        pe_stats, hdr, out);
       else if (random_pbat)
-        run_paired_ended<t_rich, true>(VERBOSE, allow_ambig, reads_file,
-                                       reads_file2, abismal_index, pe_stats,
-                                       hdr, out);
+        run_paired_ended<t_rich, true>(VERBOSE, show_progress, allow_ambig,
+                                       reads_file, reads_file2, abismal_index,
+                                       pe_stats, hdr, out);
       else
-        run_paired_ended<t_rich, false>(VERBOSE, allow_ambig, reads_file,
-                                        reads_file2, abismal_index, pe_stats,
-                                        hdr, out);
+        run_paired_ended<t_rich, false>(VERBOSE, show_progress, allow_ambig,
+                                        reads_file, reads_file2, abismal_index,
+                                        pe_stats, hdr, out);
     }
 
     if (!stats_outfile.empty()) {
