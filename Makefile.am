@@ -1,8 +1,8 @@
 # This file is part of abismal
 #
-# Copyright (C) 2018-2020: Andrew D. Smith
+# Copyright (C) 2018-2023: Andrew D. Smith and Guilherme de Sena Brandine
 #
-# Authors: Andrew D. Smith
+# Authors: Andrew D. Smith and Guilherme de Sena Brandine
 #
 # This is free software: you can redistribute it and/or modify it
 # under the terms of the GNU General Public License as published by

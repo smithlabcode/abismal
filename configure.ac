@@ -1,6 +1,6 @@
 dnl This file is part of abismal
 dnl
-dnl Copyright (C) 2019-2022: Andrew D. Smith and Guilherme de Sena Brandine
+dnl Copyright (C) 2019-2023: Andrew D. Smith and Guilherme de Sena Brandine
 dnl
 dnl Authors: Andrew D. Smith and Guilherme de Sena Brandine
 dnl
@@ -14,7 +14,7 @@ dnl but WITHOUT ANY WARRANTY; without even the implied warranty of
 dnl MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 dnl General Public License for more details.
 
-AC_INIT([abismal], [3.1.1], [andrewds@usc.edu],
+AC_INIT([abismal], [3.2.0], [andrewds@usc.edu],
         [abismal], [https://github.com/smithlabcode/abismal])
 
 dnl the config.h is not currently #included in the source, and only
