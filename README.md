@@ -53,9 +53,9 @@ If you don't have adminstrator privileges, there are other options.
 If you have the `libhts-dev` installed, to build `abismal` the
 following should work:
 ```console
-$ wget https://github.com/smithlabcode/abismal/releases/download/v3.1.1/abismal-3.1.1.tar.gz
-$ tar -zxvf abismal-3.1.1.tar.gz
-$ cd abismal-3.1.1
+$ wget https://github.com/smithlabcode/abismal/releases/download/v3.2.0/abismal-3.2.0.tar.gz
+$ tar -zxvf abismal-3.2.0.tar.gz
+$ cd abismal-3.2.0
 $ mkdir build && cd build
 $ ../configure --prefix=/where/you/want/abismal
 $ make
@@ -84,9 +84,9 @@ be needed below. If you don't already have `abismal` downloaded, the next
 step is to download it. Here we will assume you are using a release rather
 than a clone. To build from a clone involves at least one more step.
 ```console
-$ wget https://github.com/smithlabcode/abismal/releases/download/v3.1.1/abismal-3.1.1.tar.gz
-$ tar -zxvf abismal-3.1.1.tar.gz
-$ cd abismal-3.1.1
+$ wget https://github.com/smithlabcode/abismal/releases/download/v3.2.0/abismal-3.2.0.tar.gz
+$ tar -zxvf abismal-3.2.0.tar.gz
+$ cd abismal-3.2.0
 ```
 Finally, these steps build the software:
 ```console
