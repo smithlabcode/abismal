@@ -24,5 +24,7 @@ jobs:
       run: ./autogen.sh
     - name: configure
       run: ./configure
+    - name: make check with two threads
+      run: make -j2 check
     - name: make distcheck
       run: make distcheck
