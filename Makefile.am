@@ -28,7 +28,8 @@ EXTRA_DIST = \
 	test_scripts/test_simreads_pbat.test \
 	test_scripts/test_abismal_pbat.test \
 	test_scripts/test_simreads_rpbat.test \
-	test_scripts/test_abismal_rpbat.test
+	test_scripts/test_abismal_rpbat.test \
+	test_scripts/test_abismal_threads.test
 
 ACLOCAL_AMFLAGS = -I m4
 
@@ -72,7 +73,8 @@ TESTS = test_scripts/test_abismalidx.test \
 	test_scripts/test_simreads_pbat.test \
 	test_scripts/test_abismal_pbat.test \
 	test_scripts/test_simreads_rpbat.test \
-	test_scripts/test_abismal_rpbat.test
+	test_scripts/test_abismal_rpbat.test \
+	test_scripts/test_abismal_threads.test
 
 TEST_EXTENSIONS = .test
 
@@ -87,6 +89,12 @@ test_scripts/test_abismal_pbat.log: \
 	test_scripts/test_simreads_pbat.log
 test_scripts/test_abismal_rpbat.log: \
 	test_scripts/test_abismalidx.log \
+	test_scripts/test_simreads_rpbat.log
+test_scripts/test_abismal_threads.log: \
+	test_scripts/test_abismalidx.log \
+	test_scripts/test_simreads.log \
+	test_scripts/test_simreads_pe.log \
+	test_scripts/test_simreads_pbat.log \
 	test_scripts/test_simreads_rpbat.log
 
 CLEANFILES = \
