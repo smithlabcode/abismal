@@ -119,7 +119,7 @@ struct ReadLoader {
     size_t line_count = 0;
     const size_t num_lines_to_read = 4 * batch_size;
     string line;
-    while (line_count < num_lines_to_read && in.getline(line)) {
+    while (line_count < num_lines_to_read && getline(in, line)) {
       if (line_count % 4 == 0) {
         if (line.empty())
           throw runtime_error("file " + filename + " contains an empty " +
@@ -150,7 +150,7 @@ struct ReadLoader {
 
   uint32_t cur_line;
   string filename;
-  bamxx::bam_bgzf in;
+  bamxx::bgzf_file in;
 
   static const size_t batch_size;
   static const uint32_t min_read_length;
