@@ -23,6 +23,7 @@
 #include <htslib/hfile.h>
 #include <htslib/sam.h>
 #include <omp.h>
+#include <unistd.h>
 
 #include <chrono>
 #include <cstdint>
@@ -42,7 +43,6 @@
 #include "sam_record.hpp"
 #include "smithlab_os.hpp"
 #include "smithlab_utils.hpp"
-#include "zlib_wrapper.hpp"
 
 using std::begin;
 using std::cerr;
