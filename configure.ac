@@ -26,7 +26,7 @@ AM_INIT_AUTOMAKE([subdir-objects foreign])
 AC_CONFIG_MACRO_DIR([m4])
 AC_LANG(C++)
 AC_PROG_CXX
-AX_CXX_COMPILE_STDCXX_11([noext], [mandatory])
+AX_CXX_COMPILE_STDCXX_17([noext], [mandatory])
 
 AM_PROG_AR
 AC_PROG_RANLIB
