@@ -159,6 +159,8 @@ load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
 std::ostream &
 operator<<(std::ostream &out, const ChromLookup &cl);
 
+struct dp_sol;
+
 enum three_conv_type { c_to_t, g_to_a};
 struct AbismalIndex {
 
@@ -182,7 +184,7 @@ struct AbismalIndex {
 
   // a vector indicating whether each position goes into two-
   // or three-letter encoding
-  std::vector<bool> is_two_letter;
+  std::vector<bool> is_two_let;
   std::vector<bool> keep;
 
   Genome genome; // the genome
@@ -202,6 +204,16 @@ struct AbismalIndex {
 
   // selects which positions to keep based on k-mer frequencies
   void compress_dp();
+
+  void compress_dp_inner(const size_t range_start,
+                         const size_t lim,
+                         const size_t block_size,
+                         uint32_t &hash_two,
+                         uint32_t &hash_t,
+                         uint32_t &hash_a,
+                         genome_four_bit_itr &gi_two,
+                         genome_four_bit_itr &gi_three,
+                         std::deque<dp_sol> &helper);
 
   // put genome positions in the appropriate buckets
   void hash_genome();
