@@ -331,9 +331,10 @@ struct dp_sol {
 };
 
 // ADS: Occupancy of the deque can be 0 through window_size, so
-// (window_size + 1). However, if we only use this size, then we can't
+// (seed::window_size + 1). However, if we only use this size, then we can't
 // tell the difference using `f` and `b` of whether the deque is empty
-// or full.
+// or full. We need to ensure that the size of this deque ring buffer
+// is at least (window_size + 2).
 template<class T> struct fixed_ring_buffer {
   constexpr static size_t qsz = 32ul;  // must be at least (seed::window_size + 2)
   constexpr static size_t qsz_msk = 31ul;  // bit mask to keep positions in range
@@ -350,17 +351,17 @@ template<class T> struct fixed_ring_buffer {
 
   auto front() -> T & { return h[f]; }
 
-  auto pop_back() -> void {  // inverse of pop_front
+  auto pop_back() -> void {
     --b;
     b &= qsz_msk;
   }
 
-  auto pop_front() -> void {  // inverse of pop_back
+  auto pop_front() -> void {
     ++f;
     f &= qsz_msk;
   }
 
-  auto emplace_back(T &&x) -> void {  // like pop_front
+  auto emplace_back(T &&x) -> void {
     h[b] = std::move(x);
     ++b;
     b &= qsz_msk;
@@ -402,8 +403,7 @@ AbismalIndex::compress_dp() {
 
   const auto lim = cl.get_genome_size() - seed::padding_size - seed::key_weight;
 
-  deque helper;
-
+#pragma omp parallel for schedule(static, 1)
   for (size_t block_start = seed::padding_size; block_start < lim;
        block_start += block_size) {
 
@@ -411,14 +411,14 @@ AbismalIndex::compress_dp() {
 
     uint32_t hash_two = 0;
 
-    // build the first hash key minus last base: two letters
+    // spool the hash for two letter encoding
     auto gi_two = genome_iterator(begin(genome)) + block_start;
     const auto gi_lim_two(gi_two + (seed::key_weight - 1));
     while (gi_two != gi_lim_two) shift_hash_key(*gi_two++, hash_two);
 
     uint32_t hash_t = 0, hash_a = 0;
 
-    // build the first hash key minus last base: three letters
+    // spool the hashes for three letter encodings
     auto gi_three = genome_iterator(begin(genome)) + block_start;
     const auto gi_lim_three(gi_three + (seed::key_weight_three - 1));
     while (gi_three != gi_lim_three) {
@@ -427,13 +427,15 @@ AbismalIndex::compress_dp() {
       shift_three_key<g_to_a>(gi3_val, hash_a);
     }
 
-    // main dp loop
     vector<dp_sol> opt(block_size + 1);
-    auto opt_itr = begin(opt);
-    const vector<dp_sol>::const_iterator opt_lim = cbegin(opt) + sz;
-    vector<bool>::const_iterator itl = begin(is_two_let) + block_start;
+    deque helper;
 
-    // get the first w solutions
+    auto opt_itr = begin(opt);
+    const auto opt_lim = cbegin(opt) + sz;
+    auto itl = cbegin(is_two_let) + block_start;
+
+    // do the base cases for the dynamic programming: the solutions
+    // for the first "window size" positions
     size_t i = 0;
     for (; i < seed::window_size; ++opt_itr) {
       shift_hash_key(*gi_two++, hash_two);
@@ -541,7 +543,7 @@ AbismalIndex::sort_buckets() {
 #pragma omp parallel for schedule(static, 10000)
       for (size_t i = 0; i < counter_size; ++i)
         if (counter[i + 1] > counter[i] + 1)
-          sort(execution::par_unseq, b + counter[i], b + counter[i + 1],
+          sort(execution::par, b + counter[i], b + counter[i + 1],
                bucket_less);
     }
 #pragma omp section
@@ -551,7 +553,7 @@ AbismalIndex::sort_buckets() {
 #pragma omp parallel for schedule(static, 10000)
       for (size_t i = 0; i < counter_size_three; ++i)
         if (counter_t[i + 1] > counter_t[i] + 1)
-          sort(execution::par_unseq, b_t + counter_t[i], b_t + counter_t[i + 1],
+          sort(execution::par, b_t + counter_t[i], b_t + counter_t[i + 1],
                bucket_less_t);
     }
 #pragma omp section
@@ -561,7 +563,7 @@ AbismalIndex::sort_buckets() {
 #pragma omp parallel for schedule(static, 10000)
       for (size_t i = 0; i < counter_size_three; ++i)
         if (counter_a[i + 1] > counter_a[i] + 1)
-          sort(execution::par_unseq, b_a + counter_a[i], b_a + counter_a[i + 1],
+          sort(execution::par, b_a + counter_a[i], b_a + counter_a[i + 1],
                bucket_less_a);
     }
   }
