@@ -1,6 +1,6 @@
-/*  Copyright (C) 2018-2019 Andrew D. Smith
+/*  Copyright (C) 2018-2023 Andrew D. Smith and Guilherme Sena
  *
- *  Authors: Andrew D. Smith
+ *  Authors: Andrew D. Smith and Guilherme Sena
  *
  *  This file is part of ABISMAL.
  *
@@ -30,7 +30,6 @@
 #include <climits>
 #include <cmath>
 #include <cstdint>
-#include <array>
 
 #include "smithlab_utils.hpp"
 #include "dna_four_bit.hpp"
@@ -194,8 +193,9 @@ struct AbismalIndex {
 
   // count how many positions must be stored for each hash value
   template<const bool use_mask>
-  void get_bucket_sizes();
-
+  void initialize_bucket_sizes();
+  template<const bool use_mask>
+  void get_bucket_sizes_two();
   template<const three_conv_type the_conv, const bool use_mask>
   void get_bucket_sizes_three();
 
