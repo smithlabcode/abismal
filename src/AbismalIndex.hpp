@@ -30,6 +30,7 @@
 #include <climits>
 #include <cmath>
 #include <cstdint>
+#include <array>
 
 #include "smithlab_utils.hpp"
 #include "dna_four_bit.hpp"
@@ -159,7 +160,6 @@ load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
 std::ostream &
 operator<<(std::ostream &out, const ChromLookup &cl);
 
-struct dp_sol;
 
 enum three_conv_type { c_to_t, g_to_a};
 struct AbismalIndex {
@@ -208,12 +208,11 @@ struct AbismalIndex {
   void compress_dp_inner(const size_t range_start,
                          const size_t lim,
                          const size_t block_size,
-                         uint32_t &hash_two,
-                         uint32_t &hash_t,
-                         uint32_t &hash_a,
-                         genome_four_bit_itr &gi_two,
-                         genome_four_bit_itr &gi_three,
-                         std::deque<dp_sol> &helper);
+                         uint32_t hash_two,
+                         uint32_t hash_t,
+                         uint32_t hash_a,
+                         genome_four_bit_itr gi_two,
+                         genome_four_bit_itr gi_three);
 
   // put genome positions in the appropriate buckets
   void hash_genome();
@@ -242,9 +241,9 @@ get_bit(const uint8_t nt) {return (nt & 5) == 0;}
 template<const three_conv_type the_conv>
 inline three_letter_t
 get_three_letter_num(const uint8_t &nt) {
-  return ((the_conv == c_to_t) ?
-      ((((nt & 4) != 0)<<1)  | ((nt & 1) != 0)) : // C=T=0, A=1, G=2
-      ((((nt & 8) != 0)<<1)  | ((nt & 2) != 0))); // A=G=0,C=1,T=2
+  return (the_conv == c_to_t) ?
+    ((((nt & 4) != 0)<<1)  | ((nt & 1) != 0)) : // C=T=0, A=1, G=2
+    ((((nt & 8) != 0)<<1)  | ((nt & 2) != 0)); // A=G=0,C=1,T=2
 }
 
 inline void

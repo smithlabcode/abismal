@@ -29,6 +29,11 @@
 #include <deque>
 #include <fstream>
 #include <utility>
+#include <chrono>
+#include <execution>
+
+#include <typeinfo>
+#include <type_traits>
 
 using std::pair;
 using std::make_pair;
@@ -42,15 +47,34 @@ using std::runtime_error;
 using std::sort;
 using std::cout;
 using std::min;
-using std::deque;
 using std::fill;
 using std::to_string;
 using std::max;
+using std::inclusive_scan;
+
+using std::chrono::duration;
+using std::chrono::steady_clock;
+using std::chrono::time_point;
+
+template <typename T>
+using num_lim = std::numeric_limits<T>;
+
+namespace execution = std::execution;
 
 bool AbismalIndex::VERBOSE = false;
 string AbismalIndex::internal_identifier = "AbismalIndex";
 
 using genome_iterator = genome_four_bit_itr;
+
+static string
+delta_seconds(const time_point<steady_clock> &a,
+              const time_point<steady_clock> &b) {
+  std::ostringstream oss;
+  oss.setf(std::ios::fixed);
+  oss.precision(2);
+  oss << "[time: " << duration<double>(b - a).count() << "s]";
+  return oss.str();
+}
 
 void
 AbismalIndex::create_index(const string &genome_file) {
@@ -105,6 +129,7 @@ AbismalIndex::get_bucket_sizes() {
 
   for (size_t i = genome_st; i < lim; ++i) {
     shift_hash_key(*gi++, hash_key);
+
     if (keep[i]) {
       const bool count_base =  (!use_mask || is_two_let[i]);
       counter[hash_key] += count_base;
@@ -138,111 +163,114 @@ AbismalIndex::get_bucket_sizes_three() {
   while (gi != gi_lim)
     shift_three_key<the_conv>(*gi++, hash_key);
 
-  auto keep_itr = begin(keep) + genome_st;
   for (size_t i = genome_st; i < lim; ++i) {
     shift_three_key<the_conv>(*gi++, hash_key);
-    if (*keep_itr++) {
-      if constexpr (the_conv == c_to_t)
-        counter_t[hash_key] += (!use_mask || !is_two_let[i]);
+    if (keep[i]) {
+      const bool count_base = (!use_mask || !is_two_let[i]);
+
+      if (the_conv == c_to_t)
+        counter_t[hash_key] += count_base;
       else
-        counter_a[hash_key] += (!use_mask || !is_two_let[i]);
+        counter_a[hash_key] += count_base;
     }
   }
 }
 
-static inline uint32_t
-two_letter_cost(const uint32_t count) {
+static inline size_t
+two_letter_cost(const size_t count) {
   return count;
 }
 
-static inline uint32_t
+static inline size_t
 three_letter_cost(const uint32_t count_t, const uint32_t count_a) {
   return (count_t + count_a) >> 1;
 }
 
 void
 AbismalIndex::select_two_letter_positions() {
-  // first get statistics on the full genome
-
+  constexpr size_t block_size = 100000ul;
+  auto s_time = steady_clock::now();
+  if (VERBOSE) cerr << "[selecting 2-letter positions: initializing buckets]";
 #pragma omp parallel sections
   {
 #pragma omp section
-    get_bucket_sizes<false>();
+  get_bucket_sizes<false>();
 #pragma omp section
-    get_bucket_sizes_three<c_to_t, false>();
+  get_bucket_sizes_three<c_to_t, false>();
 #pragma omp section
-    get_bucket_sizes_three<g_to_a, false >();
+  get_bucket_sizes_three<g_to_a, false>();
   }
+  auto e_time = steady_clock::now();
+  if (VERBOSE) cerr << delta_seconds(s_time, e_time) << endl;
+  s_time = e_time;
 
+  if (VERBOSE) cerr << "[selecting 2-letter positions: choice]";
   // now choose which have lower count under two-letters
-  is_two_let.resize(cl.get_genome_size());
-  fill_n(begin(is_two_let), cl.get_genome_size(), false);
+  // assert(is_two_let.empty());
+  is_two_let.resize(cl.get_genome_size(), false);
+  const auto g_beg = genome_iterator(begin(genome));
 
-  const size_t genome_st = seed::padding_size;
-  const size_t lim = cl.get_genome_size() - seed::key_weight - seed::padding_size;
+  const auto lim = cl.get_genome_size() - seed::key_weight - seed::padding_size;
+#pragma omp parallel for schedule(static, 1)
+  for (size_t i = seed::padding_size; i < lim; i += block_size) {
+    uint32_t hash_two = 0;
+    uint32_t hash_t = 0;
+    uint32_t hash_a = 0;
 
-  // start building up the hash key
-  genome_iterator gi_two(begin(genome));
-  genome_iterator gi_three(begin(genome));
-  gi_two = gi_two + genome_st;
-  gi_three = gi_three + genome_st;
-
-  uint32_t hash_two = 0;
-  uint32_t hash_t = 0;
-  uint32_t hash_a = 0;
-
-  const auto gi_lim_two(gi_two + (seed::key_weight - 1));
-  const auto gi_lim_three(gi_three + (seed::key_weight_three - 1));
-  while (gi_two != gi_lim_two) {
-    shift_hash_key(*gi_two++, hash_two);
+    auto gi_two = g_beg + i;
+    auto gi_three = g_beg + i;
+    const auto gi_lim_two(gi_two + (seed::key_weight - 1));
+    const auto gi_lim_three(gi_three + (seed::key_weight_three - 1));
+    while (gi_two != gi_lim_two) shift_hash_key(*gi_two++, hash_two);
+    while (gi_three != gi_lim_three) {
+      const auto x = *gi_three++;
+      shift_three_key<c_to_t>(x, hash_t);
+      shift_three_key<g_to_a>(x, hash_a);
+    }
+    const auto itl_lim = begin(is_two_let) + min(i + block_size, lim);
+    for (auto itl = begin(is_two_let) + i; itl != itl_lim; ++itl) {
+      shift_hash_key(*gi_two++, hash_two);
+      const auto x = *gi_three++;
+      shift_three_key<c_to_t>(x, hash_t);
+      shift_three_key<g_to_a>(x, hash_a);
+      *itl = (two_letter_cost(counter[hash_two]) <=
+              three_letter_cost(counter_t[hash_t], counter_a[hash_a]));
+    }
   }
-
-  while (gi_three != gi_lim_three) {
-    shift_three_key<c_to_t>(*gi_three, hash_t);
-    shift_three_key<g_to_a>(*gi_three, hash_a);
-    ++gi_three;
-  }
-
-  auto itl = begin(is_two_let) + genome_st;
-  const auto itl_lim = itl + lim;
-  while (itl != itl_lim) { // size_t i = genome_st; i < lim; ++i) {// , ++gi_two, ++gi_three) {
-    shift_hash_key(*gi_two++, hash_two);
-    const auto x = *gi_three++;
-    shift_three_key<c_to_t>(x, hash_t);
-    shift_three_key<g_to_a>(x, hash_a);
-
-    *itl++ = (
-      two_letter_cost(counter[hash_two]) <=
-      three_letter_cost(counter_t[hash_t], counter_a[hash_a])
-              );
-  }
+  e_time = steady_clock::now();
+  if (VERBOSE) cerr << delta_seconds(s_time, e_time) << endl;
 }
 
 void
 AbismalIndex::hash_genome() {
-
   // count k-mers under each encoding with masking
+  auto s_time = steady_clock::now();
+  if (VERBOSE) cerr << "[determining bucket sizes]";
 #pragma omp parallel sections
   {
 #pragma omp section
-    get_bucket_sizes<true>();
+  get_bucket_sizes<true>();
 #pragma omp section
-    get_bucket_sizes_three<c_to_t, true>();
+  get_bucket_sizes_three<c_to_t, true>();
 #pragma omp section
-    get_bucket_sizes_three<g_to_a, true>();
+  get_bucket_sizes_three<g_to_a, true>();
   }
+  auto e_time = steady_clock::now();
+  if (VERBOSE) cerr << delta_seconds(s_time, e_time) << endl;
+  s_time = e_time;
 
-  if (VERBOSE)
-    cerr << "[allocating hash tables]" << endl;
-
+  if (VERBOSE) cerr << "[initializing index structures]";
 #pragma omp parallel sections
   {
 #pragma omp section
-  std::partial_sum(begin(counter), end(counter), begin(counter));
+  inclusive_scan(execution::par_unseq,
+                 begin(counter), end(counter), begin(counter));
 #pragma omp section
-  std::partial_sum(begin(counter_t), end(counter_t), begin(counter_t));
+  inclusive_scan(execution::par_unseq,
+                 begin(counter_t), end(counter_t), begin(counter_t));
 #pragma omp section
-  std::partial_sum(begin(counter_a), end(counter_a), begin(counter_a));
+  inclusive_scan(execution::par_unseq,
+                 begin(counter_a), end(counter_a), begin(counter_a));
   }
 
   index_size = counter[counter_size];
@@ -251,190 +279,212 @@ AbismalIndex::hash_genome() {
   index.resize(index_size, 0);
   index_t.resize(index_size_three, 0);
   index_a.resize(index_size_three, 0);
+  e_time = steady_clock::now();
   if (VERBOSE)
-    cerr << "[index sizes: " << index_size << " " << index_size_three << "]\n";
+    cerr << delta_seconds(s_time, e_time) << endl
+         << "[index sizes: " << index_size << " " << index_size_three << "]"
+         << endl;
+  s_time = e_time;
 
-  const size_t genome_st = seed::padding_size;
-  const size_t lim = cl.get_genome_size() - seed::key_weight - seed::padding_size;
-
-  // start building up the hash key
-  genome_iterator gi_two = genome_iterator(begin(genome)) + genome_st;
-  genome_iterator gi_three = gi_two;
-
-  const auto gi_lim_two = gi_two + (seed::key_weight - 1);
-  const auto gi_lim_three = gi_three + (seed::key_weight_three - 1);
-
-  uint32_t hash_two = 0;
-  while (gi_two != gi_lim_two)
-    shift_hash_key(*gi_two++, hash_two);
-
-  uint32_t hash_t = 0, hash_a = 0;
-  while (gi_three != gi_lim_three) {
-    shift_three_key<c_to_t>(*gi_three, hash_t);
-    shift_three_key<g_to_a>(*gi_three, hash_a);
-    ++gi_three;
-  }
+  if (VERBOSE) cerr << "[counting k-mers]";
+  const auto lim = cl.get_genome_size() - seed::key_weight - seed::padding_size;
 
 #pragma omp parallel sections
   {
 #pragma omp section
-    {
-      for (size_t i = genome_st; i < lim; ++i, ++gi_two) {
-        shift_hash_key(*gi_two, hash_two);
-        if (keep[i] && is_two_let[i])
-          index[--counter[hash_two]] = i;
-      }
-    }
-#pragma omp section
-    {
-      auto gi_three_local = gi_three;
-      for (size_t i = genome_st; i < lim; ++i, ++gi_three_local) {
-        shift_three_key<c_to_t>(*gi_three_local, hash_t);
-        if (keep[i] && !is_two_let[i])
-          index_t[--counter_t[hash_t]] = i;
-      }
-    }
-#pragma omp section
-    {
-      auto gi_three_local = gi_three;
-      for (size_t i = genome_st; i < lim; ++i, ++gi_three_local) {
-        shift_three_key<g_to_a>(*gi_three_local, hash_a);
-        if (keep[i] && !is_two_let[i])
-          index_a[--counter_a[hash_a]] = i;
-      }
+  {
+    auto gi_two = genome_iterator(cbegin(genome)) + seed::padding_size;
+    const auto gi_lim = gi_two + (seed::key_weight - 1);
+    uint32_t hash_two = 0;
+    while (gi_two != gi_lim) shift_hash_key(*gi_two++, hash_two);
+    for (size_t i = seed::padding_size; i < lim; ++i) {
+      shift_hash_key(*gi_two++, hash_two);
+      if (keep[i] && is_two_let[i]) index[--counter[hash_two]] = i;
     }
   }
+#pragma omp section
+  {
+    auto gi_three = genome_iterator(cbegin(genome)) + seed::padding_size;
+    const auto gi_lim = gi_three + (seed::key_weight_three - 1);
+    uint32_t hash_t = 0;
+    while (gi_three != gi_lim) shift_three_key<c_to_t>(*gi_three++, hash_t);
+    for (size_t i = seed::padding_size; i < lim; ++i) {
+      shift_three_key<c_to_t>(*gi_three++, hash_t);
+      if (keep[i] && !is_two_let[i]) index_t[--counter_t[hash_t]] = i;
+    }
+  }
+#pragma omp section
+  {
+    auto gi_three = genome_iterator(begin(genome)) + seed::padding_size;
+    const auto gi_lim = gi_three + (seed::key_weight_three - 1);
+    uint32_t hash_a = 0;
+    while (gi_three != gi_lim) shift_three_key<g_to_a>(*gi_three++, hash_a);
+    for (size_t i = seed::padding_size; i < lim; ++i) {
+      shift_three_key<g_to_a>(*gi_three++, hash_a);
+      if (keep[i] && !is_two_let[i]) index_a[--counter_a[hash_a]] = i;
+    }
+  }
+  }
+  e_time = steady_clock::now();
+  if (VERBOSE) cerr << delta_seconds(s_time, e_time) << endl;
 }
 
 struct dp_sol {
-  constexpr static const uint32_t NIL = std::numeric_limits<uint32_t>::max();
-  uint32_t cost{NIL};
-  uint32_t prev{NIL};
+  static const size_t sentinel = num_lim<size_t>::max();
+  size_t cost{sentinel};
+  size_t prev{sentinel};
 };
 
-// struct helper_sol {
-//   constexpr static const uint32_t NIL = std::numeric_limits<uint32_t>::max();
-//   uint32_t cost{NIL};
-//   uint32_t p{NIL};
-// };
+constexpr size_t qsz = seed::window_size + 2;
 
-static inline void
-add_sol(deque<dp_sol> &helper, const uint32_t pos, const uint32_t cost) {
+// ADS: Occupancy of the deque can be 0 through window_size, so
+// (window_size + 1). However, if we only use this size, then we can't
+// tell the difference using `f` and `b` of whether the deque is empty
+// or full.
+template<class T> struct fixed_ring_buffer {
+  std::array<T, qsz> h;
+  auto size() const -> size_t {
+    return (b == f) ? 0 :
+      (b > f) ? b - f : // [...f...b...] => b - f
+      qsz - (f - b);    // [...b...f...] => qsz - (f - b)
+  }
+  auto empty() const -> bool { return f == b; }
+  auto back() -> T& { return h[(b > 0 ? b : qsz) - 1]; }
+  auto front() -> T& { return h[f]; }
+  auto pop_back() -> void {  // inverse of pop_front
+    if (b == 0) b = qsz;
+    --b;
+  }
+  auto pop_front() -> void {  // inverse of pop_back
+    ++f;
+    if (f == qsz) f = 0;
+  }
+  auto emplace_back(T&& x) -> void {  // like pop_front
+    h[b] = std::move(x);
+    ++b;
+    if (b == qsz) b = 0;
+  }
+
+  uint32_t f{0};
+  uint32_t b{0};
+};
+
+using deque = fixed_ring_buffer<dp_sol>;
+
+void
+add_sol(deque &helper, const size_t prev, const size_t cost) {
   while (!helper.empty() && helper.back().cost > cost)
     helper.pop_back();
 
-  helper.emplace_back(dp_sol{cost, pos});
+  helper.emplace_back({cost, prev});
 
-  const int32_t cutoff = pos > seed::window_size ? pos - seed::window_size : 0;
-  while (helper.front().prev <= cutoff)
+  while (helper.front().prev + seed::window_size <= prev)
     helper.pop_front();
+  //assert(helper.size() <= seed::window_size);
+  //assert(!helper.empty());
+  //assert(is_helper_sorted(helper));
 }
 
-static inline uint32_t
-hybrid_cost(const bool is_two_let, const uint32_t count_two,
+static inline size_t
+hybrid_cost(const bool is_two_let,
+            const uint32_t count_two,
             const uint32_t count_t, const uint32_t count_a) {
-  return is_two_let ? two_letter_cost(count_two) : three_letter_cost(count_t, count_a);
+  return is_two_let ? two_letter_cost(count_two) :
+    three_letter_cost(count_t, count_a);
 }
-
-void
-AbismalIndex::compress_dp_inner(const size_t range_start,
-                                const size_t lim,
-                                const size_t block_size,
-                                uint32_t &hash_two,
-                                uint32_t &hash_t,
-                                uint32_t &hash_a,
-                                genome_iterator &gi_two,
-                                genome_iterator &gi_three,
-                                deque<dp_sol> &helper) {
-  // current problem size
-  const size_t sz = min(range_start + block_size, lim) - range_start;
-
-  vector<dp_sol> opt(block_size + 1);  // ADS: one extra for traceback
-
-  // main dp loop
-  auto opt_itr = begin(opt);
-  const vector<dp_sol>::const_iterator opt_lim = begin(opt) + sz;
-  vector<bool>::const_iterator itl = begin(is_two_let) + range_start;
-
-  // get the first w solutions
-  size_t i = 0;
-  for (; i < seed::window_size; ++opt_itr) {
-    shift_hash_key(*gi_two++, hash_two);
-    const auto gi_th_val = *gi_three++;
-    shift_three_key<c_to_t>(gi_th_val, hash_t);
-    shift_three_key<g_to_a>(gi_th_val, hash_a);
-
-    const auto c = hybrid_cost(*itl++, counter[hash_two],
-                               counter_t[hash_t], counter_a[hash_a]);
-    *opt_itr = {c, dp_sol::NIL};
-    add_sol(helper, i++, opt_itr->cost);
-  }
-
-  for ( ; opt_itr != opt_lim; ++opt_itr) {
-    shift_hash_key(*gi_two++, hash_two);
-    const auto gi_th_val = *gi_three++;
-    shift_three_key<c_to_t>(gi_th_val, hash_t);
-    shift_three_key<g_to_a>(gi_th_val, hash_a);
-
-    const auto c = hybrid_cost(*itl++, counter[hash_two],
-                               counter_t[hash_t], counter_a[hash_a]);
-    *opt_itr = helper.front();
-    opt_itr->cost += c;
-    add_sol(helper, i++, opt_itr->cost);
-  }
-  while (!helper.empty() && opt_itr->cost >= helper.front().cost) {
-    *opt_itr = std::move(helper.front());
-    helper.pop_front();
-  }
-
-  // do traceback
-  const auto block_keep = begin(keep) + range_start;
-  const auto opt_beg = begin(opt);
-  while (opt_itr->prev != dp_sol::NIL) {
-    *(block_keep + opt_itr->prev) = true;
-    opt_itr = opt_beg + opt_itr->prev;
-  }
-}
-
 
 void
 AbismalIndex::compress_dp() {
   constexpr auto block_size = 1000000ul;
+  auto s_time = steady_clock::now();
+  if (VERBOSE) cerr << "[dynamic programming to optimize seed selection]";
 
   // no position is indexed
   fill(begin(keep), end(keep), false);
 
-  const size_t lim =
-    cl.get_genome_size() - seed::padding_size - seed::key_weight;
+  const auto lim = cl.get_genome_size() - seed::padding_size - seed::key_weight;
 
-  deque<dp_sol> helper;
+  // the dp memory allocation
+  deque helper;
 
-  genome_iterator gi_two(begin(genome));
-  genome_iterator gi_three(begin(genome));
-  uint32_t hash_two = 0;
-  uint32_t hash_t = 0;
-  uint32_t hash_a = 0;
+  for (size_t block_start = seed::padding_size; block_start < lim; block_start += block_size) {
+    const size_t sz = min(block_start + block_size, lim) - block_start;
 
-  // fast forward padding positions
-  gi_two = gi_two + seed::padding_size;
-  gi_three = gi_three + seed::padding_size;
+    uint32_t hash_two = 0;
+    uint32_t hash_t = 0;
+    uint32_t hash_a = 0;
 
-  // build the first hash key minus last base
-  const auto gi_lim_two(gi_three + (seed::key_weight - 1));
-  while (gi_two != gi_lim_two)
-    shift_hash_key(*gi_two++, hash_two);
+    // build the first hash key minus last base: two letters
+    auto gi_two = genome_iterator(begin(genome)) + block_start;
+    const auto gi_lim_two(gi_two + (seed::key_weight - 1));
+    while (gi_two != gi_lim_two) shift_hash_key(*gi_two++, hash_two);
 
-  const auto gi_lim_three(gi_three + (seed::key_weight_three - 1));
-  while (gi_three != gi_lim_three) {
-    shift_three_key<c_to_t>(*gi_three, hash_t);
-    shift_three_key<g_to_a>(*gi_three++, hash_a);
+    // build the first hash key minus last base: three letters
+    auto gi_three = genome_iterator(begin(genome)) + block_start;
+    const auto gi_lim_three(gi_three + (seed::key_weight_three - 1));
+    while (gi_three != gi_lim_three) {
+      const auto gi3_val = *gi_three++;
+      shift_three_key<c_to_t>(gi3_val, hash_t);
+      shift_three_key<g_to_a>(gi3_val, hash_a);
+    }
+
+    // main dp loop
+    vector<dp_sol> opt(block_size + 1);
+    auto opt_itr = begin(opt);
+    const vector<dp_sol>::const_iterator opt_lim = cbegin(opt) + sz;
+    vector<bool>::const_iterator itl = begin(is_two_let) + block_start;
+
+    // get the first w solutions
+    size_t i = 0;
+    for (; i < seed::window_size; ++opt_itr) {
+      shift_hash_key(*gi_two++, hash_two);
+      const auto gi3_val = *gi_three++;
+      shift_three_key<c_to_t>(gi3_val, hash_t);
+      shift_three_key<g_to_a>(gi3_val, hash_a);
+
+      const auto c = hybrid_cost(*itl++, counter[hash_two], counter_t[hash_t],
+                                 counter_a[hash_a]);
+      *opt_itr = {c, dp_sol::sentinel};
+      add_sol(helper, i++, opt_itr->cost);
+    }
+
+    // general dynamic programming
+    for (; opt_itr != opt_lim; ++opt_itr) {
+      shift_hash_key(*gi_two++, hash_two);
+      const auto gi3_val = *gi_three++;
+      shift_three_key<c_to_t>(gi3_val, hash_t);
+      shift_three_key<g_to_a>(gi3_val, hash_a);
+
+      const auto c = hybrid_cost(*itl++, counter[hash_two], counter_t[hash_t],
+                                 counter_a[hash_a]);
+      *opt_itr = helper.front();
+      opt_itr->cost += c;
+      add_sol(helper, i++, opt_itr->cost);
+    }
+
+    // get the final solution
+    size_t opt_ans = num_lim<size_t>::max();
+    size_t last = num_lim<size_t>::max();
+    for (size_t i = sz - 1; i >= sz - seed::window_size; --i) {
+      const auto cand_cost = opt[i].cost;
+      if (cand_cost < opt_ans) {
+        opt_ans = cand_cost;
+        last = i;
+      }
+    }
+
+    *opt_itr = {opt_ans, last};
+    const auto block_keep = begin(keep) + block_start;
+    const auto opt_beg = begin(opt);
+    while (opt_itr->prev != dp_sol::sentinel) {
+      *(block_keep + opt_itr->prev) = true;
+      opt_itr = opt_beg + opt_itr->prev;
+    }
   }
 
-  for (size_t i = seed::padding_size; i < lim; i += block_size)
-    compress_dp_inner(i, lim, block_size, hash_two, hash_t, hash_a,
-                      gi_two, gi_three, helper);
-
   max_candidates = 100u;  // GS: this is a heuristic
+  auto e_time = steady_clock::now();
+  if (VERBOSE) cerr << delta_seconds(s_time, e_time) << endl;
 }
 
 struct BucketLess {
@@ -444,14 +494,21 @@ struct BucketLess {
     const auto lim1(g_start + a + seed::n_sorting_positions);
     auto idx2(g_start + b + seed::key_weight);
     while (idx1 != lim1) {
-      const uint8_t c1 = get_bit(*(idx1++));
-      const uint8_t c2 = get_bit(*(idx2++));
+      const uint8_t c1 = get_bit(*idx1++);
+      const uint8_t c2 = get_bit(*idx2++);
       if (c1 != c2) return c1 < c2;
     }
     return false;
   }
   const genome_iterator g_start;
 };
+
+template<const three_conv_type the_conv> inline three_letter_t
+get_three_letter_num_srt(const uint8_t nt) {
+  return the_conv == c_to_t ?
+    nt & 5 :  // C=T=0, A=1, G=4
+    nt & 10;  // A=G=0, C=2, T=8
+}
 
 template<const three_conv_type the_type>
 struct BucketLessThree {
@@ -461,8 +518,8 @@ struct BucketLessThree {
     const auto lim1(g_start + a + seed::n_sorting_positions);
     auto idx2(g_start + b + seed::key_weight_three);
     while (idx1 != lim1) {
-      const uint8_t c1 = get_three_letter_num<the_type>(*(idx1++));
-      const uint8_t c2 = get_three_letter_num<the_type>(*(idx2++));
+      const uint8_t c1 = get_three_letter_num_srt<the_type>(*idx1++);
+      const uint8_t c2 = get_three_letter_num_srt<the_type>(*idx2++);
       if (c1 != c2) return c1 < c2;
     }
     return false;
@@ -470,39 +527,78 @@ struct BucketLessThree {
   const genome_iterator g_start;
 };
 
-
 void
 AbismalIndex::sort_buckets() {
-  if (VERBOSE)
-    cerr << "[sorting two-letter buckets]" << endl;
+  auto s_time = steady_clock::now();
+  if (VERBOSE) cerr << "[sorting direct access table buckets]";
   const vector<uint32_t>::iterator b(begin(index));
   const BucketLess bucket_less(genome);
-#pragma omp parallel for
+#pragma omp parallel sections
+  {
+#pragma omp section
+  {
+#pragma omp parallel for schedule(static, 10000)
   for (size_t i = 0; i < counter_size; ++i)
-    if (counter[i + 1] > counter[i] + 1) {
-      sort(b + counter[i], b + counter[i + 1], bucket_less);
-    }
-
-  if (VERBOSE)
-    cerr << "[sorting three-letter buckets C-to-T]" << endl;
+    if (counter[i + 1] > counter[i] + 1)
+      sort(execution::par_unseq,
+           b + counter[i], b + counter[i + 1], bucket_less);
+  }
+#pragma omp section
+  {
   const vector<uint32_t>::iterator b_t(begin(index_t));
   const BucketLessThree<c_to_t> bucket_less_t(genome);
-#pragma omp parallel for
+#pragma omp parallel for schedule(static, 10000)
   for (size_t i = 0; i < counter_size_three; ++i)
-    if (counter_t[i + 1] > counter_t[i] + 1) {
-      sort(b_t + counter_t[i], b_t + counter_t[i + 1], bucket_less_t);
-    }
-
-  if (VERBOSE)
-    cerr << "[sorting three-letter buckets G-to-A]" << endl;
+    if (counter_t[i + 1] > counter_t[i] + 1)
+      sort(execution::par_unseq,
+           b_t + counter_t[i], b_t + counter_t[i + 1], bucket_less_t);
+  }
+#pragma omp section
+  {
   const vector<uint32_t>::iterator b_a(begin(index_a));
   const BucketLessThree<g_to_a> bucket_less_a(genome);
-#pragma omp parallel for
+#pragma omp parallel for schedule(static, 10000)
   for (size_t i = 0; i < counter_size_three; ++i)
-    if (counter_a[i + 1] > counter_a[i] + 1) {
-      sort(b_a + counter_a[i], b_a + counter_a[i + 1], bucket_less_a);
-    }
+    if (counter_a[i + 1] > counter_a[i] + 1)
+      sort(execution::par_unseq,
+           b_a + counter_a[i], b_a + counter_a[i + 1], bucket_less_a);
+  }
+  }
+  auto e_time = steady_clock::now();
+  if (VERBOSE) cerr << delta_seconds(s_time, e_time) << endl;
 }
+
+
+// void
+// AbismalIndex::sort_buckets() {
+//   if (VERBOSE)
+//     cerr << "[sorting two-letter buckets]" << endl;
+//   const vector<uint32_t>::iterator b(begin(index));
+//   const BucketLess bucket_less(genome);
+// #pragma omp parallel for
+//   for (size_t i = 0; i < counter_size; ++i)
+//     if (counter[i + 1] > counter[i] + 1)
+//       sort(execution::par_unseq, b + counter[i], b + counter[i + 1], bucket_less);
+
+//   if (VERBOSE)
+//     cerr << "[sorting three-letter buckets C-to-T]" << endl;
+//   const vector<uint32_t>::iterator b_t(begin(index_t));
+//   const BucketLessThree<c_to_t> bucket_less_t(genome);
+// #pragma omp parallel for
+//   for (size_t i = 0; i < counter_size_three; ++i)
+//     if (counter_t[i + 1] > counter_t[i] + 1)
+//       sort(execution::par_unseq, b_t + counter_t[i], b_t + counter_t[i + 1], bucket_less_t);
+
+//   if (VERBOSE)
+//     cerr << "[sorting three-letter buckets G-to-A]" << endl;
+//   const vector<uint32_t>::iterator b_a(begin(index_a));
+//   const BucketLessThree<g_to_a> bucket_less_a(genome);
+// #pragma omp parallel for
+//   for (size_t i = 0; i < counter_size_three; ++i)
+//     if (counter_a[i + 1] > counter_a[i] + 1)
+//       sort(execution::par_unseq, b_a + counter_a[i], b_a + counter_a[i + 1], bucket_less_a);
+// }
+
 static void
 write_internal_identifier(FILE *out) {
   if (fwrite((char*)&AbismalIndex::internal_identifier[0], 1,
