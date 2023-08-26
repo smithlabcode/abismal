@@ -20,28 +20,25 @@
 #include <algorithm>
 #include <chrono>
 #include <deque>
-#include <execution>
 #include <fstream>
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
 #include <utility>
+#include <array>
+
+#include <omp.h>
 
 #include "dna_four_bit.hpp"
 #include "smithlab_os.hpp"
 #include "smithlab_utils.hpp"
 
 using std::cerr;
-using std::cout;
 using std::endl;
-using std::fill;
 using std::ifstream;
 using std::inclusive_scan;
-using std::make_pair;
-using std::max;
 using std::min;
 using std::ofstream;
-using std::pair;
 using std::runtime_error;
 using std::sort;
 using std::string;
@@ -53,8 +50,6 @@ using std::chrono::steady_clock;
 using std::chrono::time_point;
 
 template<typename T> using num_lim = std::numeric_limits<T>;
-
-namespace execution = std::execution;
 
 bool AbismalIndex::VERBOSE = false;
 string AbismalIndex::internal_identifier = "AbismalIndex";
@@ -77,8 +72,7 @@ AbismalIndex::create_index(const string &genome_file) {
   if (VERBOSE) cerr << "[loading genome]";
   vector<uint8_t> orig_genome;
   load_genome(genome_file, orig_genome, cl);
-  auto e_time = steady_clock::now();
-  if (VERBOSE) cerr << delta_seconds(s_time, e_time) << endl;
+  if (VERBOSE) cerr << delta_seconds(s_time, steady_clock::now()) << endl;
 
   s_time = steady_clock::now();
   if (VERBOSE) cerr << "[encoding genome]";
@@ -87,8 +81,7 @@ AbismalIndex::create_index(const string &genome_file) {
   genome.resize(compressed_size);
   encode_dna_four_bit(begin(orig_genome), end(orig_genome), begin(genome));
   vector<uint8_t>().swap(orig_genome);
-  e_time = steady_clock::now();
-  if (VERBOSE) cerr << delta_seconds(s_time, e_time) << endl;
+  if (VERBOSE) cerr << delta_seconds(s_time, steady_clock::now()) << endl;
 
   // creat genome-wide mask of positions to keep
   keep.clear();
@@ -193,13 +186,12 @@ AbismalIndex::initialize_bucket_sizes() {
 #pragma omp section
   get_bucket_sizes_three<g_to_a, use_mask>();
   }
-  const auto e_time = steady_clock::now();
-  if (VERBOSE) cerr << delta_seconds(s_time, e_time) << endl;
+  if (VERBOSE) cerr << delta_seconds(s_time, steady_clock::now()) << endl;
 }
 
 void
 AbismalIndex::select_two_letter_positions() {
-  constexpr size_t block_size = 100000ul;
+  constexpr size_t block_size = 1000000ul;
   auto s_time = steady_clock::now();
   if (VERBOSE) cerr << "[selecting 2-letter positions: choice]";
 
@@ -211,7 +203,7 @@ AbismalIndex::select_two_letter_positions() {
 
   const auto lim = cl.get_genome_size() - seed::key_weight - seed::padding_size;
 
-#pragma omp parallel for schedule(static, 1)
+#pragma omp parallel for
   for (size_t i = seed::padding_size; i < lim; i += block_size) {
 
     uint32_t hash_two = 0;
@@ -246,8 +238,7 @@ AbismalIndex::select_two_letter_positions() {
              three_letter_cost(counter_t[hash_t], counter_a[hash_a]);
     }
   }
-  const auto e_time = steady_clock::now();
-  if (VERBOSE) cerr << delta_seconds(s_time, e_time) << endl;
+  if (VERBOSE) cerr << delta_seconds(s_time, steady_clock::now()) << endl;
 }
 
 void
@@ -258,14 +249,11 @@ AbismalIndex::hash_genome() {
 #pragma omp parallel sections
   {
 #pragma omp section
-  inclusive_scan(execution::par_unseq, begin(counter), end(counter),
-                 begin(counter));
+  inclusive_scan(begin(counter), end(counter), begin(counter));
 #pragma omp section
-  inclusive_scan(execution::par_unseq, begin(counter_t), end(counter_t),
-                 begin(counter_t));
+  inclusive_scan(begin(counter_t), end(counter_t), begin(counter_t));
 #pragma omp section
-  inclusive_scan(execution::par_unseq, begin(counter_a), end(counter_a),
-                 begin(counter_a));
+  inclusive_scan(begin(counter_a), end(counter_a), begin(counter_a));
   }
 
   index_size = counter[counter_size];
@@ -274,12 +262,11 @@ AbismalIndex::hash_genome() {
   index.resize(index_size, 0);
   index_t.resize(index_size_three, 0);
   index_a.resize(index_size_three, 0);
-  auto e_time = steady_clock::now();
   if (VERBOSE)
-    cerr << delta_seconds(s_time, e_time) << endl
+    cerr << delta_seconds(s_time, steady_clock::now()) << endl
          << "[index sizes: " << index_size << " " << index_size_three << "]"
          << endl;
-  s_time = e_time;
+  s_time = steady_clock::now();
 
   if (VERBOSE) cerr << "[counting k-mers]";
   const auto lim = cl.get_genome_size() - seed::key_weight - seed::padding_size;
@@ -320,8 +307,7 @@ AbismalIndex::hash_genome() {
       }
     }
   }
-  e_time = steady_clock::now();
-  if (VERBOSE) cerr << delta_seconds(s_time, e_time) << endl;
+  if (VERBOSE) cerr << delta_seconds(s_time, steady_clock::now()) << endl;
 }
 
 struct dp_sol {
@@ -336,8 +322,8 @@ struct dp_sol {
 // or full. We need to ensure that the size of this deque ring buffer
 // is at least (window_size + 2).
 template<class T> struct fixed_ring_buffer {
-  constexpr static size_t qsz = 32ul;  // must be at least (seed::window_size + 2)
-  constexpr static size_t qsz_msk = 31ul;  // bit mask to keep positions in range
+  constexpr static size_t qsz = 32ul;  // must be >= (seed::window_size + 2)
+  constexpr static size_t qsz_msk = 31ul;  // mask to keep positions in range
 
   std::array<T, qsz> h;
 
@@ -381,8 +367,7 @@ add_sol(deque &helper, const uint64_t prev, const uint64_t cost) {
 
   while (helper.front().prev + seed::window_size <= prev) helper.pop_front();
 
-  assert(helper.size() <= seed::window_size);
-  assert(!helper.empty());
+  assert(!helper.empty() && helper.size() <= seed::window_size);
 }
 
 static inline uint64_t
@@ -398,8 +383,8 @@ AbismalIndex::compress_dp() {
   auto s_time = steady_clock::now();
   if (VERBOSE) cerr << "[dynamic programming to optimize seed selection]";
 
-  // no position is indexed
-  fill(begin(keep), end(keep), false);
+  // by default no position is indexed
+  std::fill(begin(keep), end(keep), false);
 
   const auto lim = cl.get_genome_size() - seed::padding_size - seed::key_weight;
 
@@ -484,8 +469,7 @@ AbismalIndex::compress_dp() {
   }
 
   max_candidates = 100u;  // GS: this is a heuristic
-  const auto e_time = steady_clock::now();
-  if (VERBOSE) cerr << delta_seconds(s_time, e_time) << endl;
+  if (VERBOSE) cerr << delta_seconds(s_time, steady_clock::now()) << endl;
 }
 
 struct BucketLess {
@@ -506,10 +490,12 @@ struct BucketLess {
   const genome_iterator g_start;
 };
 
-template<const three_conv_type the_conv> inline three_letter_t
+template<const three_conv_type the_conv>
+static inline three_letter_t
 get_three_letter_num_srt(const uint8_t nt) {
-  return the_conv == c_to_t ? nt & 5 :  // C=T=0, A=1, G=4
-           nt & 10;                     // A=G=0, C=2, T=8
+  // C=T=0, A=1, G=4
+  // A=G=0, C=2, T=8
+  return the_conv == c_to_t ? nt & 5 : nt & 10;
 }
 
 template<const three_conv_type the_type> struct BucketLessThree {
@@ -532,43 +518,39 @@ template<const three_conv_type the_type> struct BucketLessThree {
 
 void
 AbismalIndex::sort_buckets() {
-  auto s_time = steady_clock::now();
-  if (VERBOSE) cerr << "[sorting direct access table buckets]";
-  const vector<uint32_t>::iterator b(begin(index));
-  const BucketLess bucket_less(genome);
-#pragma omp parallel sections
   {
-#pragma omp section
-    {
-#pragma omp parallel for schedule(static, 10000)
-      for (size_t i = 0; i < counter_size; ++i)
-        if (counter[i + 1] > counter[i] + 1)
-          sort(execution::par, b + counter[i], b + counter[i + 1],
-               bucket_less);
-    }
-#pragma omp section
-    {
-      const vector<uint32_t>::iterator b_t(begin(index_t));
-      const BucketLessThree<c_to_t> bucket_less_t(genome);
-#pragma omp parallel for schedule(static, 10000)
-      for (size_t i = 0; i < counter_size_three; ++i)
-        if (counter_t[i + 1] > counter_t[i] + 1)
-          sort(execution::par, b_t + counter_t[i], b_t + counter_t[i + 1],
-               bucket_less_t);
-    }
-#pragma omp section
-    {
-      const vector<uint32_t>::iterator b_a(begin(index_a));
-      const BucketLessThree<g_to_a> bucket_less_a(genome);
-#pragma omp parallel for schedule(static, 10000)
-      for (size_t i = 0; i < counter_size_three; ++i)
-        if (counter_a[i + 1] > counter_a[i] + 1)
-          sort(execution::par, b_a + counter_a[i], b_a + counter_a[i + 1],
-               bucket_less_a);
-    }
+    auto s_time = steady_clock::now();
+    if (VERBOSE) cerr << "[sorting two-letter buckets]";
+    const auto b = begin(index);
+    const BucketLess bucket_less(genome);
+#pragma omp parallel for
+    for (size_t i = 0; i < counter_size; ++i)
+      if (counter[i + 1] > counter[i] + 1)
+        sort(b + counter[i], b + counter[i + 1], bucket_less);
+    if (VERBOSE) cerr << delta_seconds(s_time, steady_clock::now()) << endl;
   }
-  auto e_time = steady_clock::now();
-  if (VERBOSE) cerr << delta_seconds(s_time, e_time) << endl;
+  {
+    auto s_time = steady_clock::now();
+    if (VERBOSE) cerr << "[sorting three-letter T buckets]";
+    const auto b = begin(index_t);
+    const BucketLessThree<c_to_t> bucket_less(genome);
+#pragma omp parallel for
+    for (size_t i = 0; i < counter_size_three; ++i)
+      if (counter_t[i + 1] > counter_t[i] + 1)
+        sort(b + counter_t[i], b + counter_t[i + 1], bucket_less);
+    if (VERBOSE) cerr << delta_seconds(s_time, steady_clock::now()) << endl;
+  }
+  {
+    auto s_time = steady_clock::now();
+    if (VERBOSE) cerr << "[sorting three-letter A buckets]";
+    const auto b = begin(index_a);
+    const BucketLessThree<g_to_a> bucket_less(genome);
+#pragma omp parallel for
+    for (size_t i = 0; i < counter_size_three; ++i)
+      if (counter_a[i + 1] > counter_a[i] + 1)
+        sort(b + counter_a[i], b + counter_a[i + 1], bucket_less);
+    if (VERBOSE) cerr << delta_seconds(s_time, steady_clock::now()) << endl;
+  }
 }
 
 static void
@@ -769,25 +751,25 @@ ChromLookup::write(const string &outfile) const {
 
 std::istream &
 ChromLookup::read(std::istream &in) {
-  /* read the number of chroms */
+  // read the number of chroms
   uint32_t n_chroms = 0;
   in.read((char *)&n_chroms, sizeof(uint32_t));
 
-  /* allocate the number of chroms */
+  // allocate the number of chroms
   names.resize(n_chroms);
 
-  /* get each chrom name */
+  // get each chrom name
   for (size_t i = 0; i < n_chroms; ++i) {
     uint32_t name_size = 0;
-    /* get the size of the chrom name */
+    // get the size of the chrom name
     in.read((char *)&name_size, sizeof(uint32_t));
-    /* allocate the chrom name */
+    // allocate the chrom name
     names[i].resize(name_size);
-    /* read the chrom name */
+    // read the chrom name
     in.read((char *)&names[i][0], name_size);
   }
 
-  /* allocate then read the starts vector */
+  // allocate then read the starts vector
   starts = vector<uint32_t>(n_chroms + 1);
   in.read((char *)(&starts[0]), sizeof(uint32_t) * (n_chroms + 1));
 
@@ -796,30 +778,29 @@ ChromLookup::read(std::istream &in) {
 
 FILE *
 ChromLookup::read(FILE *in) {
-  static const string error_msg("failed loading chrom info from index");
+  constexpr auto error_msg = "failed loading chrom info from index";
 
-  /* read the number of chroms */
+  // read the number of chroms in the reference
   uint32_t n_chroms = 0;
   if (fread((char *)&n_chroms, sizeof(uint32_t), 1, in) != 1)
     throw runtime_error(error_msg);
 
-  /* allocate the number of chroms */
-  names.resize(n_chroms);
+  names.resize(n_chroms);  // allocate a name for each chrom
 
-  /* get each chrom name */
+  // get each chrom name
   for (size_t i = 0; i < n_chroms; ++i) {
     uint32_t name_size = 0;
-    /* get size of chrom name */
+    // get size of chrom name
     if (fread((char *)&name_size, sizeof(uint32_t), 1, in) != 1)
       throw runtime_error(error_msg);
-    /* allocate the chrom name */
+    // allocate the chrom name
     names[i].resize(name_size);
-    /* read the chrom name */
+    // read the chrom name
     if (fread((char *)&names[i][0], 1, name_size, in) != name_size)
       throw runtime_error(error_msg);
   }
 
-  /* allocate then read the starts vector */
+  // allocate then read the starts vector
   starts = vector<uint32_t>(n_chroms + 1);
   if (fread((char *)(&starts[0]), sizeof(uint32_t), n_chroms + 1, in) !=
       n_chroms + 1)
@@ -876,7 +857,7 @@ ChromLookup::get_chrom_idx_and_offset(const uint32_t pos,
                                       uint32_t &offset) const {
   auto idx = upper_bound(cbegin(starts), cend(starts), pos);
 
-  if (idx == cbegin(starts)) return false;  // read is behind chromosome start
+  if (idx == cbegin(starts)) return false;  // read is before any chrom
 
   --idx;
 
