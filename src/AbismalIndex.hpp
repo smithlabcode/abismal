@@ -39,15 +39,29 @@ typedef std::vector<element_t> Genome;
 typedef bool two_letter_t;
 typedef uint8_t three_letter_t;
 
-// ADS: This below was RNG and it was behaving differently on
-// different systems (e.g. macos vs ubuntu) and caused problems for
-// comparing results when testing. This is the original "rand" code
-// using a seed of 1. Probably not a great solution.
-static unsigned long _rng_next = 1;
-static inline char random_base() {
-  _rng_next = _rng_next * 1103515245 + 12345;
-  return "ACGT"[(_rng_next % ((unsigned long)RAND_MAX + 1)) & 3];
-}
+struct random_base_generator {
+  // ADS: other RNG behaves differently across systems (e.g. macos vs
+  // ubuntu) and caused problems for comparing results when testing
+  static random_base_generator &init() {
+    static random_base_generator r;
+    return r;
+  }
+  random_base_generator(const random_base_generator &) = delete;
+  random_base_generator(random_base_generator &&) = delete;
+  char operator()() {
+    constexpr auto m = 0x7fffffffu;  // 2^31
+    constexpr auto a = 1103515245u;
+    constexpr auto c = 12345u;
+    x = (a*x + c) & m;
+    // low order bits empicially confirmed to suck
+    return "ACGT"[x & 3]; // do this: (x >> 15);
+  }
+private:
+  random_base_generator() {}
+  uint32_t x{1};
+};
+
+static random_base_generator &random_base = random_base_generator::init();
 
 namespace seed {
   // number of positions in the hashed portion of the seed
@@ -205,15 +219,6 @@ struct AbismalIndex {
   // selects which positions to keep based on k-mer frequencies
   void compress_dp();
 
-  void compress_dp_inner(const size_t range_start,
-                         const size_t lim,
-                         const size_t block_size,
-                         uint32_t hash_two,
-                         uint32_t hash_t,
-                         uint32_t hash_a,
-                         genome_four_bit_itr gi_two,
-                         genome_four_bit_itr gi_three);
-
   // put genome positions in the appropriate buckets
   void hash_genome();
 
@@ -240,10 +245,10 @@ get_bit(const uint8_t nt) {return (nt & 5) == 0;}
 
 template<const three_conv_type the_conv>
 inline three_letter_t
-get_three_letter_num(const uint8_t &nt) {
+get_three_letter_num(const uint8_t nt) {
   return (the_conv == c_to_t) ?
-    ((((nt & 4) != 0)<<1)  | ((nt & 1) != 0)) : // C=T=0, A=1, G=2
-    ((((nt & 8) != 0)<<1)  | ((nt & 2) != 0)); // A=G=0,C=1,T=2
+    ((((nt & 4) != 0)<<1)  | ((nt & 1) != 0)) :  // C=T=0, A=1, G=2
+    ((((nt & 8) != 0)<<1)  | ((nt & 2) != 0));   // A=G=0, C=1, T=2
 }
 
 inline void
@@ -251,12 +256,10 @@ shift_hash_key(const uint8_t c, uint32_t &hash_key) {
   hash_key = (((hash_key << 1) | get_bit(c)) & seed::hash_mask);
 }
 
-template<const three_conv_type the_conv>
-inline void
+template<const three_conv_type the_conv> inline void
 shift_three_key(const uint8_t c, uint32_t &hash_key) {
-  hash_key = (
-    hash_key*3 + get_three_letter_num<the_conv>(c))
-  %seed::hash_mask_three;
+  hash_key =
+    (hash_key * 3 + get_three_letter_num<the_conv>(c)) % seed::hash_mask_three;
 }
 
 // get the hash value for a k-mer (specified as some iterator/pointer)
