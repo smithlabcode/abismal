@@ -17,7 +17,10 @@
 
 #include "AbismalIndex.hpp"
 
+#include <omp.h>
+
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <deque>
 #include <fstream>
@@ -25,9 +28,6 @@
 #include <iterator>
 #include <stdexcept>
 #include <utility>
-#include <array>
-
-#include <omp.h>
 
 #include "dna_four_bit.hpp"
 #include "smithlab_os.hpp"
@@ -37,8 +37,10 @@ using std::cerr;
 using std::endl;
 using std::ifstream;
 using std::inclusive_scan;
+using std::make_pair;
 using std::min;
 using std::ofstream;
+using std::pair;
 using std::runtime_error;
 using std::sort;
 using std::string;
@@ -52,18 +54,69 @@ using std::chrono::time_point;
 template<typename T> using num_lim = std::numeric_limits<T>;
 
 bool AbismalIndex::VERBOSE = false;
-string AbismalIndex::internal_identifier = "AbismalIndex";
+const string AbismalIndex::internal_identifier = "AbismalIndex";
 
 using genome_iterator = genome_four_bit_itr;
 
 static string
-delta_seconds(const time_point<steady_clock> &a,
-              const time_point<steady_clock> &b) {
+delta_seconds(const time_point<steady_clock> &a) {
+  const auto b = steady_clock::now();
   std::ostringstream oss;
   oss.setf(std::ios::fixed);
   oss.precision(2);
   oss << "[time: " << duration<double>(b - a).count() << "s]";
   return oss.str();
+}
+
+auto
+get_unindexable(const vector<uint8_t> &genome) -> vector<pair<size_t, size_t>> {
+  constexpr auto max_n_count = 4096ul;
+
+  if (genome.size() <= max_n_count) return {};
+
+  size_t n_count = 0;
+
+  const auto g_beg = cbegin(genome);
+
+  const auto g_lim = g_beg + max_n_count - 1;
+  auto g_right = g_beg;
+  while (g_right != g_lim) {
+    if (*g_right++ == 'N')
+      ++n_count;
+    else
+      n_count = 0;
+  }
+
+  vector<pair<size_t, size_t>> r;
+  using std::distance;
+  using std::make_pair;
+
+  auto g_left = g_beg;
+  for (; g_right != cend(genome); ++g_right) {
+    if (*g_right == 'N')
+      ++n_count;
+    else {
+      if (n_count >= max_n_count)
+        r.emplace_back(distance(g_beg, g_left), distance(g_beg, g_right));
+      n_count = 0;
+    }
+    if (n_count == max_n_count) g_left = g_right;
+  }
+  if (n_count < max_n_count) g_left = g_right;
+
+  r.emplace_back(distance(g_beg, g_left), distance(g_beg, g_right));
+  return r;
+}
+
+template<typename G> static inline auto
+get_unindexable_iters(const G &genome,
+                      const vector<pair<size_t, size_t>> &no_index)
+  -> vector<pair<genome_iterator, genome_iterator>> {
+  vector<pair<genome_iterator, genome_iterator>> no_index_itr;
+  const auto g_beg = genome_iterator(cbegin(genome));
+  for (auto &i : no_index)
+    no_index_itr.emplace_back(g_beg + i.first, g_beg + i.second);
+  return no_index_itr;
 }
 
 void
@@ -72,16 +125,25 @@ AbismalIndex::create_index(const string &genome_file) {
   if (VERBOSE) cerr << "[loading genome]";
   vector<uint8_t> orig_genome;
   load_genome(genome_file, orig_genome, cl);
-  if (VERBOSE) cerr << delta_seconds(s_time, steady_clock::now()) << endl;
+  if (VERBOSE) cerr << delta_seconds(s_time) << endl;
+
+  no_index = get_unindexable(orig_genome);
+
+  transform(
+    begin(orig_genome), end(orig_genome), begin(orig_genome),
+    [](const uint8_t nt) { return base2int(nt) == 4 ? random_base() : nt; });
 
   s_time = steady_clock::now();
+
   if (VERBOSE) cerr << "[encoding genome]";
   const auto orig_size = orig_genome.size();
   const auto compressed_size = orig_size / 16 + (orig_size % 16 != 0);
   genome.resize(compressed_size);
   encode_dna_four_bit(begin(orig_genome), end(orig_genome), begin(genome));
   vector<uint8_t>().swap(orig_genome);
-  if (VERBOSE) cerr << delta_seconds(s_time, steady_clock::now()) << endl;
+  if (VERBOSE) cerr << delta_seconds(s_time) << endl;
+
+  no_index_itr = get_unindexable_iters(genome, no_index);
 
   // creat genome-wide mask of positions to keep
   keep.clear();
@@ -116,9 +178,14 @@ AbismalIndex::get_bucket_sizes_two() {
   // general loop to count positions for corresponding buckets
   const auto lim = cl.get_genome_size() - seed::key_weight - seed::padding_size;
   const auto itl_lim = cbegin(is_two_let) + lim;
+  auto nidx_itr = cbegin(no_index_itr);
   for (; itl_itr != itl_lim; ++itl_itr) {
-    shift_hash_key(*gi++, hash_key);
-    if (*keep_itr++) counter[hash_key] += (!use_mask || *itl_itr);
+    shift_hash_key(*gi, hash_key);
+    if (gi < nidx_itr->first && *keep_itr)
+      counter[hash_key] += (!use_mask || *itl_itr);
+    if (nidx_itr->second < gi) ++nidx_itr;
+    ++gi;
+    ++keep_itr;
   }
 }
 
@@ -152,14 +219,17 @@ AbismalIndex::get_bucket_sizes_three() {
 
   // general loop to count positions for corresponding buckets
   const auto itl_lim = cbegin(is_two_let) + lim;
+  auto nidx_itr = cbegin(no_index_itr);
   for (; itl_itr != itl_lim; ++itl_itr) {
-    shift_three_key<the_conv>(*gi++, hash_key);
-    if (*keep_itr++) {
+    shift_three_key<the_conv>(*gi, hash_key);
+    if (*keep_itr++ && gi < nidx_itr->first) {
       if (the_conv == c_to_t)
         counter_t[hash_key] += !(use_mask && *itl_itr);
       else
         counter_a[hash_key] += !(use_mask && *itl_itr);
     }
+    if (nidx_itr->second < gi) ++nidx_itr;
+    ++gi;
   }
 }
 
@@ -180,13 +250,13 @@ AbismalIndex::initialize_bucket_sizes() {
 #pragma omp parallel sections
   {
 #pragma omp section
-  get_bucket_sizes_two<use_mask>();
+    get_bucket_sizes_two<use_mask>();
 #pragma omp section
-  get_bucket_sizes_three<c_to_t, use_mask>();
+    get_bucket_sizes_three<c_to_t, use_mask>();
 #pragma omp section
-  get_bucket_sizes_three<g_to_a, use_mask>();
+    get_bucket_sizes_three<g_to_a, use_mask>();
   }
-  if (VERBOSE) cerr << delta_seconds(s_time, steady_clock::now()) << endl;
+  if (VERBOSE) cerr << delta_seconds(s_time) << endl;
 }
 
 void
@@ -205,7 +275,6 @@ AbismalIndex::select_two_letter_positions() {
 
 #pragma omp parallel for
   for (size_t i = seed::padding_size; i < lim; i += block_size) {
-
     uint32_t hash_two = 0;
     auto gi_two = g_beg + i;
 
@@ -238,7 +307,7 @@ AbismalIndex::select_two_letter_positions() {
              three_letter_cost(counter_t[hash_t], counter_a[hash_a]);
     }
   }
-  if (VERBOSE) cerr << delta_seconds(s_time, steady_clock::now()) << endl;
+  if (VERBOSE) cerr << delta_seconds(s_time) << endl;
 }
 
 void
@@ -263,7 +332,7 @@ AbismalIndex::hash_genome() {
   index_t.resize(index_size_three, 0);
   index_a.resize(index_size_three, 0);
   if (VERBOSE)
-    cerr << delta_seconds(s_time, steady_clock::now()) << endl
+    cerr << delta_seconds(s_time) << endl
          << "[index sizes: " << index_size << " " << index_size_three << "]"
          << endl;
   s_time = steady_clock::now();
@@ -307,7 +376,7 @@ AbismalIndex::hash_genome() {
       }
     }
   }
-  if (VERBOSE) cerr << delta_seconds(s_time, steady_clock::now()) << endl;
+  if (VERBOSE) cerr << delta_seconds(s_time) << endl;
 }
 
 struct dp_sol {
@@ -347,7 +416,7 @@ template<class T> struct fixed_ring_buffer {
     f &= qsz_msk;
   }
 
-  auto emplace_back(T &&x) -> void {
+  auto push_back(T &&x) -> void {
     h[b] = std::move(x);
     ++b;
     b &= qsz_msk;
@@ -363,7 +432,7 @@ static inline void
 add_sol(deque &helper, const uint64_t prev, const uint64_t cost) {
   while (!helper.empty() && helper.back().cost > cost) helper.pop_back();
 
-  helper.emplace_back({cost, prev});
+  helper.push_back({cost, prev});
 
   while (helper.front().prev + seed::window_size <= prev) helper.pop_front();
 
@@ -377,22 +446,47 @@ hybrid_cost(const bool is_two_let, const uint32_t count_two,
                     : three_letter_cost(count_t, count_a);
 }
 
+static inline auto
+get_block_bounds(const size_t start_pos, const size_t step_size,
+                 const size_t end_pos,
+                 const vector<pair<size_t, size_t>> &no_index)
+  -> vector<pair<size_t, size_t>> {
+  vector<pair<size_t, size_t>> blocks;
+
+  auto block_start = start_pos;
+  auto i = cbegin(no_index);
+  while (block_start < end_pos) {
+    if (block_start < i->first) {
+      const auto block_end = min({i->first, block_start + step_size, end_pos});
+      blocks.emplace_back(block_start, block_end);
+      block_start += step_size;
+      if (block_start >= i->second) block_start = (*i++).second;
+    }
+    else
+      block_start = (*i++).second;
+  }
+  return blocks;
+}
+
 void
 AbismalIndex::compress_dp() {
   constexpr auto block_size = 1000000ul;
   auto s_time = steady_clock::now();
   if (VERBOSE) cerr << "[dynamic programming to optimize seed selection]";
 
-  // by default no position is indexed
+  // default is no position will be indexed
   std::fill(begin(keep), end(keep), false);
 
   const auto lim = cl.get_genome_size() - seed::padding_size - seed::key_weight;
 
-#pragma omp parallel for schedule(static, 1)
-  for (size_t block_start = seed::padding_size; block_start < lim;
-       block_start += block_size) {
+  const auto blocks =
+    get_block_bounds(seed::padding_size, block_size, lim, no_index);
 
-    const size_t sz = min(block_start + block_size, lim) - block_start;
+#pragma omp parallel for
+  for (auto &block : blocks) {
+
+    const size_t block_start = block.first;
+    const size_t sz = block.second - block.first;
 
     uint32_t hash_two = 0;
 
@@ -448,7 +542,7 @@ AbismalIndex::compress_dp() {
       add_sol(helper, i++, opt_itr->cost);
     }
 
-    // get the final solution
+    // get solution for start of traceback
     uint64_t opt_ans = num_lim<uint64_t>::max();
     uint64_t last = num_lim<uint64_t>::max();
     for (size_t i = sz - 1; i >= sz - seed::window_size; --i) {
@@ -469,7 +563,7 @@ AbismalIndex::compress_dp() {
   }
 
   max_candidates = 100u;  // GS: this is a heuristic
-  if (VERBOSE) cerr << delta_seconds(s_time, steady_clock::now()) << endl;
+  if (VERBOSE) cerr << delta_seconds(s_time) << endl;
 }
 
 struct BucketLess {
@@ -492,7 +586,7 @@ struct BucketLess {
 
 template<const three_conv_type the_conv>
 static inline three_letter_t
-get_three_letter_num_srt(const uint8_t nt) {
+three_letter_num_srt(const uint8_t nt) {
   // C=T=0, A=1, G=4
   // A=G=0, C=2, T=8
   return the_conv == c_to_t ? nt & 5 : nt & 10;
@@ -506,8 +600,8 @@ template<const three_conv_type the_type> struct BucketLessThree {
     const auto lim1(g_start + a + seed::n_sorting_positions);
     auto idx2(g_start + b + seed::key_weight_three);
     while (idx1 != lim1) {
-      const uint8_t c1 = get_three_letter_num_srt<the_type>(*idx1++);
-      const uint8_t c2 = get_three_letter_num_srt<the_type>(*idx2++);
+      const uint8_t c1 = three_letter_num_srt<the_type>(*idx1++);
+      const uint8_t c2 = three_letter_num_srt<the_type>(*idx2++);
       if (c1 != c2) return c1 < c2;
     }
     return false;
@@ -527,7 +621,7 @@ AbismalIndex::sort_buckets() {
     for (size_t i = 0; i < counter_size; ++i)
       if (counter[i + 1] > counter[i] + 1)
         sort(b + counter[i], b + counter[i + 1], bucket_less);
-    if (VERBOSE) cerr << delta_seconds(s_time, steady_clock::now()) << endl;
+    if (VERBOSE) cerr << delta_seconds(s_time) << endl;
   }
   {
     auto s_time = steady_clock::now();
@@ -538,7 +632,7 @@ AbismalIndex::sort_buckets() {
     for (size_t i = 0; i < counter_size_three; ++i)
       if (counter_t[i + 1] > counter_t[i] + 1)
         sort(b + counter_t[i], b + counter_t[i + 1], bucket_less);
-    if (VERBOSE) cerr << delta_seconds(s_time, steady_clock::now()) << endl;
+    if (VERBOSE) cerr << delta_seconds(s_time) << endl;
   }
   {
     auto s_time = steady_clock::now();
@@ -549,7 +643,7 @@ AbismalIndex::sort_buckets() {
     for (size_t i = 0; i < counter_size_three; ++i)
       if (counter_a[i + 1] > counter_a[i] + 1)
         sort(b + counter_a[i], b + counter_a[i + 1], bucket_less);
-    if (VERBOSE) cerr << delta_seconds(s_time, steady_clock::now()) << endl;
+    if (VERBOSE) cerr << delta_seconds(s_time) << endl;
   }
 }
 
@@ -564,9 +658,9 @@ write_internal_identifier(FILE *out) {
 void
 seed::read(FILE *in) {
   static const std::string error_msg("failed to read seed data");
-  uint32_t _key_weight;
-  uint32_t _window_size;
-  uint32_t _n_sorting_positions;
+  uint32_t _key_weight = 0;
+  uint32_t _window_size = 0;
+  uint32_t _n_sorting_positions = 0;
 
   // key_weight
   if (fread((char *)&_key_weight, sizeof(uint32_t), 1, in) != 1)
