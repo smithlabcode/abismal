@@ -17,11 +17,8 @@
 
 #include "abismal.hpp"
 
-#include <bamxx.hpp>
 #include <config.h>
-#include <htslib/bgzf.h>
-#include <htslib/hfile.h>
-#include <htslib/sam.h>
+
 #include <omp.h>
 #include <unistd.h>
 
@@ -33,6 +30,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <atomic>
 
 #include "AbismalAlign.hpp"
 #include "AbismalIndex.hpp"
@@ -43,6 +41,7 @@
 #include "sam_record.hpp"
 #include "smithlab_os.hpp"
 #include "smithlab_utils.hpp"
+#include "bamxx.hpp"
 
 using std::begin;
 using std::cerr;
@@ -62,6 +61,9 @@ using std::string;
 using std::to_string;
 using std::vector;
 using std::chrono::system_clock;
+
+using std::atomic_uint32_t;
+using std::atomic_uint64_t;
 
 using bamxx::bam_rec;
 
@@ -134,7 +136,7 @@ struct ReadLoader {
             ", which is too long. Maximum allowed read size = " +
             to_string(seed::padding_size));
 
-        if (count_if(begin(line), end(line),
+        if (count_if(cbegin(line), cend(line),
                      [](const char c) { return c != 'N'; }) < min_read_length)
           line.clear();
         else {
@@ -167,8 +169,8 @@ const uint32_t ReadLoader::min_read_length =
 // alignment matrix for a batch of reads
 static inline void
 update_max_read_length(size_t &max_length, const vector<string> &reads) {
-  for (vector<string>::const_iterator it(begin(reads)); it != end(reads); ++it)
-    max_length = max(max_length, it->size());
+  for (auto &i : reads)
+    max_length = max(max_length, i.size());
 }
 
 struct se_element {  // size = 8
@@ -690,14 +692,14 @@ struct se_map_stats {
       : tot_rds(0), uniq_rds(0), ambig_rds(0), unmapped_rds(0), skipped_rds(0),
         edit_distance(0), total_bases(0) {}
 
-  uint32_t tot_rds;
-  uint32_t uniq_rds;
-  uint32_t ambig_rds;
-  uint32_t unmapped_rds;
-  uint32_t skipped_rds;
+  atomic_uint32_t tot_rds;
+  atomic_uint32_t uniq_rds;
+  atomic_uint32_t ambig_rds;
+  atomic_uint32_t unmapped_rds;
+  atomic_uint32_t skipped_rds;
 
-  size_t edit_distance;
-  size_t total_bases;
+  atomic_uint64_t edit_distance;
+  atomic_uint64_t total_bases;
 
   void update(const bool allow_ambig, const string &read,
               const bam_cigar_t &cigar, const se_element s) {
@@ -723,15 +725,16 @@ struct se_map_stats {
     for (size_t i = 0; i < n_tabs; ++i) t += tab;
     ostringstream oss;
 
+    const uint32_t tot_rds_tmp = tot_rds;
     oss << t << "total_reads: " << tot_rds << endl
         << t << "mapped: " << endl
         << t + tab << "num_mapped: " << uniq_rds + ambig_rds << endl
         << t + tab << "num_unique: " << uniq_rds << endl
         << t + tab << "num_ambiguous: " << ambig_rds << endl
         << t + tab << "percent_mapped: "
-        << pct(uniq_rds + ambig_rds, tot_rds == 0 ? 1 : tot_rds) << endl
+        << pct(uniq_rds + ambig_rds, tot_rds_tmp == 0 ? 1 : tot_rds_tmp) << endl
         << t + tab
-        << "percent_unique: " << pct(uniq_rds, tot_rds == 0 ? 1 : tot_rds)
+        << "percent_unique: " << pct(uniq_rds, tot_rds_tmp == 0 ? 1 : tot_rds_tmp)
         << endl
         << t + tab << "percent_ambiguous: " << pct(ambig_rds, tot_rds) << endl
         << t + tab << "unique_error:" << endl
@@ -753,14 +756,15 @@ struct pe_map_stats {
       : tot_pairs(0), uniq_pairs(0), ambig_pairs(0), unmapped_pairs(0),
         skipped_pairs(0), edit_distance(0), total_bases(0) {}
 
-  uint32_t tot_pairs;
-  uint32_t uniq_pairs;
-  uint32_t ambig_pairs;
-  uint32_t unmapped_pairs;
-  uint32_t skipped_pairs;
+  atomic_uint32_t tot_pairs;
 
-  size_t edit_distance;
-  size_t total_bases;
+  atomic_uint32_t uniq_pairs;
+  atomic_uint32_t ambig_pairs;
+  atomic_uint32_t unmapped_pairs;
+  atomic_uint32_t skipped_pairs;
+
+  atomic_uint64_t edit_distance;
+  atomic_uint64_t total_bases;
 
   se_map_stats end1_stats;
   se_map_stats end2_stats;
@@ -771,7 +775,7 @@ struct pe_map_stats {
               const se_element s2) {
     const bool valid = !p.empty();
     const bool ambig = p.ambig();
-    ++tot_pairs;
+    tot_pairs++;
     ambig_pairs += (valid && ambig);
     uniq_pairs += (valid && !ambig);
     unmapped_pairs += !valid;
@@ -944,13 +948,20 @@ find_candidates(const uint32_t max_candidates,
   return p;
 }
 
+template<const three_conv_type the_conv>
+static inline three_letter_t
+get_three_letter_num_fast(const uint8_t nt) {
+  return (the_conv == c_to_t) ?
+    nt & 5 :  // C=T=0, A=1, G=4
+    nt & 10;  // A=G=0, C=2, T=8
+}
+
 template<const three_conv_type the_conv> struct compare_bases_three {
   compare_bases_three(const genome_iterator g_): g(g_) {}
 
   bool operator()(const uint32_t mid, const three_letter_t chr) const {
-    return get_three_letter_num<the_conv>(*(g + mid)) < chr;
+    return get_three_letter_num_fast<the_conv>(*(g + mid)) < chr;
   }
-
   const genome_iterator g;
 };
 
@@ -970,17 +981,29 @@ find_candidates_three(const uint32_t max_candidates,
     prev_high = high;
 
     // pointer to first 1 in the range
-    const vector<uint32_t>::const_iterator first_1 =
-      lower_bound(low, high, 1, compare_bases_three<the_conv>(gi + p));
+    const auto first_1 =
+      // lower_bound(low, high, 1, compare_bases_three<the_conv>(gi + p));
+      lower_bound(low, high,
+                  (the_conv == c_to_t ? 1 : 2),
+                  compare_bases_three<the_conv>(gi + p));
 
-    const vector<uint32_t>::const_iterator first_2 =
-      lower_bound(low, high, 2, compare_bases_three<the_conv>(gi + p));
+    const auto first_2 =
+      lower_bound(low, high,
+                  (the_conv == c_to_t ? 4 : 8),
+                  compare_bases_three<the_conv>(gi + p));
 
     const three_letter_t the_num =
+      // get_three_letter_num_fast<the_conv>(*(read_start + p));
       get_three_letter_num<the_conv>(*(read_start + p));
 
-    high = ((the_num == 0) ? (first_1) : ((the_num == 1) ? first_2 : high));
-    low = ((the_num == 0) ? (low) : ((the_num == 1) ? first_1 : first_2));
+    if (the_conv == c_to_t) {
+      high = ((the_num == 0) ? (first_1) : ((the_num == 1) ? first_2 : high));
+      low = ((the_num == 0) ? (low) : ((the_num == 1) ? first_1 : first_2));
+    }
+    else {
+      high = ((the_num == 0) ? (first_1) : ((the_num == 1) ? first_2 : high));
+      low = ((the_num == 0) ? (low) : ((the_num == 1) ? first_1 : first_2));
+    }
   }
 
   // some bit narrows it down to 0 candidates, roll back to when we
@@ -1346,17 +1369,17 @@ map_single_ended_rand(const bool VERBOSE, const bool show_progress,
                       ReadLoader &rl, se_map_stats &se_stats,
                       bamxx::bam_header &hdr, bamxx::bam_out &out,
                       ProgressBar &progress) {
-  const auto counter_st(begin(abismal_index.counter));
-  const auto counter_t_st(begin(abismal_index.counter_t));
-  const auto counter_a_st(begin(abismal_index.counter_a));
+  const auto counter_st(cbegin(abismal_index.counter));
+  const auto counter_t_st(cbegin(abismal_index.counter_t));
+  const auto counter_a_st(cbegin(abismal_index.counter_a));
 
-  const auto index_st(begin(abismal_index.index));
-  const auto index_t_st(begin(abismal_index.index_t));
-  const auto index_a_st(begin(abismal_index.index_a));
+  const auto index_st(cbegin(abismal_index.index));
+  const auto index_t_st(cbegin(abismal_index.index_t));
+  const auto index_a_st(cbegin(abismal_index.index_a));
 
   const uint32_t max_candidates = abismal_index.max_candidates;
 
-  const genome_iterator genome_st(begin(abismal_index.genome));
+  const genome_iterator genome_st(cbegin(abismal_index.genome));
 
   vector<string> names;
   vector<string> reads;
