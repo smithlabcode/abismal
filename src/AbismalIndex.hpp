@@ -20,24 +20,23 @@
 
 #include <vector>
 #include <string>
-#include <iostream>
 #include <fstream>
 #include <unordered_set>
 #include <algorithm>
 #include <deque>
-#include <bitset>
 #include <cassert>
 #include <climits>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
 
 #include "smithlab_utils.hpp"
 #include "dna_four_bit.hpp"
 
-typedef size_t element_t;
-typedef std::vector<element_t> Genome;
-typedef bool two_letter_t;
-typedef uint8_t three_letter_t;
+using element_t = size_t;
+using Genome = std::vector<element_t>;
+using two_letter_t = bool;
+using three_letter_t = uint8_t;
 
 struct random_base_generator {
   // ADS: other RNG behaves differently across systems (e.g. macos vs
@@ -122,38 +121,27 @@ struct ChromLookup {
 template <class G>
 void
 load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
-  size_t num_ns = 0;
   std::ifstream in(genome_file);
   if (!in)
     throw std::runtime_error("bad genome file: " + genome_file);
 
-  const auto begin_pos = in.tellg();
-  in.seekg(0, std::ios_base::end);
-  const size_t file_size = in.tellg() - begin_pos;
-  in.seekg(0, std::ios_base::beg);
+  namespace fs = std::filesystem;
+  const size_t file_size = fs::file_size(fs::path(genome_file));
 
   genome.clear();
-  // pad on at start; the space for padding at the end will be
-  // available because of the newlines and chromosome names
-  genome.reserve(file_size + seed::padding_size);
+  // reserve space for padding at both ends
+  genome.reserve(file_size + 2*seed::padding_size);
+  auto g_ins = std::back_inserter(genome);
 
   // pad the start of the concatenated sequence
   cl.names.push_back("pad_start");
-  for (size_t i = 0; i < seed::padding_size; ++i)
-    genome.push_back('Z');
+  fill_n(g_ins, seed::padding_size, 'Z');
   cl.starts.push_back(genome.size());
 
   std::string line;
   while (getline(in, line))
-    if (line[0] != '>') {
-      for (auto it(begin(line)); it != end(line); ++it) {
-        if (base2int(*it) == 4) { // non-acgts become random bases
-          ++num_ns;
-          *it = random_base();
-        }
-      }
-      copy(std::begin(line), std::end(line), std::back_inserter(genome));
-    }
+    if (line[0] != '>')
+      copy(std::cbegin(line), std::cend(line), g_ins);
     else {
       cl.names.push_back(line.substr(1, line.find_first_of(" \t") - 1));
       cl.starts.push_back(genome.size());
@@ -165,21 +153,21 @@ load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
   // now pad the end of the concatenated sequence
   cl.names.push_back("pad_end");
   cl.starts.push_back(genome.size());
-  for (size_t i = 0; i < seed::padding_size; ++i)
-    genome.push_back('Z');
+  std::fill_n(g_ins, seed::padding_size, 'Z');
+
+  // this one additional "start" is the end of all chroms
   cl.starts.push_back(genome.size());
 }
 
 std::ostream &
 operator<<(std::ostream &out, const ChromLookup &cl);
 
-
-enum three_conv_type { c_to_t, g_to_a};
+enum three_conv_type { c_to_t, g_to_a };
 struct AbismalIndex {
 
   static bool VERBOSE;
 
-  uint32_t max_candidates;
+  uint32_t max_candidates{100u};
 
   size_t counter_size; // number of kmers indexed
   size_t counter_size_three; // number of kmers indexed
@@ -199,17 +187,17 @@ struct AbismalIndex {
   // or three-letter encoding
   std::vector<bool> is_two_let;
   std::vector<bool> keep;
+  std::vector<std::pair<size_t, size_t>> no_index{};
+  std::vector<std::pair<genome_four_bit_itr, genome_four_bit_itr>> no_index_itr{};
 
-  Genome genome; // the genome
+  Genome genome;  // the genome
   ChromLookup cl; // the starting position of each chromosome
 
   void create_index(const std::string &genome_file);
 
   // count how many positions must be stored for each hash value
-  template<const bool use_mask>
-  void initialize_bucket_sizes();
-  template<const bool use_mask>
-  void get_bucket_sizes_two();
+  template<const bool use_mask> void initialize_bucket_sizes();
+  template<const bool use_mask> void get_bucket_sizes_two();
   template<const three_conv_type the_conv, const bool use_mask>
   void get_bucket_sizes_three();
 
@@ -235,7 +223,7 @@ struct AbismalIndex {
   // read index from disk
   void read(const std::string &index_file);
 
-  static std::string internal_identifier;
+  static const std::string internal_identifier;
   AbismalIndex() {}
 };
 
@@ -246,14 +234,15 @@ get_bit(const uint8_t nt) {return (nt & 5) == 0;}
 template<const three_conv_type the_conv>
 inline three_letter_t
 get_three_letter_num(const uint8_t nt) {
-  return (the_conv == c_to_t) ?
-    ((((nt & 4) != 0)<<1)  | ((nt & 1) != 0)) :  // C=T=0, A=1, G=2
-    ((((nt & 8) != 0)<<1)  | ((nt & 2) != 0));   // A=G=0, C=1, T=2
+  // the_conv = c_to_t: C=T=0, A=1, G=2
+  // the_conv = g_to_a: A=G=0, C=1, T=2
+  return the_conv == c_to_t ? (((nt & 4) != 0) << 1) | ((nt & 1) != 0)
+                            : (((nt & 8) != 0) << 1) | ((nt & 2) != 0);
 }
 
 inline void
 shift_hash_key(const uint8_t c, uint32_t &hash_key) {
-  hash_key = (((hash_key << 1) | get_bit(c)) & seed::hash_mask);
+  hash_key = ((hash_key << 1) | get_bit(c)) & seed::hash_mask;
 }
 
 template<const three_conv_type the_conv> inline void
@@ -264,8 +253,7 @@ shift_three_key(const uint8_t c, uint32_t &hash_key) {
 
 // get the hash value for a k-mer (specified as some iterator/pointer)
 // and the encoding for the function above
-template <class T>
-void
+template<class T> inline void
 get_1bit_hash(T r, uint32_t &k) {
   const auto lim = r + seed::key_weight;
   k = 0;
@@ -275,8 +263,7 @@ get_1bit_hash(T r, uint32_t &k) {
   }
 }
 
-template <const three_conv_type the_conv, class T>
-void
+template<const three_conv_type the_conv, class T> inline void
 get_base_3_hash(T r, uint32_t &k) {
   const auto lim = r + seed::key_weight_three;
   k = 0;
