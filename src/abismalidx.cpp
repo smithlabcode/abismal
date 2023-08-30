@@ -43,6 +43,7 @@ int
 abismalidx(int argc, const char **argv) {
 
   try {
+    string target_regions_file;
     bool VERBOSE = false;
     size_t n_threads = 1;
 
@@ -50,6 +51,8 @@ abismalidx(int argc, const char **argv) {
     OptionParser opt_parse(strip_path(argv[0]), "build abismal index",
                            "<genome-fasta> <abismal-index-file>", 2);
     opt_parse.set_show_defaults();
+    opt_parse.add_opt("targets", '\0', "target regions",
+                      false, target_regions_file);
     opt_parse.add_opt("threads", 't', "number of threads", false, n_threads);
     opt_parse.add_opt("verbose", 'v', "print more run info", false, VERBOSE);
 
@@ -81,7 +84,10 @@ abismalidx(int argc, const char **argv) {
 
     /****************** START BUILDING INDEX *************/
     AbismalIndex abismal_index;
-    abismal_index.create_index(genome_file);
+    if (!target_regions_file.empty())
+      abismal_index.create_index(target_regions_file, genome_file);
+    else
+      abismal_index.create_index(genome_file);
 
     if (VERBOSE)
       cerr << "[writing abismal index to: " << outfile << "]\n";
@@ -103,3 +109,22 @@ abismalidx(int argc, const char **argv) {
   return EXIT_SUCCESS;
 }
 
+/*
+  Test strategy:
+  reference genomes:
+  (1) hg38: it's the most common
+  (2) mm39: similar reasoning
+  (3) hs1-t2t: it has different amounts of repeats and Ns
+  (4) TAIR10: it's smaller and might behave differently
+  (5) tRex1: it's very small
+
+  Reads:
+  (1) human: Hodges2011 HSPC / SRR342517
+  (2) mouse: SRR5115694
+  (4) TAIR10: SRR24436012
+  (3) simreads: 10000000 reads, default parameters
+
+  Target regions:
+  (1) Promoters
+  (2) Randomly shuffled promoters
+*/
