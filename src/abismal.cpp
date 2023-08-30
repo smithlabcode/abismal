@@ -79,7 +79,6 @@ using AbismalAlignSimple =
 typedef uint16_t flags_t;      // every bit is a flag
 typedef int16_t score_t;       // aln score, edit distance, hamming distance
 typedef vector<uint8_t> Read;  // 4-bit encoding of reads
-                               //
 typedef vector<element_t> PackedRead;  // 4-bit encoding of reads
 
 enum conversion_type { t_rich = false, a_rich = true };
@@ -934,8 +933,8 @@ find_candidates(const uint32_t max_candidates,
       lower_bound(low, high, 1, compare_bases(gi + p));
 
     const two_letter_t the_bit = get_bit(*(read_start + p));
-    high = ((the_bit) ? (high) : (first_1));
-    low = ((the_bit) ? (first_1) : (low));
+    high = the_bit ? high : first_1;
+    low = the_bit ? first_1 : low;
   }
 
   // some bit narrows it down to 0 candidates, roll back to when we
@@ -981,28 +980,22 @@ find_candidates_three(const uint32_t max_candidates,
     prev_high = high;
 
     // pointer to first 1 in the range
-    const auto first_1 =
-      // lower_bound(low, high, 1, compare_bases_three<the_conv>(gi + p));
-      lower_bound(low, high,
-                  (the_conv == c_to_t ? 1 : 2),
-                  compare_bases_three<the_conv>(gi + p));
+    const auto first_1 = lower_bound(low, high, (the_conv == c_to_t ? 1 : 2),
+                                     compare_bases_three<the_conv>(gi + p));
 
-    const auto first_2 =
-      lower_bound(low, high,
-                  (the_conv == c_to_t ? 4 : 8),
-                  compare_bases_three<the_conv>(gi + p));
+    const auto first_2 = lower_bound(low, high, (the_conv == c_to_t ? 4 : 8),
+                                     compare_bases_three<the_conv>(gi + p));
 
     const three_letter_t the_num =
-      // get_three_letter_num_fast<the_conv>(*(read_start + p));
-      get_three_letter_num<the_conv>(*(read_start + p));
+      get_three_letter_num_fast<the_conv>(*(read_start + p));
 
     if (the_conv == c_to_t) {
-      high = ((the_num == 0) ? (first_1) : ((the_num == 1) ? first_2 : high));
-      low = ((the_num == 0) ? (low) : ((the_num == 1) ? first_1 : first_2));
+      high = (the_num == 0) ? first_1 : ((the_num == 1) ? first_2 : high);
+      low = (the_num == 0) ? low : ((the_num == 1) ? first_1 : first_2);
     }
     else {
-      high = ((the_num == 0) ? (first_1) : ((the_num == 1) ? first_2 : high));
-      low = ((the_num == 0) ? (low) : ((the_num == 1) ? first_1 : first_2));
+      high = (the_num == 0) ? first_1 : ((the_num == 2) ? first_2 : high);
+      low = (the_num == 0) ? low : ((the_num == 2) ? first_1 : first_2);
     }
   }
 
