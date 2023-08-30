@@ -118,46 +118,13 @@ struct ChromLookup {
   std::string tostring() const;
 };
 
-template <class G>
 void
-load_genome(const std::string &genome_file, G &genome, ChromLookup &cl) {
-  std::ifstream in(genome_file);
-  if (!in)
-    throw std::runtime_error("bad genome file: " + genome_file);
+load_genome(const std::string &genome_file,
+            std::vector<uint8_t> &genome, ChromLookup &cl);
 
-  namespace fs = std::filesystem;
-  const size_t file_size = fs::file_size(fs::path(genome_file));
-
-  genome.clear();
-  // reserve space for padding at both ends
-  genome.reserve(file_size + 2*seed::padding_size);
-  auto g_ins = std::back_inserter(genome);
-
-  // pad the start of the concatenated sequence
-  cl.names.push_back("pad_start");
-  fill_n(g_ins, seed::padding_size, 'Z');
-  cl.starts.push_back(genome.size());
-
-  std::string line;
-  while (getline(in, line))
-    if (line[0] != '>')
-      copy(std::cbegin(line), std::cend(line), g_ins);
-    else {
-      cl.names.push_back(line.substr(1, line.find_first_of(" \t") - 1));
-      cl.starts.push_back(genome.size());
-    }
-
-  if (cl.names.size() < 2)
-    throw std::runtime_error("no names found in genome file");
-
-  // now pad the end of the concatenated sequence
-  cl.names.push_back("pad_end");
-  cl.starts.push_back(genome.size());
-  std::fill_n(g_ins, seed::padding_size, 'Z');
-
-  // this one additional "start" is the end of all chroms
-  cl.starts.push_back(genome.size());
-}
+void
+load_genome(const std::string &genome_file,
+            std::string &genome, ChromLookup &cl);
 
 std::ostream &
 operator<<(std::ostream &out, const ChromLookup &cl);
@@ -166,6 +133,8 @@ enum three_conv_type { c_to_t, g_to_a };
 struct AbismalIndex {
 
   static bool VERBOSE;
+
+  static const uint32_t max_n_count = 256ul;
 
   uint32_t max_candidates{100u};
 
@@ -187,13 +156,15 @@ struct AbismalIndex {
   // or three-letter encoding
   std::vector<bool> is_two_let;
   std::vector<bool> keep;
-  std::vector<std::pair<size_t, size_t>> no_index{};
-  std::vector<std::pair<genome_four_bit_itr, genome_four_bit_itr>> no_index_itr{};
+  std::vector<std::pair<size_t, size_t>> exclude{};
+  std::vector<std::pair<genome_four_bit_itr, genome_four_bit_itr>> exclude_itr{};
 
   Genome genome;  // the genome
   ChromLookup cl; // the starting position of each chromosome
 
   void create_index(const std::string &genome_file);
+  void create_index(const std::string &target_filename,
+                    const std::string &genome_file);
 
   // count how many positions must be stored for each hash value
   template<const bool use_mask> void initialize_bucket_sizes();
