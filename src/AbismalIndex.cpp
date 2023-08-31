@@ -304,25 +304,24 @@ AbismalIndex::create_index(const string &genome_file) {
 
 template<const bool use_mask> void
 AbismalIndex::get_bucket_sizes_two() {
-  constexpr auto genome_start = 0ul; // seed::padding_size;
 
   counter_size = (1ull << seed::key_weight);
   counter.clear();
   counter.resize(counter_size + 1, 0);  // one extra entry for convenience
 
   uint32_t hash_key = 0;
-  auto gi = genome_iterator(cbegin(genome)) + genome_start;
+  auto gi = genome_iterator(cbegin(genome));
 
   // start spooling the hash key
   const auto gi_lim = gi + (seed::key_weight - 1);
   while (gi != gi_lim) shift_hash_key(*gi++, hash_key);
 
-  auto itl_itr = cbegin(is_two_let) + genome_start;
-  auto keep_itr = cbegin(keep) + genome_start;
+  auto itl_itr = cbegin(is_two_let);
+  auto keep_itr = cbegin(keep);
   auto nidx_itr = cbegin(exclude);
 
   // general loop to count positions for corresponding buckets
-  const auto lim = cl.get_genome_size() - seed::key_weight - genome_start;
+  const auto lim = cl.get_genome_size() - seed::key_weight + 1;
   // const auto itl_lim = cbegin(is_two_let) + lim;
   for (size_t i = 0; i < lim; ++i) {
     shift_hash_key(*gi++, hash_key);
@@ -337,7 +336,6 @@ AbismalIndex::get_bucket_sizes_two() {
 
 template<const three_conv_type the_conv, const bool use_mask> void
 AbismalIndex::get_bucket_sizes_three() {
-  constexpr auto genome_start = 0ul; // seed::padding_size;
 
   counter_size_three = seed::hash_mask_three;
 
@@ -351,21 +349,20 @@ AbismalIndex::get_bucket_sizes_three() {
   else
     counter_a.resize(counter_size_three + 1, 0);
 
-  const auto lim = cl.get_genome_size() - seed::key_weight_three - genome_start;
-
   uint32_t hash_key = 0;
-  auto gi = genome_iterator(cbegin(genome)) + genome_start;
+  auto gi = genome_iterator(cbegin(genome));
 
   // start building up the hash key
   const auto gi_lim = gi + (seed::key_weight_three - 1);
   while (gi != gi_lim) shift_three_key<the_conv>(*gi++, hash_key);
 
-  auto itl_itr = cbegin(is_two_let) + genome_start;
-  auto keep_itr = cbegin(keep) + genome_start;
+  auto itl_itr = cbegin(is_two_let);
+  auto keep_itr = cbegin(keep);
   auto nidx_itr = cbegin(exclude);
 
   // general loop to count positions for corresponding buckets
-  for (size_t i = genome_start; i < lim; ++i) {
+  const auto lim = cl.get_genome_size() - seed::key_weight_three + 1;
+  for (size_t i = 0; i < lim; ++i) {
     shift_three_key<the_conv>(*gi++, hash_key);
     assert(nidx_itr != cend(exclude));
     if (i < nidx_itr->first && *keep_itr) {
@@ -438,7 +435,6 @@ get_block_bounds(const size_t start_pos, const size_t step_size,
 
 void
 AbismalIndex::select_two_letter_positions() {
-  constexpr auto genome_start = 0ul;
   constexpr size_t block_size = 1000000ul;
   auto s_time = steady_clock::now();
   if (VERBOSE) clog << "[selecting two-letter positions]";
@@ -448,9 +444,11 @@ AbismalIndex::select_two_letter_positions() {
   const auto itl_beg = begin(is_two_let);
   const auto g_beg = genome_iterator(begin(genome));
 
-  const auto lim = cl.get_genome_size() - seed::key_weight - genome_start;
+  // ADS: this works below because seed::key_weight is always at least
+  // seed::key_weight_three
+  const auto lim = cl.get_genome_size() - seed::key_weight + 1;
 
-  const auto blocks = get_block_bounds(genome_start, block_size, lim, exclude);
+  const auto blocks = get_block_bounds(0, block_size, lim, exclude);
 
 #pragma omp parallel for
   for (auto &block : blocks) {
@@ -492,7 +490,6 @@ AbismalIndex::select_two_letter_positions() {
 
 void
 AbismalIndex::hash_genome() {
-  constexpr auto genome_start = 0ul; // seed::padding_size;
   // count k-mers under each encoding with masking
   auto s_time = steady_clock::now();
   if (VERBOSE) clog << "[initializing index structures]";
@@ -519,18 +516,18 @@ AbismalIndex::hash_genome() {
   s_time = steady_clock::now();
 
   if (VERBOSE) clog << "[counting k-mers]";
-  const auto lim = cl.get_genome_size() - seed::key_weight - genome_start;
+  const auto lim = cl.get_genome_size() - seed::key_weight + 1;
 
 #pragma omp parallel sections
   {
 #pragma omp section
     {
-      auto gi_two = genome_iterator(cbegin(genome)) + genome_start;
+      auto gi_two = genome_iterator(cbegin(genome));
       const auto gi_lim = gi_two + (seed::key_weight - 1);
       uint32_t hash_two = 0;
       while (gi_two != gi_lim) shift_hash_key(*gi_two++, hash_two);
       auto nidx_itr = cbegin(exclude);
-      for (size_t i = genome_start; i < lim; ++i) {
+      for (size_t i = 0; i < lim; ++i) {
         shift_hash_key(*gi_two++, hash_two);
         assert(nidx_itr != cend(exclude));
         if (i < nidx_itr->first && keep[i] && is_two_let[i]) {
@@ -542,12 +539,12 @@ AbismalIndex::hash_genome() {
     }
 #pragma omp section
     {
-      auto gi_three = genome_iterator(cbegin(genome)) + genome_start;
+      auto gi_three = genome_iterator(cbegin(genome));
       const auto gi_lim = gi_three + (seed::key_weight_three - 1);
       uint32_t hash_t = 0;
       while (gi_three != gi_lim) shift_three_key<c_to_t>(*gi_three++, hash_t);
       auto nidx_itr = cbegin(exclude);
-      for (size_t i = genome_start; i < lim; ++i) {
+      for (size_t i = 0; i < lim; ++i) {
         shift_three_key<c_to_t>(*gi_three++, hash_t);
         assert(nidx_itr != cend(exclude));
         if (i < nidx_itr->first && keep[i] && !is_two_let[i]) {
@@ -559,12 +556,12 @@ AbismalIndex::hash_genome() {
     }
 #pragma omp section
     {
-      auto gi_three = genome_iterator(begin(genome)) + genome_start;
+      auto gi_three = genome_iterator(begin(genome));
       const auto gi_lim = gi_three + (seed::key_weight_three - 1);
       uint32_t hash_a = 0;
       while (gi_three != gi_lim) shift_three_key<g_to_a>(*gi_three++, hash_a);
       auto nidx_itr = cbegin(exclude);
-      for (size_t i = genome_start; i < lim; ++i) {
+      for (size_t i = 0; i < lim; ++i) {
         shift_three_key<g_to_a>(*gi_three++, hash_a);
         assert(nidx_itr != cend(exclude));
         if (i < nidx_itr->first && keep[i] && !is_two_let[i]) {
@@ -647,7 +644,6 @@ hybrid_cost(const bool is_two_let, const uint32_t count_two,
 
 void
 AbismalIndex::compress_dp() {
-  constexpr auto genome_start = 0ul; // seed::padding_size;
   constexpr auto block_size = 1000000ul;
   auto s_time = steady_clock::now();
   if (VERBOSE) clog << "[dynamic programming to optimize seed selection]";
@@ -655,9 +651,9 @@ AbismalIndex::compress_dp() {
   // default is no position will be indexed
   std::fill(begin(keep), end(keep), false);
 
-  const auto lim = cl.get_genome_size() - seed::key_weight - genome_start;
+  const auto lim = cl.get_genome_size() - seed::key_weight + 1;
 
-  const auto blocks = get_block_bounds(genome_start, block_size, lim, exclude);
+  const auto blocks = get_block_bounds(0, block_size, lim, exclude);
 
 #pragma omp parallel for
   for (auto &block : blocks) {
