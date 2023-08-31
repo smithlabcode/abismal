@@ -79,9 +79,11 @@ struct g_interval {
   g_interval() {}
   bool operator<(const g_interval &rhs) const {
     const int x = chrom.compare(rhs.chrom);
-    return (x < 0 || (x == 0 && (start_pos < rhs.start_pos ||
-                                 (start_pos == rhs.start_pos &&
-                                  (end_pos == rhs.end_pos)))));
+    return (x < 0 ||
+            (x == 0 &&
+             (start_pos < rhs.start_pos ||
+              (start_pos == rhs.start_pos &&
+               (end_pos < rhs.end_pos)))));
   }
 };
 
@@ -176,6 +178,8 @@ get_compressed_size(const size_t original_size) {
 static auto
 sort_by_chrom(const vector<string> &names, const vector<g_interval> &u)
   -> vector<g_interval> {
+  // This function will exclude any target regions that are not
+  // corresponding to chromosomes in the given reference genome.
   vector<g_interval> t(u.size());
   auto t_itr = begin(t);
   for (size_t i = 0; i < names.size(); ++i) {
@@ -191,8 +195,7 @@ sort_by_chrom(const vector<string> &names, const vector<g_interval> &u)
     std::copy(u_itr, v_itr, t_itr);
     t_itr += std::distance(u_itr, v_itr);
   }
-  if (t_itr != end(t))
-    throw runtime_error("target regions unsorted or include extra chromosomes");
+  t.resize(std::distance(begin(t), t_itr));
   return t;
 }
 
@@ -230,11 +233,6 @@ AbismalIndex::create_index(const string &targets_file,
                                });
   exclude.erase(rm_itr, cend(exclude));
 
-  for (size_t i = 0; i < exclude.size(); ++i)
-    if (exclude[i].second - exclude[i].first <= max_n_count) {
-      clog << "wtf" << endl;
-      exit(1);
-    }
   replace_included_n(exclude, orig_genome);
   if (VERBOSE) clog << delta_seconds(s_time) << endl;
 
@@ -434,13 +432,6 @@ get_block_bounds(const size_t start_pos, const size_t step_size,
     blocks.emplace_back(block_start, block_end);
     block_start += step_size;
   }
-
-  // for (auto &i : blocks) {
-  //   if (i.second - i.first < AbismalIndex::max_n_count) {
-  //     cerr << i.first << '\t' << i.second << endl;
-  //     exit(1);
-  //   }
-  // }
 
   return blocks;
 }
