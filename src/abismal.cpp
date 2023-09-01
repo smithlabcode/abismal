@@ -67,12 +67,6 @@ using std::atomic_uint64_t;
 
 using bamxx::bam_rec;
 
-static inline bool
-ready_to_report(const size_t the_read) {
-  static const size_t inverse_report_frequency = 25000;
-  return the_read % inverse_report_frequency == 0;
-}
-
 using AbismalAlignSimple =
   AbismalAlign<simple_aln::mismatch_score, simple_aln::indel>;
 
@@ -353,24 +347,11 @@ cigar_eats_ref(const uint32_t c) {
   return bam_cigar_type(bam_cigar_op(c)) & 2;
 }
 
-static inline bool
-cigar_eats_query(const uint32_t c) {
-  return bam_cigar_type(bam_cigar_op(c)) & 1;
-}
-
 static inline uint32_t
 cigar_rseq_ops(const bam_cigar_t &cig) {
   return accumulate(
     begin(cig), end(cig), 0u, [](const uint32_t total, const uint32_t x) {
       return total + (cigar_eats_ref(x) ? bam_cigar_oplen(x) : 0);
-    });
-}
-
-static inline uint32_t
-cigar_qseq_ops(const bam_cigar_t &cig) {
-  return accumulate(
-    begin(cig), end(cig), 0u, [](const uint32_t total, const uint32_t x) {
-      return total + (cigar_eats_query(x) ? bam_cigar_oplen(x) : 0);
     });
 }
 
