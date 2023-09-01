@@ -20,15 +20,17 @@ jobs:
       run: sudo apt-get install -y libhts-dev
     - name: Generate configure script
       run: ./autogen.sh
-    - name: configure
-      run: ./configure
+    - name: configure for GCC
+      run: ./configure CXX="g++"
     - name: make with g++
-      run: make CXX="g++"
-    - name: cleanup after g++
-      run: make clean
-    - name: install clang dependencies
+      run: make
+    - name: cleanup after GCC
+      run: make distclean
+    - name: install Clang dependencies
       run: sudo apt-get install -y libomp-dev
+    - name: configure for Clang
+      run: ./configure CXX="clang++"
     - name: make with clang++
-      run: make CXX="clang++" CXXFLAGS="-fopenmp=libomp"
+      run: make
     - name: cleanup after clang++
       run: make clean
