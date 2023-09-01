@@ -51,7 +51,7 @@ abismalidx(int argc, const char **argv) {
     OptionParser opt_parse(strip_path(argv[0]), "build abismal index",
                            "<genome-fasta> <abismal-index-file>", 2);
     opt_parse.set_show_defaults();
-    opt_parse.add_opt("targets", '\0', "target regions",
+    opt_parse.add_opt("targets", 'A', "target regions",
                       false, target_regions_file);
     opt_parse.add_opt("threads", 't', "number of threads", false, n_threads);
     opt_parse.add_opt("verbose", 'v', "print more run info", false, VERBOSE);
