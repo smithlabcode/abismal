@@ -31,6 +31,7 @@
 #include <stdexcept>
 #include <algorithm>
 #include <unordered_set>
+#include <filesystem>
 
 using std::vector;
 using std::runtime_error;
@@ -81,6 +82,12 @@ abismalidx(int argc, const char **argv) {
     omp_set_num_threads(n_threads);
     const double start_time = omp_get_wtime();
     AbismalIndex::VERBOSE = VERBOSE;
+
+    if (!std::filesystem::exists(genome_file))
+      throw runtime_error("file not found: " + genome_file);
+
+    if (!std::filesystem::is_regular_file(genome_file))
+      throw runtime_error("not regular file: " + genome_file);
 
     /****************** START BUILDING INDEX *************/
     AbismalIndex abismal_index;
