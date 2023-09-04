@@ -29,6 +29,7 @@
 #include <stdexcept>
 #include <utility>
 
+#include "bamxx.hpp"
 #include "dna_four_bit.hpp"
 #include "smithlab_os.hpp"
 #include "smithlab_utils.hpp"
@@ -47,6 +48,9 @@ using std::string;
 using std::to_string;
 using std::vector;
 using std::begin;
+using std::runtime_error;
+using std::cbegin;
+using std::cend;
 
 using std::chrono::duration;
 using std::chrono::steady_clock;
@@ -265,7 +269,9 @@ AbismalIndex::create_index(const string &genome_file) {
   if (VERBOSE) clog << "[loading genome]";
   vector<uint8_t> orig_genome;
   load_genome(genome_file, orig_genome, cl);
-  if (VERBOSE) clog << delta_seconds(s_time) << endl;
+  if (VERBOSE)
+    clog << "[" << cl.names.size() << " targets]" << delta_seconds(s_time)
+         << endl;
 
   s_time = steady_clock::now();
   if (VERBOSE) clog << "[cleaning reference genome]";
@@ -1153,11 +1159,10 @@ ChromLookup::get_chrom_idx_and_offset(const uint32_t pos,
 
 template<class G> void
 load_genome_impl(const string &genome_file, G &genome, ChromLookup &cl) {
-  std::ifstream in(genome_file);
-  if (!in) throw std::runtime_error("bad genome file: " + genome_file);
+  const auto file_size = std::filesystem::file_size(genome_file);
 
-  namespace fs = std::filesystem;
-  const size_t file_size = fs::file_size(fs::path(genome_file));
+  bamxx::bgzf_file in(genome_file, "r");
+  if (!in) throw runtime_error("failed to open genome file: " + genome_file);
 
   genome.clear();
   // reserve space for padding at both ends
@@ -1169,10 +1174,10 @@ load_genome_impl(const string &genome_file, G &genome, ChromLookup &cl) {
   cl.starts.push_back(0);
   fill_n(g_ins, seed::padding_size, 'N');
 
-  std::string line;
+  string line;
   while (getline(in, line))
     if (line[0] != '>')
-      copy(std::cbegin(line), std::cend(line), g_ins);
+      copy(cbegin(line), cend(line), g_ins);
     else {
       cl.names.push_back(line.substr(1, line.find_first_of(" \t") - 1));
       cl.starts.push_back(genome.size());
@@ -1184,7 +1189,7 @@ load_genome_impl(const string &genome_file, G &genome, ChromLookup &cl) {
   // now pad the end of the concatenated sequence
   cl.names.push_back("pad_end");
   cl.starts.push_back(genome.size());
-  std::fill_n(g_ins, seed::padding_size, 'N');
+  fill_n(g_ins, seed::padding_size, 'N');
 
   // this one additional "start" is the end of all chroms
   cl.starts.push_back(genome.size());
