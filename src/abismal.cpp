@@ -668,27 +668,51 @@ pct(const double a, const double b) {
 }
 
 struct se_map_stats {
-  se_map_stats()
-      : tot_rds(0), uniq_rds(0), ambig_rds(0), unmapped_rds(0), skipped_rds(0),
-        edit_distance(0), total_bases(0) {}
 
-  atomic_uint32_t tot_rds;
-  atomic_uint32_t uniq_rds;
-  atomic_uint32_t ambig_rds;
-  atomic_uint32_t unmapped_rds;
-  atomic_uint32_t skipped_rds;
+  // tot_rds is the total number of reads from the fastq file for
+  // mapping that are considered for mapping as single-end reads. This
+  // is all reads if the input is single-end, or all read ends for
+  // which concordant mapping is not found in the case of paired-end.
+  atomic_uint32_t tot_rds{};
 
-  atomic_uint64_t edit_distance;
-  atomic_uint64_t total_bases;
+  // reads_mapped_unique is the number of reads for which exactly one location in
+  // the reference genome has the best mapping score and that score
+  // meets the minimum critiera for a good match.
+  atomic_uint32_t reads_mapped_unique{};
+
+  // reads_mapped_ambiguous is the number of reads that have two equally good
+  // mapping locations within the reference genome, both meeting the
+  // minimum criteria for a match.
+  atomic_uint32_t reads_mapped_ambiguous{};
+
+  // reads_unmapped is the number of reads that have no mapping location
+  // in the reference genome with a score that meets the minimum
+  // criteria.
+  atomic_uint32_t reads_unmapped{};
+
+  // skipped_rds is the number of reads that are skipped and for which
+  // mapping is not attempted due to poor quality -- usually these are
+  // reads that are too short after adaptor trimming.
+  atomic_uint32_t skipped_rds{};
+
+  // edit_distance is the sum of edit distances over all reads that
+  // should be repored. This includes uniquely mapped reads but also
+  // ambiguously mapping reads if the user requests those among the
+  // output. This is used to obtain an average value.
+  atomic_uint64_t edit_distance{};
+
+  // total_bases is the total number of reference genome bases covered
+  // by all mapped reads. This is used to obtain an average value.
+  atomic_uint64_t total_bases{};
 
   void update(const bool allow_ambig, const string &read,
               const bam_cigar_t &cigar, const se_element s) {
     ++tot_rds;
     const bool valid = !s.empty();
     const bool ambig = s.ambig();
-    uniq_rds += (valid && !ambig);
-    ambig_rds += (valid && ambig);
-    unmapped_rds += !valid;
+    reads_mapped_unique += (valid && !ambig);
+    reads_mapped_ambiguous += (valid && ambig);
+    reads_unmapped += !valid;
     skipped_rds += read.empty();
 
     if (valid && (allow_ambig || !ambig)) update_error_rate(s.diffs, cigar);
@@ -699,8 +723,25 @@ struct se_map_stats {
     total_bases += cigar_rseq_ops(cigar);
   }
 
+  void assign_values() {
+    reads_mapped = reads_mapped_unique + reads_mapped_ambiguous;
+    const uint32_t tot_rds_tmp = total_reads;
+    const uint32_t denom = tot_rds_tmp == 0 ? 1 : tot_rds_tmp;
+    reads_mapped_fraction = pct(reads_mapped, denom);
+    reads_mapped_unique_fraction = pct(reads_mapped_unique, denom);
+    reads_mapped_ambiguous_fraction = pct(reads_mapped_ambiguous, denom);
+    edit_distance_mean = edit_distance / static_cast<double>(total_bases);
+    num_unmapped = reads_unmapped;
+    num_skipped = skipped_rds;
+    percent_unmapped = pct(reads_unmapped, tot_rds);
+    percent_skipped = pct(skipped_rds, tot_rds);
+  }
+
   string tostring(const size_t n_tabs = 0) const {
-    static const string tab = "    ";
+    static constexpr auto tab = "    ";
+
+    assign_values();
+
     string t;
     for (size_t i = 0; i < n_tabs; ++i) t += tab;
     ostringstream oss;
@@ -708,24 +749,24 @@ struct se_map_stats {
     const uint32_t tot_rds_tmp = tot_rds;
     oss << t << "total_reads: " << tot_rds << endl
         << t << "mapped: " << endl
-        << t + tab << "num_mapped: " << uniq_rds + ambig_rds << endl
-        << t + tab << "num_unique: " << uniq_rds << endl
-        << t + tab << "num_ambiguous: " << ambig_rds << endl
+        << t + tab << "num_mapped: " << reads_mapped_unique + reads_mapped_ambiguous << endl
+        << t + tab << "num_unique: " << reads_mapped_unique << endl
+        << t + tab << "num_ambiguous: " << reads_mapped_ambiguous << endl
         << t + tab << "percent_mapped: "
-        << pct(uniq_rds + ambig_rds, tot_rds_tmp == 0 ? 1 : tot_rds_tmp) << endl
+        << pct(reads_mapped_unique + reads_mapped_ambiguous, tot_rds_tmp == 0 ? 1 : tot_rds_tmp) << endl
         << t + tab
-        << "percent_unique: " << pct(uniq_rds, tot_rds_tmp == 0 ? 1 : tot_rds_tmp)
+        << "percent_unique: " << pct(reads_mapped_unique, tot_rds_tmp == 0 ? 1 : tot_rds_tmp)
         << endl
-        << t + tab << "percent_ambiguous: " << pct(ambig_rds, tot_rds) << endl
+        << t + tab << "percent_ambiguous: " << pct(reads_mapped_ambiguous, tot_rds) << endl
         << t + tab << "unique_error:" << endl
         << t + tab + tab << "edits: " << edit_distance << endl
         << t + tab + tab << "total_bases: " << total_bases << endl
         << t + tab + tab
         << "error_rate: " << edit_distance / static_cast<double>(total_bases)
         << endl
-        << t << "num_unmapped: " << unmapped_rds << endl
+        << t << "num_unmapped: " << reads_unmapped << endl
         << t << "num_skipped: " << skipped_rds << endl
-        << t << "percent_unmapped: " << pct(unmapped_rds, tot_rds) << endl
+        << t << "percent_unmapped: " << pct(reads_unmapped, tot_rds) << endl
         << t << "percent_skipped: " << pct(skipped_rds, tot_rds) << endl;
     return oss.str();
   }
