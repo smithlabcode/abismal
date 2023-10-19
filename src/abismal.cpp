@@ -18,10 +18,10 @@
 #include "abismal.hpp"
 
 #include <config.h>
-
 #include <omp.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <fstream>
@@ -30,18 +30,17 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
-#include <atomic>
 
 #include "AbismalAlign.hpp"
 #include "AbismalIndex.hpp"
 #include "OptionParser.hpp"
+#include "bamxx.hpp"
 #include "bisulfite_utils.hpp"
 #include "dna_four_bit_bisulfite.hpp"
 #include "popcnt.hpp"
 #include "sam_record.hpp"
 #include "smithlab_os.hpp"
 #include "smithlab_utils.hpp"
-#include "bamxx.hpp"
 
 using std::begin;
 using std::cerr;
@@ -162,8 +161,7 @@ const uint32_t ReadLoader::min_read_length =
 // alignment matrix for a batch of reads
 static inline void
 update_max_read_length(size_t &max_length, const vector<string> &reads) {
-  for (auto &i : reads)
-    max_length = max(max_length, i.size());
+  for (auto &i : reads) max_length = max(max_length, i.size());
 }
 
 struct se_element {  // size = 8
@@ -663,16 +661,15 @@ struct pe_candidates {
 };
 
 struct se_map_stats {
-
   // total_reads is the total number of reads from the fastq file for
   // mapping that are considered for mapping as single-end reads. This
   // is all reads if the input is single-end, or all read ends for
   // which concordant mapping is not found in the case of paired-end.
   atomic_uint32_t total_reads{};
 
-  // reads_mapped_unique is the number of reads for which exactly one location in
-  // the reference genome has the best mapping score and that score
-  // meets the minimum critiera for a good match.
+  // reads_mapped_unique is the number of reads for which exactly one location
+  // in the reference genome has the best mapping score and that score meets the
+  // minimum critiera for a good match.
   atomic_uint32_t reads_mapped_unique{};
 
   // reads_mapped_unique_fraction is the ratio of reads_mapped_unique
@@ -793,7 +790,6 @@ struct se_map_stats {
 };
 
 struct pe_map_stats {
-
   // total_read_pairs is the total number of read pairs in the pair of
   // input fastq files.
   atomic_uint32_t total_read_pairs{};
@@ -903,8 +899,10 @@ struct pe_map_stats {
     const uint32_t denom = total_read_pairs_tmp == 0 ? 1 : total_read_pairs_tmp;
     read_pairs_mapped_fraction = pct(read_pairs_mapped, denom);
     read_pairs_mapped_unique_fraction = pct(read_pairs_mapped_unique, denom);
-    read_pairs_mapped_ambiguous_fraction = pct(read_pairs_mapped_ambiguous, denom);
-    edit_distance_pairs_mean = edit_distance_pairs / static_cast<double>(total_bases_pairs);
+    read_pairs_mapped_ambiguous_fraction =
+      pct(read_pairs_mapped_ambiguous, denom);
+    edit_distance_pairs_mean =
+      edit_distance_pairs / static_cast<double>(total_bases_pairs);
     percent_unmapped_pairs = pct(read_pairs_unmapped, total_read_pairs_tmp);
     percent_skipped_pairs = pct(read_pairs_skipped, total_read_pairs_tmp);
   }
@@ -922,8 +920,10 @@ struct pe_map_stats {
         << t + t << "num_unique: " << read_pairs_mapped_unique << endl
         << t + t << "num_ambiguous: " << read_pairs_mapped_ambiguous << endl
         << t + t << "percent_mapped: " << read_pairs_mapped_fraction << endl
-        << t + t << "percent_unique: " << read_pairs_mapped_unique_fraction << endl
-        << t + t << "percent_ambiguous: " << read_pairs_mapped_ambiguous_fraction << endl
+        << t + t << "percent_unique: " << read_pairs_mapped_unique_fraction
+        << endl
+        << t + t
+        << "percent_ambiguous: " << read_pairs_mapped_ambiguous_fraction << endl
         << t + t << "unique_error:" << endl
         << t + t + t << "edits: " << edit_distance_pairs << endl
         << t + t + t << "total_bases: " << total_bases_pairs << endl
@@ -1060,12 +1060,10 @@ find_candidates(const uint32_t max_candidates,
   return p;
 }
 
-template<const three_conv_type the_conv>
-static inline three_letter_t
+template<const three_conv_type the_conv> static inline three_letter_t
 get_three_letter_num_fast(const uint8_t nt) {
-  return (the_conv == c_to_t) ?
-    nt & 5 :  // C=T=0, A=1, G=4
-    nt & 10;  // A=G=0, C=2, T=8
+  return (the_conv == c_to_t) ? nt & 5 :  // C=T=0, A=1, G=4
+           nt & 10;                       // A=G=0, C=2, T=8
 }
 
 template<const three_conv_type the_conv> struct compare_bases_three {
@@ -1074,6 +1072,7 @@ template<const three_conv_type the_conv> struct compare_bases_three {
   bool operator()(const uint32_t mid, const three_letter_t chr) const {
     return get_three_letter_num_fast<the_conv>(*(g + mid)) < chr;
   }
+
   const genome_iterator g;
 };
 
@@ -1367,9 +1366,9 @@ reset_bam_rec(bam_rec &b) {
 }
 
 template<const conversion_type conv> static void
-map_single_ended(const bool VERBOSE, const bool show_progress,
-                 const bool allow_ambig, const AbismalIndex &abismal_index,
-                 ReadLoader &rl, se_map_stats &se_stats, bamxx::bam_header &hdr,
+map_single_ended(const bool show_progress, const bool allow_ambig,
+                 const AbismalIndex &abismal_index, ReadLoader &rl,
+                 se_map_stats &se_stats, bamxx::bam_header &hdr,
                  bamxx::bam_out &out, ProgressBar &progress) {
   const auto counter_st(begin(abismal_index.counter));
   const auto counter_t_st(begin(abismal_index.counter_t));
@@ -1470,11 +1469,10 @@ map_single_ended(const bool VERBOSE, const bool show_progress,
 }
 
 static void
-map_single_ended_rand(const bool VERBOSE, const bool show_progress,
-                      const bool allow_ambig, const AbismalIndex &abismal_index,
-                      ReadLoader &rl, se_map_stats &se_stats,
-                      bamxx::bam_header &hdr, bamxx::bam_out &out,
-                      ProgressBar &progress) {
+map_single_ended_rand(const bool show_progress, const bool allow_ambig,
+                      const AbismalIndex &abismal_index, ReadLoader &rl,
+                      se_map_stats &se_stats, bamxx::bam_header &hdr,
+                      bamxx::bam_out &out, ProgressBar &progress) {
   const auto counter_st(cbegin(abismal_index.counter));
   const auto counter_t_st(cbegin(abismal_index.counter_t));
   const auto counter_a_st(cbegin(abismal_index.counter_a));
@@ -1590,10 +1588,10 @@ format_time_in_sec(const double t) {
 }
 
 template<const conversion_type conv, const bool random_pbat> static void
-run_single_ended(const bool VERBOSE, const bool show_progress,
-                 const bool allow_ambig, const string &reads_file,
-                 const AbismalIndex &abismal_index, se_map_stats &se_stats,
-                 bamxx::bam_header &hdr, bamxx::bam_out &out) {
+run_single_ended(const bool show_progress, const bool allow_ambig,
+                 const string &reads_file, const AbismalIndex &abismal_index,
+                 se_map_stats &se_stats, bamxx::bam_header &hdr,
+                 bamxx::bam_out &out) {
   ReadLoader rl(reads_file);
   ProgressBar progress(get_filesize(reads_file), "mapping reads");
 
@@ -1602,11 +1600,11 @@ run_single_ended(const bool VERBOSE, const bool show_progress,
 #pragma omp parallel for
   for (int i = 0; i < omp_get_num_threads(); ++i) {
     if (random_pbat)
-      map_single_ended_rand(VERBOSE, show_progress, allow_ambig, abismal_index,
-                            rl, se_stats, hdr, out, progress);
+      map_single_ended_rand(show_progress, allow_ambig, abismal_index, rl,
+                            se_stats, hdr, out, progress);
     else
-      map_single_ended<conv>(VERBOSE, show_progress, allow_ambig, abismal_index,
-                             rl, se_stats, hdr, out, progress);
+      map_single_ended<conv>(show_progress, allow_ambig, abismal_index, rl,
+                             se_stats, hdr, out, progress);
   }
   if (show_progress) {
     print_with_time("reads mapped: " + to_string(rl.get_current_read()));
@@ -1794,9 +1792,9 @@ map_fragments(const uint32_t max_candidates, const string &read1,
 }
 
 template<const conversion_type conv> static void
-map_paired_ended(const bool VERBOSE, const bool show_progress,
-                 const bool allow_ambig, const AbismalIndex &abismal_index,
-                 ReadLoader &rl1, ReadLoader &rl2, pe_map_stats &pe_stats,
+map_paired_ended(const bool show_progress, const bool allow_ambig,
+                 const AbismalIndex &abismal_index, ReadLoader &rl1,
+                 ReadLoader &rl2, pe_map_stats &pe_stats,
                  bamxx::bam_header &hdr, bamxx::bam_out &out,
                  ProgressBar &progress) {
   const auto counter_st(begin(abismal_index.counter));
@@ -1960,9 +1958,9 @@ map_paired_ended(const bool VERBOSE, const bool show_progress,
 }
 
 static void
-map_paired_ended_rand(const bool VERBOSE, const bool show_progress,
-                      const bool allow_ambig, const AbismalIndex &abismal_index,
-                      ReadLoader &rl1, ReadLoader &rl2, pe_map_stats &pe_stats,
+map_paired_ended_rand(const bool show_progress, const bool allow_ambig,
+                      const AbismalIndex &abismal_index, ReadLoader &rl1,
+                      ReadLoader &rl2, pe_map_stats &pe_stats,
                       bamxx::bam_header &hdr, bamxx::bam_out &out,
                       ProgressBar &progress) {
   const auto counter_st(begin(abismal_index.counter));
@@ -2135,11 +2133,10 @@ map_paired_ended_rand(const bool VERBOSE, const bool show_progress,
 }
 
 template<const conversion_type conv, const bool random_pbat> static void
-run_paired_ended(const bool VERBOSE, const bool show_progress,
-                 const bool allow_ambig, const string &reads_file1,
-                 const string &reads_file2, const AbismalIndex &abismal_index,
-                 pe_map_stats &pe_stats, bamxx::bam_header &hdr,
-                 bamxx::bam_out &out) {
+run_paired_ended(const bool show_progress, const bool allow_ambig,
+                 const string &reads_file1, const string &reads_file2,
+                 const AbismalIndex &abismal_index, pe_map_stats &pe_stats,
+                 bamxx::bam_header &hdr, bamxx::bam_out &out) {
   ReadLoader rl1(reads_file1);
   ReadLoader rl2(reads_file2);
   ProgressBar progress(get_filesize(reads_file1), "mapping reads");
@@ -2149,12 +2146,12 @@ run_paired_ended(const bool VERBOSE, const bool show_progress,
 #pragma omp parallel for
   for (int i = 0; i < omp_get_num_threads(); ++i) {
     if (random_pbat)
-      map_paired_ended_rand(VERBOSE, show_progress, allow_ambig, abismal_index,
-                            rl1, rl2, pe_stats, hdr, out, progress);
+      map_paired_ended_rand(show_progress, allow_ambig, abismal_index, rl1, rl2,
+                            pe_stats, hdr, out, progress);
 
     else
-      map_paired_ended<conv>(VERBOSE, show_progress, allow_ambig, abismal_index,
-                             rl1, rl2, pe_stats, hdr, out, progress);
+      map_paired_ended<conv>(show_progress, allow_ambig, abismal_index, rl1,
+                             rl2, pe_stats, hdr, out, progress);
   }
   if (show_progress) {
     print_with_time("reads mapped: " + to_string(rl1.get_current_read()));
@@ -2383,31 +2380,28 @@ abismal(int argc, const char **argv) {
 
     if (reads_file2.empty()) {
       if (GA_conversion || pbat_mode)
-        run_single_ended<a_rich, false>(VERBOSE, show_progress, allow_ambig,
-                                        reads_file, abismal_index, se_stats,
-                                        hdr, out);
+        run_single_ended<a_rich, false>(show_progress, allow_ambig, reads_file,
+                                        abismal_index, se_stats, hdr, out);
       else if (random_pbat)
-        run_single_ended<t_rich, true>(VERBOSE, show_progress, allow_ambig,
-                                       reads_file, abismal_index, se_stats, hdr,
-                                       out);
+        run_single_ended<t_rich, true>(show_progress, allow_ambig, reads_file,
+                                       abismal_index, se_stats, hdr, out);
       else
-        run_single_ended<t_rich, false>(VERBOSE, show_progress, allow_ambig,
-                                        reads_file, abismal_index, se_stats,
-                                        hdr, out);
+        run_single_ended<t_rich, false>(show_progress, allow_ambig, reads_file,
+                                        abismal_index, se_stats, hdr, out);
     }
     else {
       if (pbat_mode)
-        run_paired_ended<a_rich, false>(VERBOSE, show_progress, allow_ambig,
-                                        reads_file, reads_file2, abismal_index,
-                                        pe_stats, hdr, out);
+        run_paired_ended<a_rich, false>(show_progress, allow_ambig, reads_file,
+                                        reads_file2, abismal_index, pe_stats,
+                                        hdr, out);
       else if (random_pbat)
-        run_paired_ended<t_rich, true>(VERBOSE, show_progress, allow_ambig,
-                                       reads_file, reads_file2, abismal_index,
-                                       pe_stats, hdr, out);
+        run_paired_ended<t_rich, true>(show_progress, allow_ambig, reads_file,
+                                       reads_file2, abismal_index, pe_stats,
+                                       hdr, out);
       else
-        run_paired_ended<t_rich, false>(VERBOSE, show_progress, allow_ambig,
-                                        reads_file, reads_file2, abismal_index,
-                                        pe_stats, hdr, out);
+        run_paired_ended<t_rich, false>(show_progress, allow_ambig, reads_file,
+                                        reads_file2, abismal_index, pe_stats,
+                                        hdr, out);
     }
 
     if (!stats_outfile.empty()) {
