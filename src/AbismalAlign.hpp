@@ -57,43 +57,46 @@ count_insertions(const bam_cigar_t &cigar) {
 // A specific namespace for simple match/mismatch scoring system and a
 // 1 -1 -1 scoring scheme for edit distance.
 namespace simple_aln {
-  static const score_t match = 2;
-  static const score_t mismatch = -3;
-  static const score_t indel = -4;
-  static const std::array<score_t, 2> score_lookup = {match, mismatch};
+static const score_t match = 2;
+static const score_t mismatch = -3;
+static const score_t indel = -4;
+static const std::array<score_t, 2> score_lookup = {match, mismatch};
 
-  inline score_t default_score(const uint32_t len, const score_t diffs) {
-    return match * (len - diffs) + mismatch * diffs;
-  }
+inline score_t
+default_score(const uint32_t len, const score_t diffs) {
+  return match * (len - diffs) + mismatch * diffs;
+}
 
-  inline score_t mismatch_score(const uint8_t q_base, const uint8_t t_base) {
-    return score_lookup[(q_base & t_base) == 0];
-  }
+inline score_t
+mismatch_score(const uint8_t q_base, const uint8_t t_base) {
+  return score_lookup[(q_base & t_base) == 0];
+}
 
-  // edit distance as a function of aln_score and len
-  inline score_t edit_distance(const score_t scr, const uint32_t len,
-                               const bam_cigar_t &cigar) {
-    if (scr == 0) return len;
-    const score_t ins = count_insertions(cigar);
-    const score_t del = count_deletions(cigar);
+// edit distance as a function of aln_score and len
+inline score_t
+edit_distance(const score_t scr, const uint32_t len, const bam_cigar_t &cigar) {
+  if (scr == 0) return len;
+  const score_t ins = count_insertions(cigar);
+  const score_t del = count_deletions(cigar);
 
-    // A = S - (indel_pen) = match*M + mismatch*m
-    // B = len - ins = M + m
-    // m = (match*(len - ins) - A)/(match - mismatch)
-    const score_t A = scr - indel * (ins + del);
-    const score_t mism = (match * (len - ins) - A) / (match - mismatch);
+  // A = S - (indel_pen) = match*M + mismatch*m
+  // B = len - ins = M + m
+  // m = (match*(len - ins) - A)/(match - mismatch)
+  const score_t A = scr - indel * (ins + del);
+  const score_t mism = (match * (len - ins) - A) / (match - mismatch);
 
-    return mism + ins + del;
-  }
+  return mism + ins + del;
+}
 
-  inline score_t best_single_score(const uint32_t readlen) {
-    return match * readlen;
-  }
+inline score_t
+best_single_score(const uint32_t readlen) {
+  return match * readlen;
+}
 
-  inline score_t best_pair_score(const uint32_t readlen1,
-                                 const uint32_t readlen2) {
-    return best_single_score(readlen1) + best_single_score(readlen2);
-  }
+inline score_t
+best_pair_score(const uint32_t readlen1, const uint32_t readlen2) {
+  return best_single_score(readlen1) + best_single_score(readlen2);
+}
 };  // namespace simple_aln
 
 template<score_t (*scr_fun)(const uint8_t, const uint8_t),
@@ -196,8 +199,7 @@ min16(const T a, const T b) {
 
 static score_t
 get_best_score(const std::vector<score_t> &table, const size_t n_cells,
-               const size_t n_col, const size_t t_shift, size_t &best_i,
-               size_t &best_j) {
+               const size_t n_col, size_t &best_i, size_t &best_j) {
   auto best_cell_itr =
     std::max_element(std::begin(table), std::begin(table) + n_cells);
   const size_t best_cell = std::distance(std::begin(table), best_cell_itr);
@@ -355,8 +357,7 @@ AbismalAlign<scr_fun, indel_pen>::align(const score_t diffs,
 
   // locate the end of the alignment as max score
   size_t the_row = 0, the_col = 0;
-  return get_best_score(table, n_cells, bandwidth, q_sz + bandwidth, the_row,
-                        the_col);
+  return get_best_score(table, n_cells, bandwidth, the_row, the_col);
 }
 
 template<score_t (*scr_fun)(const uint8_t, const uint8_t), score_t indel_pen>
@@ -369,8 +370,7 @@ AbismalAlign<scr_fun, indel_pen>::build_cigar_len_and_pos(  // uses cigar
     min16(bw, static_cast<size_t>(2 * min16(diffs, max_diffs) + 1));
   const size_t n_cells = (q_sz + bandwidth) * bandwidth;
   size_t the_row = 0, the_col = 0;
-  const score_t r = get_best_score(table, n_cells, bandwidth, q_sz + bandwidth,
-                                   the_row, the_col);
+  const score_t r = get_best_score(table, n_cells, bandwidth, the_row, the_col);
 
   // GS: unlikely, but possible, case where the score = 0, which
   // degenerates CIGAR string below
