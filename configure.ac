@@ -54,6 +54,18 @@ dnl now we get setup for the right OpenMP flags
 ADS_OPENMP([], [AC_MSG_FAILURE([OpenMP must be installed to build abismal])])
 ])dnl end of OpenMP stuff
 
+
+dnl Optimize for shorter reads by compiling with a smaller window when
+dnl making the index. When abismal loads the index, it compares the
+dnl value with a constant so abismalidx and abismal must both be
+dnl compiled this way to work together.
+AC_ARG_ENABLE([short],
+  [AS_HELP_STRING([--enable-very-short],
+                  [optimize for very short reads @<:@no@:>@])],
+  [enable_very_short=yes], [enable_very_short=no])
+AM_CONDITIONAL([ENABLE_VERY_SHORT], [test "x$enable_very_short" = "xyes"])
+
+
 AC_CONFIG_FILES([
 Makefile
 ])
