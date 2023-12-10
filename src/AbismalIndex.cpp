@@ -851,39 +851,39 @@ write_internal_identifier(FILE *out) {
 
 void
 seed::read(FILE *in) {
-  static const std::string error_msg("failed to read seed data");
-  uint32_t _key_weight = 0;
-  uint32_t _window_size = 0;
-  uint32_t _n_sorting_positions = 0;
+  static constexpr auto error_msg{"failed to read seed data"};
 
   // key_weight
-  if (fread((char *)&_key_weight, sizeof(uint32_t), 1, in) != 1)
+  uint32_t key_weight_from_file = 0;
+  if (fread((char *)&key_weight_from_file, sizeof(uint32_t), 1, in) != 1)
     throw runtime_error(error_msg);
 
-  if (_key_weight != key_weight) {
+  if (key_weight_from_file != key_weight) {
     throw runtime_error(
       "inconsistent k-mer size. Expected: " + to_string(key_weight) +
-      ", got: " + to_string(_key_weight));
+      ", got: " + to_string(key_weight_from_file));
   }
 
   // window_size
-  if (fread((char *)&_window_size, sizeof(uint32_t), 1, in) != 1)
+  uint32_t window_size_from_file = 0;
+  if (fread((char *)&window_size_from_file, sizeof(uint32_t), 1, in) != 1)
     throw runtime_error(error_msg);
 
-  if (_window_size != window_size) {
+  if (window_size_from_file != window_size) {
     throw runtime_error(
       "inconsistent window size size. Expected: " + to_string(window_size) +
-      ", got: " + to_string(_window_size));
+      ", got: " + to_string(window_size_from_file));
   }
 
   // n_sorting_positions
-  if (fread((char *)&_n_sorting_positions, sizeof(uint32_t), 1, in) != 1)
+  uint32_t n_sorting_positions_from_file = 0;
+  if (fread((char *)&n_sorting_positions_from_file, sizeof(uint32_t), 1, in) != 1)
     throw runtime_error(error_msg);
 
-  if (_n_sorting_positions != n_sorting_positions) {
+  if (n_sorting_positions_from_file != n_sorting_positions) {
     throw runtime_error("inconsistent sorting size size. Expected: " +
                         to_string(n_sorting_positions) +
-                        ", got: " + to_string(_n_sorting_positions));
+                        ", got: " + to_string(n_sorting_positions_from_file));
   }
 }
 
