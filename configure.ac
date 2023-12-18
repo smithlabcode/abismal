@@ -60,10 +60,10 @@ dnl making the index. When abismal loads the index, it compares the
 dnl value with a constant so abismalidx and abismal must both be
 dnl compiled this way to work together.
 AC_ARG_ENABLE([short],
-  [AS_HELP_STRING([--enable-very-short],
+  [AS_HELP_STRING([--enable-short],
                   [optimize for very short reads @<:@no@:>@])],
-  [enable_very_short=yes], [enable_very_short=no])
-AM_CONDITIONAL([ENABLE_VERY_SHORT], [test "x$enable_very_short" = "xyes"])
+  [enable_short=yes], [enable_short=no])
+AM_CONDITIONAL([ENABLE_SHORT], [test "x$enable_short" = "xyes"])
 
 
 AC_CONFIG_FILES([
