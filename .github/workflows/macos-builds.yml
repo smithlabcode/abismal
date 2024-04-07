@@ -9,9 +9,9 @@ on:
 
 jobs:
   build:
-    runs-on: macos-13
+    runs-on: macos-12
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v3
       with:
         submodules: recursive
     - name: Update Homebrew
