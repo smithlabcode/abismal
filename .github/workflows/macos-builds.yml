@@ -9,9 +9,7 @@ on:
 
 jobs:
   build:
-
     runs-on: macos-14
-
     steps:
     - uses: actions/checkout@v4
       with:
@@ -24,7 +22,7 @@ jobs:
       run: brew install htslib gsl
     - name: Generate configure script
       run: ./autogen.sh
-    - name: configure with g++-12
-      run: ./configure CXX="g++-12" CPPFLAGS="-I$(brew --prefix)/include" LDFLAGS="-L$(brew --prefix)/lib"
+    - name: configure with g++-13
+      run: ./configure CXX="g++-13" CPPFLAGS="-I$(brew --prefix)/include" LDFLAGS="-L$(brew --prefix)/lib"
     - name: make
       run: make
