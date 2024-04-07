@@ -1,4 +1,4 @@
-name: Abismal builds on macOS
+name: Abismal builds on macOS (x86)
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-13
     steps:
     - uses: actions/checkout@v4
       with:
