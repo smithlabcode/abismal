@@ -159,11 +159,9 @@ is_insertion(const uint8_t c) {
 
 static inline void
 get_traceback(const size_t n_col, const std::vector<score_t> &table,
-              // const std::vector<uint8_t> &traceback,
               const std::vector<int8_t> &traceback,
               std::vector<uint32_t> &cigar, size_t &the_row, size_t &the_col) {
   int8_t prev_arrow = traceback[the_row * n_col + the_col];
-  // int8_t prev_arrow = traceback[the_row * n_col + the_col];
   const bool is_del = is_deletion(prev_arrow);
   const bool is_ins = is_insertion(prev_arrow);
   the_row -= !is_ins;
@@ -211,8 +209,15 @@ get_best_score(const std::vector<score_t> &table, const size_t n_cells,
 // ADS: it seems like with g++-13, on macos ventura on intel hardware
 // the dynamic vectorized optimization of -O3 might be too aggressive
 // and makes this function have strange behavior. Placing this pragma
-// here helps, and below we restore it to the `-O3` default.
-#pragma GCC optimize("vect-cost-model=very-cheap")
+// here helps, and below we restore it to the `-O3` default. Probably
+// should move to attribute syntax soon.
+
+#ifdef __APPLE__
+#pragma GCC push_options
+// ADS: below this won't make sense if the user wants no optimizations
+// at all...
+#pragma GCC optimize ("O2")
+#endif
 
 template<score_t (*scr_fun)(const uint8_t, const uint8_t), class T,
          class QueryConstItr>
@@ -284,7 +289,9 @@ from_left(T left_itr, T target, const T target_end, U traceback) {
   }
 }
 
-#pragma GCC optimize("vect-cost-model=dynamic")
+#ifdef __APPLE__
+#pragma GCC pop_options
+#endif
 
 inline void
 make_default_cigar(const uint32_t len, std::string &cigar) {
@@ -323,7 +330,7 @@ AbismalAlign<scr_fun, indel_pen>::align(const score_t diffs,
 
   // points to relevant reference sequence positions
   genome_iterator t_itr = target + t_beg;
-  const auto q_itr(std::begin(qseq));
+  const auto q_itr(std::cbegin(qseq));
   auto tb_cur(std::begin(traceback));
 
   // prev and cur point to rows in the alignment matrix
