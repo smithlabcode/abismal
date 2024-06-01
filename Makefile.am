@@ -1,6 +1,6 @@
 # This file is part of abismal
 #
-# Copyright (C) 2018-2023: Andrew D. Smith and Guilherme de Sena Brandine
+# Copyright (C) 2018-2024: Andrew D. Smith and Guilherme de Sena Brandine
 #
 # Authors: Andrew D. Smith and Guilherme de Sena Brandine
 #
