@@ -206,21 +206,15 @@ get_best_score(const std::vector<score_t> &table, const size_t n_cells,
   return *best_cell_itr;
 }
 
-// ADS: it seems like with g++-13, on macos ventura on intel hardware
-// the dynamic vectorized optimization of -O3 might be too aggressive
-// and makes this function have strange behavior. Placing this pragma
-// here helps, and below we restore it to the `-O3` default. Probably
-// should move to attribute syntax soon.
-
-#ifdef __APPLE__
-#pragma GCC push_options
-// ADS: below this won't make sense if the user wants no optimizations
-// at all...
-#pragma GCC optimize ("O2")
-#endif
+// ADS: it seems like with some versions of GCC, the optimization from
+// `-O3`, which seems to include loop vectorizations, breaks the
+// function below and the other overload named `from_diag`
+// below. Using the __attribute__ helps with GCC, and it should be
+// ignored if not supported.
 
 template<score_t (*scr_fun)(const uint8_t, const uint8_t), class T,
          class QueryConstItr>
+__attribute__((optimize("no-tree-loop-vectorize")))
 void
 from_diag(T next_row, const T next_row_end, T cur_row, QueryConstItr query_seq,
           uint8_t ref_base) {
@@ -251,6 +245,7 @@ from_left(T left_itr, T target, const T target_end) {
 /********* SAME FUNCTIONS AS ABOVE BUT WITH TRACEBACK ********/
 template<score_t (*scr_fun)(const uint8_t, const uint8_t), class T,
          class QueryConstItr, class U>
+__attribute__((optimize("no-tree-loop-vectorize")))
 void
 from_diag(T next_row, const T next_row_end, T cur_row, QueryConstItr query_seq,
           uint8_t ref_base, U traceback) {
@@ -289,9 +284,6 @@ from_left(T left_itr, T target, const T target_end, U traceback) {
   }
 }
 
-#ifdef __APPLE__
-#pragma GCC pop_options
-#endif
 
 inline void
 make_default_cigar(const uint32_t len, std::string &cigar) {
