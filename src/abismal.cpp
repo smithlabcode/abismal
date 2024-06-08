@@ -1002,8 +1002,10 @@ check_hits(const uint32_t offset, const PackedRead::const_iterator read_st,
            vector<uint32_t>::const_iterator start_idx, result_type &res) {
   for (; start_idx != end_idx && !res.sure_ambig; ++start_idx) {
     // GS: adds the next candidate to L1d cache while current is compared
+#ifdef __SSE__
     _mm_prefetch(&(*(genome_st + ((*(start_idx + 10) - offset) >> 4))),
                  _MM_HINT_T0);
+#endif
     const uint32_t the_pos = *start_idx - offset;
     /* GS: the_pos & 15u tells if the position is a multiple of 16, in
      * which case it is aligned with the genome. Otherwise we need to
