@@ -26,6 +26,8 @@ jobs:
       run: ./configure CXX="g++"
     - name: make with g++
       run: make
+    - name: test
+      run: make check
     - name: cleanup after GCC
       run: make distclean
     - name: install Clang dependencies
