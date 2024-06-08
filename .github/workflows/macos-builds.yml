@@ -25,4 +25,4 @@ jobs:
     - name: configure with g++-13
       run: ./configure CXX="g++-13" CPPFLAGS="-I$(brew --prefix)/include" LDFLAGS="-L$(brew --prefix)/lib"
     - name: make
-      run: make CXXFLAGS="-Wl,-ld_classic"
+      run: make
