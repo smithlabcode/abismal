@@ -26,3 +26,7 @@ jobs:
       run: ./configure CXX="g++-13" CPPFLAGS="-I$(brew --prefix)/include" LDFLAGS="-L$(brew --prefix)/lib"
     - name: make
       run: make CXXFLAGS="-O3 -DNDEBUG -Wl,-ld_classic"
+    - name: Run tests
+      run: make check
+    - name: Cleanup after build and test
+      run: make distclean
