@@ -1662,11 +1662,12 @@ format_time_in_sec(const double t) {
 }
 
 template<const conversion_type conv, const bool random_pbat> static void
-run_single_ended(const bool show_progress, const bool allow_ambig,
+run_single_ended(const string &adaptor_sequence,
+                 const bool show_progress, const bool allow_ambig,
                  const string &reads_file, const AbismalIndex &abismal_index,
                  se_map_stats &se_stats, bamxx::bam_header &hdr,
                  bamxx::bam_out &out) {
-  ReadLoader rl(reads_file);
+  ReadLoader rl(reads_file, adaptor_sequence);
   ProgressBar progress(get_filesize(reads_file), "mapping reads");
 
   const auto start_time = omp_get_wtime();
@@ -2207,12 +2208,13 @@ map_paired_ended_rand(const bool show_progress, const bool allow_ambig,
 }
 
 template<const conversion_type conv, const bool random_pbat> static void
-run_paired_ended(const bool show_progress, const bool allow_ambig,
+run_paired_ended(const string &adaptor_sequence,
+                 const bool show_progress, const bool allow_ambig,
                  const string &reads_file1, const string &reads_file2,
                  const AbismalIndex &abismal_index, pe_map_stats &pe_stats,
                  bamxx::bam_header &hdr, bamxx::bam_out &out) {
-  ReadLoader rl1(reads_file1);
-  ReadLoader rl2(reads_file2);
+  ReadLoader rl1(reads_file1, adaptor_sequence);
+  ReadLoader rl2(reads_file2, adaptor_sequence);
   ProgressBar progress(get_filesize(reads_file1), "mapping reads");
 
   double start_time = omp_get_wtime();
@@ -2361,6 +2363,8 @@ abismal(int argc, const char **argv) {
            << endl;
       return EXIT_SUCCESS;
     }
+    if (!trim_adaptors)
+      adaptor_sequence.clear();
 
     const string reads_file = leftover_args.front();
     string reads_file2;
@@ -2461,26 +2465,26 @@ abismal(int argc, const char **argv) {
 
     if (reads_file2.empty()) {
       if (GA_conversion || pbat_mode)
-        run_single_ended<a_rich, false>(show_progress, allow_ambig, reads_file,
+        run_single_ended<a_rich, false>(adaptor_sequence, show_progress, allow_ambig, reads_file,
                                         abismal_index, se_stats, hdr, out);
       else if (random_pbat)
-        run_single_ended<t_rich, true>(show_progress, allow_ambig, reads_file,
+        run_single_ended<t_rich, true>(adaptor_sequence, show_progress, allow_ambig, reads_file,
                                        abismal_index, se_stats, hdr, out);
       else
-        run_single_ended<t_rich, false>(show_progress, allow_ambig, reads_file,
+        run_single_ended<t_rich, false>(adaptor_sequence, show_progress, allow_ambig, reads_file,
                                         abismal_index, se_stats, hdr, out);
     }
     else {
       if (pbat_mode)
-        run_paired_ended<a_rich, false>(show_progress, allow_ambig, reads_file,
+        run_paired_ended<a_rich, false>(adaptor_sequence, show_progress, allow_ambig, reads_file,
                                         reads_file2, abismal_index, pe_stats,
                                         hdr, out);
       else if (random_pbat)
-        run_paired_ended<t_rich, true>(show_progress, allow_ambig, reads_file,
+        run_paired_ended<t_rich, true>(adaptor_sequence, show_progress, allow_ambig, reads_file,
                                        reads_file2, abismal_index, pe_stats,
                                        hdr, out);
       else
-        run_paired_ended<t_rich, false>(show_progress, allow_ambig, reads_file,
+        run_paired_ended<t_rich, false>(adaptor_sequence, show_progress, allow_ambig, reads_file,
                                         reads_file2, abismal_index, pe_stats,
                                         hdr, out);
     }
