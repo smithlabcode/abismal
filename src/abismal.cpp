@@ -1,4 +1,4 @@
-/* Copyright (C) 2018-2023 Andrew D. Smith and Guilherme Sena
+/* Copyright (C) 2018-2024 Andrew D. Smith and Guilherme Sena
  *
  * Authors: Andrew D. Smith and Guilherme Sena
  *
@@ -95,7 +95,76 @@ get_strand_code(const char strand, const conversion_type conv) {
           ((conv == a_rich) ? bsflags::read_is_a_rich : 0));
 }
 
+
+struct adaptor_trimmer {
+  adaptor_trimmer() {}
+  adaptor_trimmer(const string &adaptor, const double min_frac,
+                  const double min_ltrs)
+      : adaptor{adaptor}, min_frac{min_frac}, min_ltrs{min_ltrs},
+        n{static_cast<uint32_t>(adaptor.size())}, d_delta{1.0 - min_frac},
+        d_max_init{static_cast<double>(n) * d_delta} {}
+
+  adaptor_trimmer(const string &adaptor)
+    : adaptor{adaptor},
+      n{static_cast<uint32_t>(adaptor.size())}, d_delta{1.0 - min_frac},
+      d_max_init{static_cast<double>(n) * d_delta} {}
+
+  string adaptor{};
+  double min_frac{0.9};
+  double min_ltrs{1};
+  uint32_t n{};
+  double d_delta{};
+  double d_max_init{};
+
+  // Just the naive algorithm for string matching with bounded
+  // mismatches. I have not tested if this is any kind of bottleneck.
+  uint32_t
+  naive_matching(const string &read) const {
+    const uint32_t m = read.size();
+    const uint32_t i_lim1 = (n > m) ? 0 : m + 1 - n;
+    double d_max = d_max_init;
+
+    for (uint32_t i = 0; i < i_lim1; ++i) {
+      uint32_t d = 0;
+      uint32_t j = 0;
+      while (d <= d_max && j < n) {
+        d += (read[i + j] != adaptor[j]);
+        ++j;
+      }
+      if (d <= d_max)
+        return i;
+    }
+
+    const uint32_t i_lim2 = m + 1 - min_ltrs;
+    uint32_t j_lim = m - i_lim1;
+    for (uint32_t i = i_lim1; i < i_lim2; ++i) {
+      d_max -= d_delta;
+      uint32_t d = 0;
+      uint32_t j = 0;
+      while (d <= d_max && j < j_lim) {
+        d += (read[i + j] != adaptor[j]);
+        ++j;
+      }
+      if (d <= d_max)
+        return i;
+      --j_lim;
+    }
+    return m;
+  }
+
+  void operator()(string &read) const {
+    read.resize(naive_matching(read));
+  }
+  operator bool() const {
+    return n > 0;
+  }
+};
+
+
 struct ReadLoader {
+  ReadLoader(const string &fn, const string &adaptor):
+    cur_line{0}, filename{fn}, in{fn, "r"},
+    trimmer(adaptor) {}
   ReadLoader(const string &fn): cur_line{0}, filename{fn}, in{fn, "r"} {}
 
   bool good() const { return in; }
@@ -135,8 +204,10 @@ struct ReadLoader {
           while (line.back() == 'N') line.pop_back();      // remove Ns from 3'
           line = line.substr(line.find_first_of("ACGT"));  // removes Ns from 5'
         }
+        if (trimmer) trimmer(line);
         reads.emplace_back(line);
       }
+
       ++line_count;
       ++cur_line;
     }
@@ -145,6 +216,7 @@ struct ReadLoader {
   uint32_t cur_line;
   string filename;
   bamxx::bgzf_file in;
+  adaptor_trimmer trimmer;
 
   static const size_t batch_size;
   static const uint32_t min_read_length;
@@ -2222,6 +2294,9 @@ abismal(int argc, const char **argv) {
     string outfile("-");
     string stats_outfile = "";
 
+    string adaptor_sequence{"AGATCGGAAGAGC"};
+    bool trim_adaptors = false;
+
     /****************** COMMAND LINE OPTIONS ********************/
     OptionParser opt_parse(strip_path(argv[0]), "map bisulfite converted reads",
                            "<reads-fq1> [<reads-fq2>]");
@@ -2244,6 +2319,10 @@ abismal(int argc, const char **argv) {
                       false, se_element::valid_frac);
     opt_parse.add_opt("ambig", 'a', "report a posn for ambiguous mappers",
                       false, allow_ambig);
+    opt_parse.add_opt("trim", '\0', "trim adaptors from reads",
+                      false, trim_adaptors);
+    opt_parse.add_opt("adap", '\0', "use this as adaptor",
+                      false, adaptor_sequence);
     opt_parse.add_opt("pbat", 'P', "input follows the PBAT protocol", false,
                       pbat_mode);
     opt_parse.add_opt("random-pbat", 'R', "input follows random PBAT protocol",
