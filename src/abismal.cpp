@@ -152,8 +152,78 @@ struct adaptor_trimmer {
     return m;
   }
 
-  void operator()(string &read) const {
-    read.resize(naive_matching(read));
+  // Find the positions in the read where quality scores indicate the
+  // read should be trimmed. This is copied from cutadapt source.
+  void
+  qual_trim(const string &qual,
+            int32_t cut_front,
+            int32_t cut_back,
+            uint32_t &start, uint32_t &stop) const {
+    const int32_t QUAL_BASE = 33; // assumes base quality starts at 33
+
+    /* ADS: COPIED FROM cutadapt SOURCE */
+    uint32_t n = static_cast<uint32_t>(qual.size());
+
+    //  find trim position for 5' end
+    start = 0;
+    int32_t s = 0;
+    int32_t max_qual = 0;
+
+    if (cut_front > 0) {
+      cut_front += QUAL_BASE;
+      for (auto i = 0u; i < n; ++i) {
+        s += (cut_front + QUAL_BASE) - static_cast<int32_t>(qual[i]);
+        if (s < 0)
+          break;
+        if (s > max_qual) {
+          max_qual = s;
+          start = i + 1;
+        }
+      }
+    }
+    // same for 3' end
+    stop = n;
+    max_qual = 0;
+    s = 0;
+    cut_back = cut_back + QUAL_BASE;
+    for (auto i = n; i > 0; --i) {
+      s += cut_back - static_cast<int32_t>(qual[i - 1]);
+      if (s < 0) {
+        break;
+      }
+      if (s > max_qual) {
+        max_qual = s;
+        stop = i - 1;
+      }
+    }
+    if (start >= stop) {
+      start = 0;
+      stop = 0;
+    }
+  }
+
+  void operator()(string &qual, string &read) const {
+    // std::cout << qual << std::endl;
+    // std::cout << read << std::endl;
+    uint32_t qstart = 0;
+    uint32_t qstop = 0;
+    qual_trim(qual, 0, 20, qstart, qstop);
+    // std::cout << qstart << '\t' << qstop << std::endl;
+    uint32_t nstart = read.find_first_not_of("N");
+    uint32_t nstop = read.find_last_not_of("N") + 1;
+    // std::cout << nstart << '\t' << nstop << std::endl;
+    uint32_t stop = std::min(qstop, nstop);
+    // read = read.substr(nstart, stop - nstart); // .resize(stop);
+    uint32_t adaptor_start = naive_matching(read.substr(0, stop));
+    // std::cout << adaptor_start << std::endl;
+    stop = std::min(stop, adaptor_start);
+    // read.resize(naive_matching(read));
+    nstop = read.substr(0, stop).find_last_not_of("N") + 1;
+    stop = std::min(stop, nstop);
+    read.resize(nstop);
+    uint32_t start = std::min(std::max(qstart, nstart), stop);
+    // std::cout << start << '\t' << stop << std::endl;
+    read = read.substr(start, stop - start);
   }
   operator bool() const {
     return n > 0;
@@ -182,36 +252,38 @@ struct ReadLoader {
     size_t line_count = 0;
     const size_t num_lines_to_read = 4 * batch_size;
     string line;
+    string qual;
+    string read;
     while (line_count < num_lines_to_read && getline(in, line)) {
-      if (line_count % 4 == 0) {
+      if (line_count % 4 == 3) {
+        qual.swap(line);
+
+        // read too long, may pass the end of the genome
+        if (read.size() >= seed::padding_size)
+          throw runtime_error(
+            "found a read of size " + to_string(read.size()) +
+            ", which is too long. Maximum allowed read size = " +
+            to_string(seed::padding_size));
+
+        if (count_if(cbegin(read), cend(read),
+                     [](const char c) { return c != 'N'; }) < min_read_length)
+          read.clear();
+        else {
+          trimmer(qual, read);
+          if (read.size() < min_read_length)
+            read.clear();
+        }
+        reads.emplace_back(read);
+      }
+      else if (line_count % 4 == 0) {
         if (line.empty())
           throw runtime_error("file " + filename + " contains an empty " +
                               "read name at line " + to_string(cur_line));
         names.emplace_back(line.substr(1, line.find_first_of(" \t") - 1));
       }
       else if (line_count % 4 == 1) {
-        // read too long, may pass the end of the genome
-        if (line.size() >= seed::padding_size)
-          throw runtime_error(
-            "found a read of size " + to_string(line.size()) +
-            ", which is too long. Maximum allowed read size = " +
-            to_string(seed::padding_size));
-
-        if (count_if(cbegin(line), cend(line),
-                     [](const char c) { return c != 'N'; }) < min_read_length)
-          line.clear();
-        else {
-          while (line.back() == 'N') line.pop_back();      // remove Ns from 3'
-          line = line.substr(line.find_first_of("ACGT"));  // removes Ns from 5'
-        }
-        if (trimmer) {
-          trimmer(line);
-          if (line.size() < min_read_length)
-            line.clear();
-        }
-        reads.emplace_back(line);
+        read.swap(line);
       }
-
       ++line_count;
       ++cur_line;
     }
