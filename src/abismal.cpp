@@ -204,7 +204,11 @@ struct ReadLoader {
           while (line.back() == 'N') line.pop_back();      // remove Ns from 3'
           line = line.substr(line.find_first_of("ACGT"));  // removes Ns from 5'
         }
-        if (trimmer) trimmer(line);
+        if (trimmer) {
+          trimmer(line);
+          if (line.size() < min_read_length)
+            line.clear();
+        }
         reads.emplace_back(line);
       }
 
