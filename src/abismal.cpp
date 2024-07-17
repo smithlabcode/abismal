@@ -79,6 +79,7 @@ typedef vector<element_t> PackedRead;  // 4-bit encoding of reads
 enum conversion_type { t_rich = false, a_rich = true };
 
 static const runtime_error bam_write_err{"error writing bam"};
+static int32_t max_frag_len = 10000;
 
 static inline void
 swap(bam_rec &a, bam_rec &b) {
@@ -2195,7 +2196,7 @@ map_paired_ended(const bool show_progress, const bool allow_ambig,
           if (!bam_is_rev(mr2[i])) swap(mr1[i], mr2[i]);
           bam_rec merged;
           const int32_t frag_len = merge_mates(mr1[i], mr2[i], merged);
-          if (frag_len > 0 && frag_len < static_cast<int32_t>(pe_element::max_dist)) {
+          if (frag_len > 0 && frag_len < max_frag_len) {
             if (is_a_rich(merged)) flip_conversion(merged);
             if (!out.write(hdr, merged)) throw bam_write_err;
           }
@@ -2392,7 +2393,7 @@ map_paired_ended_rand(const bool show_progress, const bool allow_ambig,
           if (!bam_is_rev(mr2[i])) swap(mr1[i], mr2[i]);
           bam_rec merged;
           const auto frag_len = merge_mates(mr1[i], mr2[i], merged);
-          if (frag_len > 0 && frag_len < static_cast<int32_t>(pe_element::max_dist)) {
+          if (frag_len > 0 && frag_len < max_frag_len) {
             if (is_a_rich(merged)) flip_conversion(merged);
             if (!out.write(hdr, merged)) throw bam_write_err;
           }
