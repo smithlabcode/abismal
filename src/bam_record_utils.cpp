@@ -22,7 +22,6 @@
 #include <stdexcept>
 #include <string>
 
-#include "dnmt_error.hpp"
 #include "smithlab_utils.hpp"
 
 using std::runtime_error;
