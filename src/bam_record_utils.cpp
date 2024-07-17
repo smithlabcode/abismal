@@ -233,7 +233,7 @@ bam_set1_wrapper(bam1_t *bam, const size_t l_qname, const char *qname,
   if (data_len + l_aux > bam->m_data) {
     const int ret = sam_realloc_bam_data(bam, data_len + l_aux);
     if (ret < 0)
-      throw runtime_error(ret, "Failed to allocate memory for BAM record");
+      throw runtime_error("Failed to allocate memory for BAM record");
   }
   auto data_iter = bam->data;
 
@@ -592,7 +592,7 @@ truncate_overlap(const bam1_t *a, const uint32_t overlap, bam1_t *c) {
                              isize,         // rlen from new cigar
                              c_seq_len,     // truncated seq length
                              8);            // enough for the 2 tags?
-  if (ret < 0) throw runtime_error(ret, "bam_set1_wrapper");
+  if (ret < 0) throw runtime_error("bam_set1_wrapper");
 
   const size_t n_bytes_to_copy = (c_seq_len + 1) / 2;  // compression
   std::copy_n(bam_get_seq(a), n_bytes_to_copy, bam_get_seq(c));
@@ -601,12 +601,12 @@ truncate_overlap(const bam1_t *a, const uint32_t overlap, bam1_t *c) {
   const int64_t nm = bam_aux2i(bam_aux_get(a, "NM"));  // ADS: do better here!
   // "_udpate" for "int" because it determines the right size
   ret = bam_aux_update_int(c, "NM", nm);
-  if (ret < 0) throw runtime_error(ret, "bam_aux_update_int");
+  if (ret < 0) throw runtime_error("bam_aux_update_int");
 
   const uint8_t conversion = bam_aux2A(bam_aux_get(a, "CV"));
   // "_append" for "char" because there is no corresponding update
   ret = bam_aux_append(c, "CV", 'A', 1, &conversion);
-  if (ret < 0) throw runtime_error(ret, "bam_aux_append");
+  if (ret < 0) throw runtime_error("bam_aux_append");
 
   return ret;
 }
@@ -688,7 +688,7 @@ merge_overlap(const bam1_t *a, const bam1_t *b, const uint32_t head,
                              isize,         // updated
                              c_seq_len,     // merged sequence length
                              8);            // enough for 2 tags?
-  if (ret < 0) throw runtime_error(ret, "bam_set1_wrapper in merge_overlap");
+  if (ret < 0) throw runtime_error("bam_set1_wrapper in merge_overlap");
   // Merge the sequences by bytes
   merge_by_byte(a, b, c);
 
@@ -696,12 +696,12 @@ merge_overlap(const bam1_t *a, const bam1_t *b, const uint32_t head,
   const int64_t nm =
     (bam_aux2i(bam_aux_get(a, "NM")) + bam_aux2i(bam_aux_get(b, "NM")));
   ret = bam_aux_update_int(c, "NM", nm);
-  if (ret < 0) throw runtime_error(ret, "bam_aux_update_int in merge_overlap");
+  if (ret < 0) throw runtime_error("bam_aux_update_int in merge_overlap");
 
   // add the tag for conversion
   const uint8_t cv = bam_aux2A(bam_aux_get(a, "CV"));
   ret = bam_aux_append(c, "CV", 'A', 1, &cv);
-  if (ret < 0) throw runtime_error(ret, "bam_aux_append in merge_overlap");
+  if (ret < 0) throw runtime_error("bam_aux_append in merge_overlap");
 
   return ret;
 }
@@ -755,7 +755,7 @@ merge_non_overlap(const bam1_t *a, const bam1_t *b, const uint32_t spacer,
                              isize,  // TLEN (relative to reference; SAM docs)
                              c_seq_len,  // merged sequence length
                              8);         // enough for 2 tags of 1 byte value?
-  if (ret < 0) throw runtime_error(ret, "bam_set1 in merge_non_overlap");
+  if (ret < 0) throw runtime_error("bam_set1 in merge_non_overlap");
 
   merge_by_byte(a, b, c);
 
@@ -764,12 +764,12 @@ merge_non_overlap(const bam1_t *a, const bam1_t *b, const uint32_t spacer,
     (bam_aux2i(bam_aux_get(a, "NM")) + bam_aux2i(bam_aux_get(b, "NM")));
   // "udpate" for "int" because it determines the right size
   ret = bam_aux_update_int(c, "NM", nm);
-  if (ret < 0) throw runtime_error(ret, "merge_non_overlap:bam_aux_update_int");
+  if (ret < 0) throw runtime_error("merge_non_overlap:bam_aux_update_int");
 
   const uint8_t cv = bam_aux2A(bam_aux_get(a, "CV"));
   // "append" for "char" because there is no corresponding update
   ret = bam_aux_append(c, "CV", 'A', 1, &cv);
-  if (ret < 0) throw runtime_error(ret, "merge_non_overlap:bam_aux_append");
+  if (ret < 0) throw runtime_error("merge_non_overlap:bam_aux_append");
 
   return ret;
 }
@@ -831,12 +831,12 @@ standardize_format(const string &input_format, bam1_t *aln) {
     // though we just deleted all tags, it will add it back here
     err_code = bam_aux_update_int(aln, "NM", nm);
     if (err_code < 0)
-      throw runtime_error(err_code, "error setting NM in bsmap format");
+      throw runtime_error("error setting NM in bsmap format");
 
     // "append" for "char" because there is no corresponding update
     err_code = bam_aux_append(aln, "CV", 'A', 1, &cv);
     if (err_code < 0)
-      throw runtime_error(err_code, "error setting conversion in bsmap format");
+      throw runtime_error("error setting conversion in bsmap format");
 
     // reverse complement if needed
     if (bam_is_rev(aln)) revcomp_seq_by_byte(aln);
@@ -861,10 +861,10 @@ standardize_format(const string &input_format, bam1_t *aln) {
     // "udpate" for "int" because it determines the right size; even
     // though we just deleted all tags, it will add it back here.
     err_code = bam_aux_update_int(aln, "NM", nm);
-    if (err_code < 0) throw runtime_error(err_code, "bam_aux_update_int");
+    if (err_code < 0) throw runtime_error("bam_aux_update_int");
     // "append" for "char" because there is no corresponding update
     err_code = bam_aux_append(aln, "CV", 'A', 1, &cv);
-    if (err_code < 0) throw runtime_error(err_code, "bam_aux_append");
+    if (err_code < 0) throw runtime_error("bam_aux_append");
 
     if (bam_is_rev(aln))
       revcomp_seq_by_byte(aln);  // reverse complement if needed
