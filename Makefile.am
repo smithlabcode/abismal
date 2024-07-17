@@ -51,11 +51,13 @@ libabismal_a_SOURCES = \
 	src/abismal.cpp \
 	src/abismalidx.cpp \
 	src/AbismalIndex.cpp \
+	src/bam_record_utils.cpp \
 	src/simreads.cpp
 
 libabismal_a_SOURCES += \
 	src/abismal.hpp \
 	src/abismalidx.hpp \
+	src/bam_record_utils.hpp \
 	src/simreads.hpp \
 	src/AbismalAlign.hpp \
 	src/AbismalIndex.hpp \
