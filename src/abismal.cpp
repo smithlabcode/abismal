@@ -78,8 +78,6 @@ typedef vector<element_t> PackedRead;  // 4-bit encoding of reads
 
 enum conversion_type { t_rich = false, a_rich = true };
 
-
-static int32_t max_frag_len = 10000;
 static const runtime_error bam_write_err{"error writing bam"};
 
 static inline void
@@ -1816,8 +1814,11 @@ map_single_ended_rand(const bool show_progress, const bool allow_ambig,
 #pragma omp critical
     {
       for (size_t i = 0; i < n_reads; ++i)
-        if (valid_bam_rec(mr[i]) && !out.write(hdr, mr[i]))
-          throw runtime_error("failed to write bam");
+        if (valid_bam_rec(mr[i])) {
+          if (is_a_rich(mr[i])) flip_conversion(mr[i]);
+          if (!out.write(hdr, mr[i]))
+            throw runtime_error("failed to write bam");
+        }
     }
     for (size_t i = 0; i < n_reads; ++i) {
       if (valid_bam_rec(mr[i])) reset_bam_rec(mr[i]);
@@ -2190,21 +2191,19 @@ map_paired_ended(const bool show_progress, const bool allow_ambig,
     {
       for (size_t i = 0; i < n_reads; ++i) {
         if (valid_bam_rec(mr1[i]) && valid_bam_rec(mr2[i])) {
-          bam_rec &prev_aln = mr1[i];
-          bam_rec &aln = mr2[i];
-          bam_rec merged;
           // below: essentially check for dovetail
-          if (!bam_is_rev(aln)) swap(prev_aln, aln);
-          const auto frag_len = merge_mates(prev_aln, aln, merged);
-          if (frag_len > 0 && frag_len < max_frag_len) {
+          if (!bam_is_rev(mr2[i])) swap(mr1[i], mr2[i]);
+          bam_rec merged;
+          const int32_t frag_len = merge_mates(mr1[i], mr2[i], merged);
+          if (frag_len > 0 && frag_len < static_cast<int32_t>(pe_element::max_dist)) {
             if (is_a_rich(merged)) flip_conversion(merged);
             if (!out.write(hdr, merged)) throw bam_write_err;
           }
           else {
-            if (is_a_rich(prev_aln)) flip_conversion(prev_aln);
-            if (!out.write(hdr, prev_aln)) throw bam_write_err;
-            if (is_a_rich(aln)) flip_conversion(aln);
-            if (!out.write(hdr, aln)) throw bam_write_err;
+            if (is_a_rich(mr1[i])) flip_conversion(mr1[i]);
+            if (!out.write(hdr, mr1[i])) throw bam_write_err;
+            if (is_a_rich(mr2[i])) flip_conversion(mr2[i]);
+            if (!out.write(hdr, mr2[i])) throw bam_write_err;
           }
         }
         else {
@@ -2388,10 +2387,32 @@ map_paired_ended_rand(const bool show_progress, const bool allow_ambig,
 #pragma omp critical
     {
       for (size_t i = 0; i < n_reads; ++i) {
-        if (valid_bam_rec(mr1[i]) && !out.write(hdr, mr1[i]))
-          throw runtime_error("failed to write bam");
-        if (valid_bam_rec(mr2[i]) && !out.write(hdr, mr2[i]))
-          throw runtime_error("failed to write bam");
+        if (valid_bam_rec(mr1[i]) && valid_bam_rec(mr2[i])) {
+          // below: essentially check for dovetail
+          if (!bam_is_rev(mr2[i])) swap(mr1[i], mr2[i]);
+          bam_rec merged;
+          const auto frag_len = merge_mates(mr1[i], mr2[i], merged);
+          if (frag_len > 0 && frag_len < static_cast<int32_t>(pe_element::max_dist)) {
+            if (is_a_rich(merged)) flip_conversion(merged);
+            if (!out.write(hdr, merged)) throw bam_write_err;
+          }
+          else {
+            if (is_a_rich(mr1[i])) flip_conversion(mr1[i]);
+            if (!out.write(hdr, mr1[i])) throw bam_write_err;
+            if (is_a_rich(mr2[i])) flip_conversion(mr2[i]);
+            if (!out.write(hdr, mr2[i])) throw bam_write_err;
+          }
+        }
+        else {
+          if (valid_bam_rec(mr1[i])) {
+            if (is_a_rich(mr1[i])) flip_conversion(mr1[i]);
+            if (!out.write(hdr, mr1[i])) throw bam_write_err;
+          }
+          if (valid_bam_rec(mr2[i])) {
+            if (is_a_rich(mr2[i])) flip_conversion(mr2[i]);
+            if (!out.write(hdr, mr2[i])) throw bam_write_err;
+          }
+        }
       }
     }
     for (size_t i = 0; i < n_reads; ++i) {
