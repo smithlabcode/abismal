@@ -307,26 +307,18 @@ struct adaptor_trimmer {
   }
 
   void operator()(string &qual, string &read) const {
-    // std::cout << qual << std::endl;
-    // std::cout << read << std::endl;
     uint32_t qstart = 0;
     uint32_t qstop = 0;
     qual_trim(qual, 0, 20, qstart, qstop);
-    // std::cout << qstart << '\t' << qstop << std::endl;
     uint32_t nstart = read.find_first_not_of("N");
     uint32_t nstop = read.find_last_not_of("N") + 1;
-    // std::cout << nstart << '\t' << nstop << std::endl;
     uint32_t stop = std::min(qstop, nstop);
-    // read = read.substr(nstart, stop - nstart); // .resize(stop);
     uint32_t adaptor_start = naive_matching(read.substr(0, stop));
-    // std::cout << adaptor_start << std::endl;
     stop = std::min(stop, adaptor_start);
-    // read.resize(naive_matching(read));
     nstop = read.substr(0, stop).find_last_not_of("N") + 1;
     stop = std::min(stop, nstop);
     read.resize(nstop);
     uint32_t start = std::min(std::max(qstart, nstart), stop);
-    // std::cout << start << '\t' << stop << std::endl;
     read = read.substr(start, stop - start);
   }
   operator bool() const {
@@ -373,7 +365,8 @@ struct ReadLoader {
                      [](const char c) { return c != 'N'; }) < min_read_length)
           read.clear();
         else {
-          trimmer(qual, read);
+          if (trimmer)
+            trimmer(qual, read);
           if (read.size() < min_read_length)
             read.clear();
         }
