@@ -290,14 +290,14 @@ struct adaptor_trimmer {
     max_qual = 0;
     s = 0;
     cut_back = cut_back + QUAL_BASE;
-    for (auto i = n; i > 0; --i) {
-      s += cut_back - static_cast<int32_t>(qual[i - 1]);
+    for (int32_t i = n - 1; i >= 0; --i) {
+      s += cut_back - static_cast<int32_t>(qual[i]);
       if (s < 0) {
         break;
       }
       if (s > max_qual) {
         max_qual = s;
-        stop = i - 1;
+        stop = i;
       }
     }
     if (start >= stop) {
