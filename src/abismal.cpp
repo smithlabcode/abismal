@@ -361,15 +361,12 @@ struct ReadLoader {
             ", which is too long. Maximum allowed read size = " +
             to_string(seed::padding_size));
 
-        if (count_if(cbegin(read), cend(read),
+        if (trimmer)
+          trimmer(qual, read);
+        if (read.size() < min_read_length ||
+            count_if(cbegin(read), cend(read),
                      [](const char c) { return c != 'N'; }) < min_read_length)
           read.clear();
-        else {
-          if (trimmer)
-            trimmer(qual, read);
-          if (read.size() < min_read_length)
-            read.clear();
-        }
         reads.emplace_back(read);
       }
       else if (line_count % 4 == 0) {
