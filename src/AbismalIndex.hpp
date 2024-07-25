@@ -70,7 +70,7 @@ namespace seed {
   // window in which we select the best k-mer. The longer it is,
   // the longer the minimum read length that guarantees an exact
   // match will be mapped
-#ifdef ENABLE_VERY_SHORT
+#ifdef ENABLE_SHORT
   static const uint32_t window_size = 12u;
 #else
   static const uint32_t window_size = 20u;
