@@ -16,94 +16,94 @@
  * General Public License for more details.
  */
 
+#include "OptionParser.hpp"
 #include "smithlab_os.hpp"
 #include "smithlab_utils.hpp"
-#include "OptionParser.hpp"
 
-#include "simreads.hpp"
 #include "AbismalIndex.hpp"
 #include "cigar_utils.hpp"
 #include "sam_record.hpp"
+#include "simreads.hpp"
 
-#include <iostream>
+#include <algorithm>
+#include <cstdint>  // for the int8_t and friends
 #include <fstream>
+#include <functional>
+#include <iostream>
+#include <random>
+#include <stdexcept>
 #include <string>
 #include <vector>
-#include <stdexcept>
-#include <random>
-#include <functional>
-#include <algorithm>
-#include <cstdint> // for the int8_t and friends
 
-#include <unistd.h>
+#include <unistd.h>  // getpid()
 
-using std::vector;
-using std::runtime_error;
-using std::string;
 using std::cerr;
 using std::endl;
 using std::function;
-using std::istream;
-using std::ostream;
 using std::ifstream;
-using std::ofstream;
-using std::ostringstream;
+using std::istream;
 using std::istringstream;
+using std::ofstream;
+using std::ostream;
+using std::ostringstream;
+using std::runtime_error;
+using std::string;
 using std::to_string;
+using std::vector;
 
+template <typename T> using num_lim = std::numeric_limits<T>;
 
 namespace simreads_random {
-  // ADS: I made this namespace and functions because different
-  // implementations of rand() on different OS meant that even with
-  // the same seed, the results could be different. This meant testing
-  // didn't work.
-  bool initialized = false;
-  std::default_random_engine e;
-  std::uniform_real_distribution<double> dr;
-  std::uniform_int_distribution<int> di;
-  void initialize(const size_t the_seed) {
-    e = std::default_random_engine(the_seed);
-    initialized = true;
-  }
-  int rand() {
-    assert(initialized);
-    // ADS: should have same range as ordinary rand() by properties of
-    // std::uniform_int_distribution default constructor.
-    return di(e);
-  }
-  double rand_double() { // ADS: in the interval [0, 1]
-    assert(initialized);
-    // ADS: default constructor for std::uniform_real_distribution
-    // sets a range of [0,1)
-    return dr(e);
-  }
+// ADS: I made this namespace and functions because different
+// implementations of rand() on different OS meant that even with
+// the same seed, the results could be different. This meant testing
+// didn't work.
+bool initialized = false;
+std::default_random_engine e;
+std::uniform_real_distribution<double> dr;
+std::uniform_int_distribution<int> di;
+void
+initialize(const size_t the_seed) {
+  e = std::default_random_engine(the_seed);
+  initialized = true;
 }
-
+int
+rand() {
+  assert(initialized);
+  // ADS: should have same range as ordinary rand() by properties of
+  // std::uniform_int_distribution default constructor.
+  return di(e);
+}
+double
+rand_double() {  // ADS: in the interval [0, 1]
+  assert(initialized);
+  // ADS: default constructor for std::uniform_real_distribution
+  // sets a range of [0,1)
+  return dr(e);
+}
+}  // namespace simreads_random
 
 static string
 format_fastq_record(const string &name, const string &read) {
   assert(!name.empty());
   ostringstream oss;
-  oss << '@' << name << endl << read << endl
-      << '+' << endl << string(read.length(), 'B');
+  oss << '@' << name << endl
+      << read << endl
+      << '+' << endl
+      << string(read.length(), 'B');
   return oss.str();
 }
 
-
 struct FragInfo {
-  void set_sequential_name() {
-    name = "read" + to_string(frag_count++);
-  }
-  string
-  read1() const {
+  void set_sequential_name() { name = "read" + to_string(frag_count++); }
+  string read1() const {
     assert(!name.empty());
     string read = seq.substr(0, read_length);
     for (size_t i = 0; i < read_length - read.length(); ++i)
       read += random_base();
     return format_fastq_record(name + ".1", read);
   }
-  string
-  read2() const {
+  string read2() const {
     assert(!name.empty());
     string read(seq);
     revcomp_inplace(read);
@@ -112,10 +112,9 @@ struct FragInfo {
       read += random_base();
     return format_fastq_record(name + ".2", read);
   }
-  void
-  erase_info_through_insert() {
+  void erase_info_through_insert() {
     const size_t orig_ref_len = end_pos - start_pos;
-    if (2*read_length < seq.length()) {
+    if (2 * read_length < seq.length()) {
       string cigar2(cigar);
       truncate_cigar_q(cigar, read_length);
       reverse_cigar(begin(cigar2), end(cigar2));
@@ -123,20 +122,15 @@ struct FragInfo {
       reverse_cigar(begin(cigar2), end(cigar2));
       const size_t rseq_ops = cigar_rseq_ops(cigar) + cigar_rseq_ops(cigar2);
       cigar = cigar + to_string(orig_ref_len - rseq_ops) + "N" + cigar2;
-      seq = seq.substr(0, read_length) +
-        string(orig_ref_len - rseq_ops, 'N') +
-        seq.substr(seq.length() - read_length, read_length);
-
+      seq = seq.substr(0, read_length) + string(orig_ref_len - rseq_ops, 'N') +
+            seq.substr(seq.length() - read_length, read_length);
     }
   }
-  void
-  remove_cigar_match_symbols() {
+  void remove_cigar_match_symbols() {
     replace(begin(cigar), end(cigar), '=', 'M');
     merge_equal_neighbor_cigar_ops(cigar);
   }
-  void
-  bisulfite_conversion(const bool random_pbat,
-                       const double bs_conv) {
+  void bisulfite_conversion(const bool random_pbat, const double bs_conv) {
     if (pbat || (random_pbat && simreads_random::rand_double() < 0.5)) {
       for (auto it(begin(seq)); it != end(seq); ++it) {
         if (*it == 'G' && (simreads_random::rand_double() < bs_conv))
@@ -171,7 +165,6 @@ bool FragInfo::pbat = false;
 size_t FragInfo::frag_count = 0;
 size_t FragInfo::read_length = 100;
 
-
 static ostream &
 operator<<(ostream &out, FragInfo &the_info) {
   const bool rc = the_info.rc();
@@ -181,12 +174,14 @@ operator<<(ostream &out, FragInfo &the_info) {
   samflags::set(flags_read, samflags::read_paired);
   samflags::set(flags_read, samflags::read_pair_mapped);
   samflags::set(flags_read, samflags::template_first);
-  samflags::set(flags_read, the_info.rc() ? samflags::read_rc : samflags::mate_rc);
+  samflags::set(flags_read,
+                the_info.rc() ? samflags::read_rc : samflags::mate_rc);
 
   samflags::set(flags_mate, samflags::read_paired);
   samflags::set(flags_mate, samflags::read_pair_mapped);
   samflags::set(flags_mate, samflags::template_last);
-  samflags::set(flags_mate, the_info.rc() ? samflags::mate_rc : samflags::read_rc);
+  samflags::set(flags_mate,
+                the_info.rc() ? samflags::mate_rc : samflags::read_rc);
 
   const size_t read_pos = the_info.start_pos + 1;
   const size_t mate_pos = the_info.end_pos - FragInfo::read_length + 1;
@@ -210,64 +205,47 @@ operator<<(ostream &out, FragInfo &the_info) {
   const size_t pos1 = rc ? mate_pos : read_pos;
   const size_t pos2 = rc ? read_pos : mate_pos;
 
-  return out << the_info.name << ".1\t"
-             << flags_read << '\t'
-             << the_info.chrom << '\t'
-             << pos1 << '\t'
-             << "255\t"
-             << cigar1 << '\t'
-             << "=\t"
-             << pos2 << "\t"
-             << tlen << '\t'
-             << seq1 << "\t"
+  return out << the_info.name << ".1\t" << flags_read << '\t' << the_info.chrom
+             << '\t' << pos1 << '\t' << "255\t" << cigar1 << '\t' << "=\t"
+             << pos2 << "\t" << tlen << '\t' << seq1 << "\t"
              << "*" << endl
 
-             << the_info.name << ".2\t"
-             << flags_mate << '\t'
-             << the_info.chrom << '\t'
-             << pos2 << '\t'
-             << "255\t"
-             << cigar2 << '\t'
-             << "=\t"
-             << pos1 << "\t"
-             << -tlen << '\t'
-             << seq2 << "\t"
+             << the_info.name << ".2\t" << flags_mate << '\t' << the_info.chrom
+             << '\t' << pos2 << '\t' << "255\t" << cigar2 << '\t' << "=\t"
+             << pos1 << "\t" << -tlen << '\t' << seq2 << "\t"
              << "*";
 }
 
-
 // extract the position of the fragment checking all bases are valid
 static void
-sim_frag_position(const string &genome, const size_t frag_len,
-                  string &the_frag, size_t &the_position) {
-  static auto is_invalid = [](const char c) {return !valid_base(c);};
+sim_frag_position(const string &genome, const size_t frag_len, string &the_frag,
+                  size_t &the_position) {
+  static auto is_invalid = [](const char c) { return !valid_base(c); };
 
   const size_t lim = genome.length() - frag_len + 1;
   do {
     the_position = simreads_random::rand() % lim;
     the_frag = string(begin(genome) + the_position,
                       begin(genome) + the_position + frag_len);
-  }
-  while (find_if(begin(the_frag), end(the_frag), is_invalid) != end(the_frag));
+  } while (find_if(begin(the_frag), end(the_frag), is_invalid) !=
+           end(the_frag));
 }
-
 
 // simulate from a uniform distribution in a range
 static size_t
 sim_frag_length(const size_t min_length, const size_t max_length) {
   assert(max_length >= min_length);
-  if (min_length == max_length) return min_length;
+  if (min_length == max_length)
+    return min_length;
   const size_t diff = max_length - min_length;
   return min_length + (simreads_random::rand() % diff);
 }
-
 
 struct FragSampler {
   FragSampler(const string &g, const ChromLookup c, const char sc,
               const size_t milen, const size_t malen) :
     genome(g), cl(c), strand_code(sc), min_length(milen), max_length(malen) {}
-  void
-  sample_fragment(FragInfo &the_info) const {
+  void sample_fragment(FragInfo &the_info) const {
     const size_t frag_len = sim_frag_length(min_length, max_length);
     sim_frag_position(genome, frag_len, the_info.seq, the_info.start_pos);
 
@@ -277,17 +255,21 @@ struct FragSampler {
     the_info.start_pos = offset;
 
     the_info.end_pos = the_info.start_pos + frag_len;
-    the_info.set_sequential_name(); // default
-    the_info.strand = sim_strand(); // based on frag code
+    the_info.set_sequential_name();  // default
+    the_info.strand = sim_strand();  // based on frag code
     if (the_info.strand == '-')
       revcomp_inplace(the_info.seq);
-    the_info.cigar = to_string(frag_len) + "M"; // default, no muts
+    the_info.cigar = to_string(frag_len) + "M";  // default, no muts
   }
   char sim_strand() const {
-    if (strand_code == 'f') return '+';
-    else if (strand_code == 'r') return '-';
-    else if (strand_code == 'b') return (simreads_random::rand() & 1) ? '+' : '-';
-    else throw runtime_error("bad strand code: " + to_string(strand_code));
+    if (strand_code == 'f')
+      return '+';
+    else if (strand_code == 'r')
+      return '-';
+    else if (strand_code == 'b')
+      return (simreads_random::rand() & 1) ? '+' : '-';
+    else
+      throw runtime_error("bad strand code: " + to_string(strand_code));
     return '\0';
   }
   const string &genome;
@@ -297,12 +279,13 @@ struct FragSampler {
   size_t max_length;
 };
 
-
 struct FragMutator {
   FragMutator(const double m, const double s, const double i, const double d) :
-    mutation_rate(m), substitution_rate(s),
-    insertion_rate(i), deletion_rate(d) {
-    const double total = substitution_rate + insertion_rate + deletion_rate;
+    mutation_rate(m), substitution_rate(s), insertion_rate(i),
+    deletion_rate(d) {
+    const double total =
+      std::max(substitution_rate + insertion_rate + deletion_rate,
+               num_lim<double>::min());
     substitution_rate /= total;
     insertion_rate /= total;
     deletion_rate /= total;
@@ -332,24 +315,28 @@ struct FragMutator {
         ++the_info.score;
         ++i;
       }
-      else { //if (mut == '=') {
+      else {  // if (mut == '=') {
         cigar += "=";
         seq += the_info.seq[i];
         ++i;
       }
     }
-    the_info.cigar.resize(2*cigar.size());
+    the_info.cigar.resize(2 * cigar.size());
     compress_cigar(begin(cigar), end(cigar), the_info.cigar);
     swap(seq, the_info.seq);
   }
   char sample_mutation() const {
-    const double x  = simreads_random::rand_double();
-    if (x > mutation_rate) return '=';
+    const double x = simreads_random::rand_double();
+    if (x > mutation_rate)
+      return '=';
     else {
-      const double y  = simreads_random::rand_double();
-      if (y < substitution_rate) return 'M';
-      else if (y < insertion_rate) return 'I';
-      else return 'D';
+      const double y = simreads_random::rand_double();
+      if (y < substitution_rate)
+        return 'M';
+      else if (y < insertion_rate)
+        return 'I';
+      else
+        return 'D';
     }
   }
   string tostring() const {
@@ -360,17 +347,15 @@ struct FragMutator {
         << "deletion_rate=" << deletion_rate;
     return oss.str();
   }
-  double mutation_rate;
-  double substitution_rate;
-  double insertion_rate;
-  double deletion_rate;
+  double mutation_rate{};
+  double substitution_rate{};
+  double insertion_rate{};
+  double deletion_rate{};
 };
-
 
 static void
 extract_change_type_vals(const string &change_type_vals,
-                         double &substitution_rate,
-                         double &insertion_rate,
+                         double &substitution_rate, double &insertion_rate,
                          double &deletion_rate) {
   if (!change_type_vals.empty()) {
     istringstream iss(change_type_vals);
@@ -382,7 +367,6 @@ extract_change_type_vals(const string &change_type_vals,
     iss >> deletion_rate;
   }
 }
-
 
 int
 simreads(int argc, const char **argv) {
@@ -404,7 +388,7 @@ simreads(int argc, const char **argv) {
 
     char strand_arg = 'b';
 
-    size_t rng_seed = std::numeric_limits<size_t>::max();
+    size_t rng_seed = num_lim<size_t>::max();
 
     double mutation_rate = 0.0;
     string change_type_vals;
@@ -414,35 +398,36 @@ simreads(int argc, const char **argv) {
 
     double bs_conv = 1.0;
 
-    size_t max_mutations = std::numeric_limits<size_t>::max();
+    size_t max_mutations = num_lim<size_t>::max();
 
     /****************** COMMAND LINE OPTIONS ********************/
-    OptionParser opt_parse(strip_path(argv[0]), "simulate reads for "
-                           "testing walt2", "<reference-genome-fasta>", 1);
+    OptionParser opt_parse(strip_path(argv[0]),
+                           "simulate reads for "
+                           "testing walt2",
+                           "<reference-genome-fasta>", 1);
     opt_parse.set_show_defaults();
     opt_parse.add_opt("out", 'o', "output file prefix", true, output_prefix);
     opt_parse.add_opt("single", '\0', "output single end", false, single_end);
     opt_parse.add_opt("loc", '\0', "write locations", false, write_locations);
-    opt_parse.add_opt("read-len", 'l', "read length", false, FragInfo::read_length);
-    opt_parse.add_opt("min-fraglen", '\0', "min fragment length",
-                      false, min_frag_len);
-    opt_parse.add_opt("max-fraglen", '\0', "max fragment length",
-                      false, max_frag_len);
+    opt_parse.add_opt("read-len", 'l', "read length", false,
+                      FragInfo::read_length);
+    opt_parse.add_opt("min-fraglen", '\0', "min fragment length", false,
+                      min_frag_len);
+    opt_parse.add_opt("max-fraglen", '\0', "max fragment length", false,
+                      max_frag_len);
     opt_parse.add_opt("n-reads", 'n', "number of reads", false, n_reads);
     opt_parse.add_opt("mut", 'm', "mutation rate", false, mutation_rate);
-    opt_parse.add_opt("bis", 'b', "bisulfite conversion rate", false,\
-                      bs_conv);
+    opt_parse.add_opt("bis", 'b', "bisulfite conversion rate", false, bs_conv);
     opt_parse.add_opt("show-matches", '\0', "show match symbols in cigar",
                       false, show_cigar_matches);
-    opt_parse.add_opt("changes", 'c',
-                      "change types (comma sep relative vals)",
+    opt_parse.add_opt("changes", 'c', "change types (comma sep relative vals)",
                       false, change_type_vals);
     opt_parse.add_opt("max-mut", 'M', "max mutations", false, max_mutations);
     opt_parse.add_opt("pbat", 'a', "pbat", false, FragInfo::pbat);
     opt_parse.add_opt("random-pbat", 'R', "random pbat", false, random_pbat);
     opt_parse.add_opt("strand", 's', "strand {f, r, b}", false, strand_arg);
-    opt_parse.add_opt("seed", '\0', "rng seed (default: from system)",
-                      false, rng_seed);
+    opt_parse.add_opt("seed", '\0', "rng seed (default: from system)", false,
+                      rng_seed);
     opt_parse.add_opt("verbose", 'v', "print more run info", false, VERBOSE);
     vector<string> leftover_args;
     opt_parse.parse(argc, argv, leftover_args);
@@ -465,12 +450,12 @@ simreads(int argc, const char **argv) {
     const string genome_file(leftover_args.front());
     /****************** END COMMAND LINE OPTIONS *****************/
 
-    extract_change_type_vals(change_type_vals,
-                             substitution_rate, insertion_rate, deletion_rate);
+    extract_change_type_vals(change_type_vals, substitution_rate,
+                             insertion_rate, deletion_rate);
 
-    if (rng_seed == std::numeric_limits<size_t>::max()) {
+    if (rng_seed == num_lim<size_t>::max())
       rng_seed = time(0) + getpid();
-    }
+
     if (VERBOSE)
       cerr << "rng seed: " << rng_seed << endl;
     simreads_random::initialize(rng_seed);
@@ -484,73 +469,63 @@ simreads(int argc, const char **argv) {
     ChromLookup cl;
     load_genome(genome_file, genome, cl);
     transform(begin(genome), end(genome), begin(genome),
-              [](unsigned char c){return toupper(c);});
+              [](unsigned char c) { return toupper(c); });
 
-
-    FragSampler frag_samp(genome, cl, strand_arg, min_frag_len, max_frag_len);
-    if (VERBOSE)
-      cerr << "[constructed fragment sampler]" << endl;
-    if (VERBOSE)
-      cerr << "[simulating clean frags]" << endl;
-    vector<FragInfo> the_info(n_reads);
-    for (size_t i = 0; i < n_reads; ++i)
-      frag_samp.sample_fragment(the_info[i]);
-
-    if (VERBOSE)
-      cerr << "[mutating the frags]" << endl;
-    FragMutator frag_mut(mutation_rate, substitution_rate,
-                         insertion_rate, deletion_rate);
-
-    for (size_t i = 0; i < the_info.size(); ++i)
-      frag_mut.mutate(the_info[i]);
-
-    for (size_t i = 0; i < the_info.size(); ++i)
-      the_info[i].bisulfite_conversion(random_pbat, bs_conv);
-
-    if (!show_cigar_matches)
-      for (size_t i = 0; i < the_info.size(); ++i)
-        the_info[i].remove_cigar_match_symbols();
-
-
+    ofstream loc_out;
     if (write_locations) {
-      const string locations_file = output_prefix + ".sam";
       if (VERBOSE)
-        cerr << "[writing frag locations: " << locations_file << "]" << endl;
-      ofstream loc_out(locations_file);
+        cerr << "[opening frag locations file: " << locations_file << "]"
+             << endl;
+      loc_out.open(locations_file);
       if (!loc_out)
-        throw runtime_error("bad locations file: " + locations_file);
-      for (size_t i = 0; i < the_info.size(); ++i) {
-        loc_out << the_info[i] << endl;
-      }
+        throw runtime_error("bad locations output file: " + locations_file);
     }
 
     const string read1_outfile = output_prefix + "_1.fq";
     if (VERBOSE)
-      cerr << "[writing read1 fastq: " << read1_outfile << "]" << endl;
+      cerr << "[opening read1 fastq: " << read1_outfile << "]" << endl;
     ofstream read1_out(read1_outfile);
     if (!read1_out)
       throw runtime_error("bad output file: " + read1_outfile);
-    for (size_t i = 0; i < the_info.size(); ++i)
-      read1_out << the_info[i].read1() << endl;
 
-
+    ofstream read2_out;
     if (!single_end) {
       const string read2_outfile = output_prefix + "_2.fq";
       if (VERBOSE)
-        cerr << "[writing read2 fastq: " << read2_outfile << "]" << endl;
-      ofstream read2_out(read2_outfile);
+        cerr << "[opening read2 fastq: " << read2_outfile << "]" << endl;
+      read2_out.open(read2_outfile);
       if (!read2_out)
         throw runtime_error("bad output file: " + read2_outfile);
-      for (size_t i = 0; i < the_info.size(); ++i)
-        read2_out << the_info[i].read2() << endl;
+    }
+
+    FragSampler frag_samp(genome, cl, strand_arg, min_frag_len, max_frag_len);
+    if (VERBOSE)
+      cerr << "[constructed fragment sampler]" << endl;
+
+    FragMutator frag_mut(mutation_rate, substitution_rate, insertion_rate,
+                         deletion_rate);
+    if (VERBOSE)
+      cerr << "[constructed mutator]" << endl;
+
+    if (VERBOSE)
+      cerr << "[simulating frags]" << endl;
+
+    for (size_t i = 0; i < n_reads; ++i) {
+      FragInfo info;
+      frag_samp.sample_fragment(info);
+      frag_mut.mutate(info);
+      info.bisulfite_conversion(random_pbat, bs_conv);
+      if (!show_cigar_matches)
+        info.remove_cigar_match_symbols();
+      if (write_locations)
+        loc_out << info << '\n';
+      read1_out << info.read1() << '\n';
+      if (!single_end)
+        read2_out << info.read2() << '\n';
     }
   }
-  catch (const runtime_error &e) {
+  catch (const std::exception &e) {
     cerr << e.what() << endl;
-    return EXIT_FAILURE;
-  }
-  catch (std::bad_alloc &ba) {
-    cerr << "ERROR: could not allocate memory" << endl;
     return EXIT_FAILURE;
   }
   return EXIT_SUCCESS;
