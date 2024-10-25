@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 Andrew D. Smith
+ * Copyright (C) 2018-2024 Andrew D. Smith
  *
  * Author: Andrew D. Smith
  *
@@ -37,6 +37,8 @@
 
 #include <unistd.h>  // getpid()
 
+using std::cbegin;
+using std::cend;
 using std::cerr;
 using std::endl;
 using std::function;
@@ -238,16 +240,16 @@ operator<<(ostream &out, FragInfo &the_info) {
 // extract the position of the fragment checking all bases are valid
 static void
 sim_frag_position(const string &genome, const size_t frag_len, string &the_frag,
-                  size_t &the_position) {
+                  size_t &the_position, const bool require_valid) {
   static auto is_invalid = [](const char c) { return !valid_base(c); };
 
   const size_t lim = size(genome) - frag_len + 1;
   do {
     the_position = simreads_random::rand() % lim;
-    the_frag = string(begin(genome) + the_position,
-                      begin(genome) + the_position + frag_len);
-  } while (find_if(begin(the_frag), end(the_frag), is_invalid) !=
-           end(the_frag));
+    the_frag = string(cbegin(genome) + the_position,
+                      cbegin(genome) + the_position + frag_len);
+  } while (require_valid && find_if(cbegin(the_frag), cend(the_frag),
+                                    is_invalid) != cend(the_frag));
 }
 
 // simulate from a uniform distribution in a range
@@ -262,11 +264,14 @@ sim_frag_length(const size_t min_length, const size_t max_length) {
 
 struct FragSampler {
   FragSampler(const string &g, const ChromLookup c, const char sc,
-              const size_t milen, const size_t malen) :
-    genome(g), cl(c), strand_code(sc), min_length(milen), max_length(malen) {}
+              const size_t milen, const size_t malen,
+              const bool require_valid) :
+    genome(g), cl(c), strand_code(sc), min_length(milen), max_length(malen),
+    require_valid(require_valid) {}
   void sample_fragment(FragInfo &the_info) const {
     const size_t frag_len = sim_frag_length(min_length, max_length);
-    sim_frag_position(genome, frag_len, the_info.seq, the_info.start_pos);
+    sim_frag_position(genome, frag_len, the_info.seq, the_info.start_pos,
+                      require_valid);
 
     uint32_t offset = 0, chrom_idx = 0;
     cl.get_chrom_idx_and_offset(the_info.start_pos, chrom_idx, offset);
@@ -293,9 +298,10 @@ struct FragSampler {
   }
   const string &genome;
   ChromLookup cl;
-  char strand_code;
-  size_t min_length;
-  size_t max_length;
+  char strand_code{};
+  size_t min_length{};
+  size_t max_length{};
+  bool require_valid{};
 };
 
 struct FragMutator {
@@ -400,6 +406,7 @@ simreads(int argc, const char **argv) {
     bool single_end = false;
     bool show_cigar_matches = true;
     bool random_pbat = false;
+    bool require_valid = false;
 
     size_t n_reads = 100;
     size_t min_frag_len = 100;
@@ -449,6 +456,8 @@ simreads(int argc, const char **argv) {
                       false, FragInfo::fasta_format);
     opt_parse.add_opt("seed", '\0', "rng seed (default: from system)", false,
                       rng_seed);
+    opt_parse.add_opt("require-valid", '\0', "require valid bases in fragments",
+                      false, require_valid);
     opt_parse.add_opt("verbose", 'v', "print more run info", false, VERBOSE);
     vector<string> leftover_args;
     opt_parse.parse(argc, argv, leftover_args);
@@ -529,7 +538,8 @@ simreads(int argc, const char **argv) {
         throw runtime_error("bad output file: " + read2_outfile);
     }
 
-    FragSampler frag_samp(genome, cl, strand_arg, min_frag_len, max_frag_len);
+    FragSampler frag_samp(genome, cl, strand_arg, min_frag_len, max_frag_len,
+                          require_valid);
     if (VERBOSE)
       cerr << "[constructed fragment sampler]" << endl;
 
