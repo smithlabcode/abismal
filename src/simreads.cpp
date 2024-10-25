@@ -47,6 +47,8 @@ using std::ofstream;
 using std::ostream;
 using std::ostringstream;
 using std::runtime_error;
+using std::size;
+using std::size_t;
 using std::string;
 using std::to_string;
 using std::vector;
@@ -83,15 +85,28 @@ rand_double() {  // ADS: in the interval [0, 1]
 }
 }  // namespace simreads_random
 
-static string
+static inline string
 format_fastq_record(const string &name, const string &read) {
   assert(!name.empty());
-  ostringstream oss;
-  oss << '@' << name << endl
-      << read << endl
-      << '+' << endl
-      << string(read.length(), 'B');
-  return oss.str();
+  string s;
+  s += '@';
+  s += name;
+  s += '\n';
+  s += read;
+  s += "\n+\n";
+  s += string(size(read), 'B');
+  return s;
+}
+
+static inline string
+format_fasta_record(const string &name, const string &read) {
+  assert(!name.empty());
+  string s;
+  s += '>';
+  s += name;
+  s += '\n';
+  s += read;
+  return s;
 }
 
 struct FragInfo {
@@ -99,22 +114,24 @@ struct FragInfo {
   string read1() const {
     assert(!name.empty());
     string read = seq.substr(0, read_length);
-    for (size_t i = 0; i < read_length - read.length(); ++i)
+    for (size_t i = 0; i < read_length - size(read); ++i)
       read += random_base();
-    return format_fastq_record(name + ".1", read);
+    return fasta_format ? format_fasta_record(name + ".1", read)
+                        : format_fastq_record(name + ".1", read);
   }
   string read2() const {
     assert(!name.empty());
     string read(seq);
     revcomp_inplace(read);
     read = read.substr(0, read_length);
-    for (size_t i = 0; i < read_length - read.length(); ++i)
+    for (size_t i = 0; i < read_length - size(read); ++i)
       read += random_base();
-    return format_fastq_record(name + ".2", read);
+    return fasta_format ? format_fasta_record(name + ".2", read)
+                        : format_fastq_record(name + ".2", read);
   }
   void erase_info_through_insert() {
     const size_t orig_ref_len = end_pos - start_pos;
-    if (2 * read_length < seq.length()) {
+    if (2 * read_length < size(seq)) {
       string cigar2(cigar);
       truncate_cigar_q(cigar, read_length);
       reverse_cigar(begin(cigar2), end(cigar2));
@@ -123,7 +140,7 @@ struct FragInfo {
       const size_t rseq_ops = cigar_rseq_ops(cigar) + cigar_rseq_ops(cigar2);
       cigar = cigar + to_string(orig_ref_len - rseq_ops) + "N" + cigar2;
       seq = seq.substr(0, read_length) + string(orig_ref_len - rseq_ops, 'N') +
-            seq.substr(seq.length() - read_length, read_length);
+            seq.substr(size(seq) - read_length, read_length);
     }
   }
   void remove_cigar_match_symbols() {
@@ -148,20 +165,22 @@ struct FragInfo {
   bool rc() const { return strand == '-'; }
 
   string chrom;
-  size_t start_pos;
-  size_t end_pos;
+  size_t start_pos{};
+  size_t end_pos{};
   string name;
-  double score;
-  char strand;
+  double score{};
+  char strand{};
   string seq;
   string cigar;
 
   static bool pbat;
+  static bool fasta_format;
   static size_t frag_count;
   static size_t read_length;
 };
 
 bool FragInfo::pbat = false;
+bool FragInfo::fasta_format = false;
 size_t FragInfo::frag_count = 0;
 size_t FragInfo::read_length = 100;
 
@@ -222,7 +241,7 @@ sim_frag_position(const string &genome, const size_t frag_len, string &the_frag,
                   size_t &the_position) {
   static auto is_invalid = [](const char c) { return !valid_base(c); };
 
-  const size_t lim = genome.length() - frag_len + 1;
+  const size_t lim = size(genome) - frag_len + 1;
   do {
     the_position = simreads_random::rand() % lim;
     the_frag = string(begin(genome) + the_position,
@@ -296,7 +315,7 @@ struct FragMutator {
     string seq, cigar;
     size_t i = 0;
     the_info.score = 0;
-    while (i < the_info.seq.length()) {
+    while (i < size(the_info.seq)) {
       // select a mutation or not
       const char mut = sample_mutation();
       if (mut == 'I') {
@@ -426,6 +445,8 @@ simreads(int argc, const char **argv) {
     opt_parse.add_opt("pbat", 'a', "pbat", false, FragInfo::pbat);
     opt_parse.add_opt("random-pbat", 'R', "random pbat", false, random_pbat);
     opt_parse.add_opt("strand", 's', "strand {f, r, b}", false, strand_arg);
+    opt_parse.add_opt("fasta", '\0', "output fasta format (no quality scores)",
+                      false, FragInfo::fasta_format);
     opt_parse.add_opt("seed", '\0', "rng seed (default: from system)", false,
                       rng_seed);
     opt_parse.add_opt("verbose", 'v', "print more run info", false, VERBOSE);
@@ -481,18 +502,28 @@ simreads(int argc, const char **argv) {
         throw runtime_error("bad locations output file: " + locations_file);
     }
 
-    const string read1_outfile = output_prefix + "_1.fq";
-    if (VERBOSE)
-      cerr << "[opening read1 fastq: " << read1_outfile << "]" << endl;
+    const string read1_outfile =
+      output_prefix + (FragInfo::fasta_format ? "_1.fa" : "_1.fq");
+    if (VERBOSE) {
+      if (FragInfo::fasta_format)
+        cerr << "[opening read1 fastq: " << read1_outfile << "]" << endl;
+      else
+        cerr << "[opening read1 fasta: " << read1_outfile << "]" << endl;
+    }
     ofstream read1_out(read1_outfile);
     if (!read1_out)
       throw runtime_error("bad output file: " + read1_outfile);
 
     ofstream read2_out;
     if (!single_end) {
-      const string read2_outfile = output_prefix + "_2.fq";
-      if (VERBOSE)
-        cerr << "[opening read2 fastq: " << read2_outfile << "]" << endl;
+      const string read2_outfile =
+        output_prefix + (FragInfo::fasta_format ? "_2.fa" : "_2.fq");
+      if (VERBOSE) {
+        if (FragInfo::fasta_format)
+          cerr << "[opening read2 fastq: " << read2_outfile << "]" << endl;
+        else
+          cerr << "[opening read2 fasta: " << read2_outfile << "]" << endl;
+      }
       read2_out.open(read2_outfile);
       if (!read2_out)
         throw runtime_error("bad output file: " + read2_outfile);
