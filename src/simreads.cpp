@@ -402,7 +402,6 @@ simreads(int argc, const char **argv) {
     string locations_file;
 
     bool VERBOSE = false;
-    bool write_locations = false;
     bool single_end = false;
     bool show_cigar_matches = true;
     bool random_pbat = false;
@@ -434,7 +433,8 @@ simreads(int argc, const char **argv) {
     opt_parse.set_show_defaults();
     opt_parse.add_opt("out", 'o', "output file prefix", true, output_prefix);
     opt_parse.add_opt("single", '\0', "output single end", false, single_end);
-    opt_parse.add_opt("loc", '\0', "write locations", false, write_locations);
+    opt_parse.add_opt("loc", '\0', "write locations here", false,
+                      locations_file);
     opt_parse.add_opt("read-len", 'l', "read length", false,
                       FragInfo::read_length);
     opt_parse.add_opt("min-fraglen", '\0', "min fragment length", false,
@@ -502,7 +502,7 @@ simreads(int argc, const char **argv) {
               [](unsigned char c) { return toupper(c); });
 
     ofstream loc_out;
-    if (write_locations) {
+    if (!locations_file.empty()) {
       if (VERBOSE)
         cerr << "[opening frag locations file: " << locations_file << "]"
              << endl;
@@ -558,7 +558,7 @@ simreads(int argc, const char **argv) {
       info.bisulfite_conversion(random_pbat, bs_conv);
       if (!show_cigar_matches)
         info.remove_cigar_match_symbols();
-      if (write_locations)
+      if (!locations_file.empty())
         loc_out << info << '\n';
       read1_out << info.read1() << '\n';
       if (!single_end)
