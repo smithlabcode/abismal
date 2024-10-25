@@ -47,8 +47,8 @@ abismalidx(int argc, const char **argv) {
 
   try {
 
-    const string description =
-      string("build abismal index (v") + VERSION + string(")");
+    const string version_str = string("(v") + VERSION + string(")");
+    const string description = "build abismal index " + version_str;
 
     string target_regions_file;
     bool VERBOSE = false;
@@ -67,6 +67,7 @@ abismalidx(int argc, const char **argv) {
     opt_parse.parse(argc, argv, leftover_args);
     if (argc == 1 || opt_parse.help_requested()) {
       cerr << opt_parse.help_message() << endl;
+      cerr << opt_parse.about_message() << endl;
       return EXIT_SUCCESS;
     }
     if (opt_parse.about_requested()) {

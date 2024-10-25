@@ -2261,8 +2261,8 @@ int
 abismal(int argc, const char **argv) {
   try {
 
-    const string description =
-      string("map bisulfite converted reads (v") + VERSION + string(")");
+    const string version_str = string("(v") + VERSION + string(")");
+    const string description = "map bisulfite converted reads " + version_str;
 
     bool VERBOSE = false;
     bool GA_conversion = false;
