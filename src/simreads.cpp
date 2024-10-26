@@ -75,7 +75,8 @@ initialize(const size_t the_seed) {
   e = std::default_random_engine(the_seed);
   initialized = true;
 }
-int
+
+uint64_t
 rand() {
   assert(initialized);
   // ADS: should have same range as ordinary rand() by properties of
@@ -292,7 +293,7 @@ struct FragSampler {
     sim_frag_position(genome, frag_len, the_info.seq, the_info.start_pos,
                       require_valid);
 
-    uint32_t offset = 0, chrom_idx = 0;
+    uint64_t offset = 0, chrom_idx = 0;
     cl.get_chrom_idx_and_offset(the_info.start_pos, chrom_idx, offset);
     the_info.chrom = cl.names[chrom_idx];
     the_info.start_pos = offset;
