@@ -53,6 +53,7 @@ using std::size;
 using std::size_t;
 using std::string;
 using std::to_string;
+using std::uint64_t;
 using std::vector;
 
 template <typename T> using num_lim = std::numeric_limits<T>;
@@ -65,7 +66,7 @@ namespace simreads_random {
 bool initialized = false;
 std::default_random_engine e;
 std::uniform_real_distribution<double> dr;
-std::uniform_int_distribution<int> di;
+std::uniform_int_distribution<uint64_t> di;
 void
 initialize(const size_t the_seed) {
   e = std::default_random_engine(the_seed);
