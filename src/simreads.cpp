@@ -37,9 +37,11 @@
 
 #include <unistd.h>  // getpid()
 
+using std::begin;
 using std::cbegin;
 using std::cend;
 using std::cerr;
+using std::end;
 using std::endl;
 using std::function;
 using std::ifstream;
@@ -53,6 +55,7 @@ using std::size;
 using std::size_t;
 using std::string;
 using std::to_string;
+using std::transform;
 using std::uint64_t;
 using std::vector;
 
@@ -207,7 +210,7 @@ operator<<(ostream &out, FragInfo &the_info) {
 
   const size_t read_pos = the_info.start_pos + 1;
   const size_t mate_pos = the_info.end_pos - FragInfo::read_length + 1;
-  const int tlen = rc ? (-the_info.seq.size()) : (the_info.seq.size());
+  const int tlen = rc ? -size(the_info.seq) : size(the_info.seq);
   string cigar1 = the_info.cigar;
   string cigar2 = the_info.cigar;
 
@@ -227,15 +230,30 @@ operator<<(ostream &out, FragInfo &the_info) {
   const size_t pos1 = rc ? mate_pos : read_pos;
   const size_t pos2 = rc ? read_pos : mate_pos;
 
-  return out << the_info.name << ".1\t" << flags_read << '\t' << the_info.chrom
-             << '\t' << pos1 << '\t' << "255\t" << cigar1 << '\t' << "=\t"
-             << pos2 << "\t" << tlen << '\t' << seq1 << "\t"
-             << "*" << endl
-
-             << the_info.name << ".2\t" << flags_mate << '\t' << the_info.chrom
-             << '\t' << pos2 << '\t' << "255\t" << cigar2 << '\t' << "=\t"
-             << pos1 << "\t" << -tlen << '\t' << seq2 << "\t"
+  // clang-format off
+  return out << the_info.name << ".1" << '\t'
+             << flags_read << '\t'
+             << the_info.chrom << '\t'
+             << pos1 << '\t'
+             << "255" << '\t'
+             << cigar1 << '\t'
+             << "=" << '\t'
+             << pos2 << '\t'
+             << tlen << '\t'
+             << seq1 << '\t'
+             << "*" << '\n'
+             << the_info.name << ".2" << '\t'
+             << flags_mate << '\t'
+             << the_info.chrom << '\t'
+             << pos2 << '\t'
+             << "255" << '\t'
+             << cigar2 << '\t'
+             << "=" << '\t'
+             << pos1 << '\t'
+             << -tlen << '\t'
+             << seq2 << '\t'
              << "*";
+  // clang-format on
 }
 
 // extract the position of the fragment checking all bases are valid
@@ -347,8 +365,8 @@ struct FragMutator {
         ++i;
       }
     }
-    the_info.cigar.resize(2 * cigar.size());
-    compress_cigar(begin(cigar), end(cigar), the_info.cigar);
+    the_info.cigar.resize(2 * size(cigar));
+    compress_cigar(cbegin(cigar), cend(cigar), the_info.cigar);
     swap(seq, the_info.seq);
   }
   char sample_mutation() const {
@@ -474,7 +492,7 @@ simreads(int argc, const char **argv) {
       cerr << opt_parse.option_missing_message() << endl;
       return EXIT_SUCCESS;
     }
-    if (leftover_args.size() != 1) {
+    if (size(leftover_args) != 1) {
       cerr << opt_parse.help_message() << endl;
       return EXIT_SUCCESS;
     }
@@ -499,7 +517,7 @@ simreads(int argc, const char **argv) {
     string genome;
     ChromLookup cl;
     load_genome(genome_file, genome, cl);
-    transform(begin(genome), end(genome), begin(genome),
+    transform(cbegin(genome), cend(genome), begin(genome),
               [](unsigned char c) { return toupper(c); });
 
     ofstream loc_out;
