@@ -15,45 +15,51 @@
  * General Public License for more details.
  */
 
-#include "smithlab_os.hpp"
-#include "smithlab_utils.hpp"
-#include "OptionParser.hpp"
-#include "dna_four_bit.hpp"
-
 #include "abismalidx.hpp"
 #include "AbismalIndex.hpp"
+
+#include "OptionParser.hpp"
+#include "dna_four_bit.hpp"
+#include "smithlab_os.hpp"
+#include "smithlab_utils.hpp"
+
+#include <config.h>
 #include <omp.h>
 
-#include <iostream>
-#include <fstream>
-#include <string>
-#include <vector>
-#include <stdexcept>
 #include <algorithm>
-#include <unordered_set>
 #include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <stdexcept>
+#include <string>
+#include <unordered_set>
+#include <vector>
 
-using std::vector;
-using std::runtime_error;
-using std::string;
 using std::cerr;
 using std::endl;
+using std::runtime_error;
+using std::string;
 using std::unordered_set;
+using std::vector;
 
 int
 abismalidx(int argc, const char **argv) {
 
   try {
+
+    const string version_str = string("(v") + VERSION + string(")");
+    const string description = "build abismal index " + version_str;
+
     string target_regions_file;
     bool VERBOSE = false;
     size_t n_threads = 1;
 
     /****************** COMMAND LINE OPTIONS ********************/
-    OptionParser opt_parse(strip_path(argv[0]), "build abismal index",
+    OptionParser opt_parse(strip_path(argv[0]), description,
                            "<genome-fasta> <abismal-index-file>", 2);
     opt_parse.set_show_defaults();
-    opt_parse.add_opt("targets", 'A', "target regions",
-                      false, target_regions_file);
+    opt_parse.add_opt("targets", 'A', "target regions", false,
+                      target_regions_file);
     opt_parse.add_opt("threads", 't', "number of threads", false, n_threads);
     opt_parse.add_opt("verbose", 'v', "print more run info", false, VERBOSE);
 
@@ -61,6 +67,7 @@ abismalidx(int argc, const char **argv) {
     opt_parse.parse(argc, argv, leftover_args);
     if (argc == 1 || opt_parse.help_requested()) {
       cerr << opt_parse.help_message() << endl;
+      cerr << opt_parse.about_message() << endl;
       return EXIT_SUCCESS;
     }
     if (opt_parse.about_requested()) {
@@ -101,9 +108,9 @@ abismalidx(int argc, const char **argv) {
 
     abismal_index.write(outfile);
     if (VERBOSE)
-      cerr << "[total indexing time: " << omp_get_wtime() - start_time << "]" << endl;
+      cerr << "[total indexing time: " << omp_get_wtime() - start_time << "]"
+           << endl;
     /****************** END BUILDING INDEX *************/
-
   }
   catch (const std::runtime_error &e) {
     cerr << e.what() << endl;
