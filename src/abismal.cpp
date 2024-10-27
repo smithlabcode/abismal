@@ -445,13 +445,15 @@ struct pe_element {
   }
 
   bool update(const score_t scr, const se_element &s1, const se_element &s2) {
-    if (scr > aln_score) {
+    const auto rd = r1.diffs + r2.diffs;
+    const auto sd = s1.diffs + s2.diffs;
+    if (scr > aln_score || (scr == aln_score && sd < rd)) {
       r1 = s1;
       r2 = s2;
       aln_score = scr;
       return true;
     }
-    else if (scr == aln_score) {
+    else if (scr == aln_score && sd == rd) {
       r1.set_ambig();
       return false;
     }
