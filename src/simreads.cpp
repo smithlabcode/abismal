@@ -293,7 +293,8 @@ struct FragSampler {
     sim_frag_position(genome, frag_len, the_info.seq, the_info.start_pos,
                       require_valid);
 
-    uint64_t offset = 0, chrom_idx = 0;
+    uint32_t offset = 0;
+    uint32_t chrom_idx = 0;
     cl.get_chrom_idx_and_offset(the_info.start_pos, chrom_idx, offset);
     the_info.chrom = cl.names[chrom_idx];
     the_info.start_pos = offset;
@@ -306,15 +307,12 @@ struct FragSampler {
     the_info.cigar = to_string(frag_len) + "M";  // default, no muts
   }
   char sim_strand() const {
-    if (strand_code == 'f')
-      return '+';
-    else if (strand_code == 'r')
-      return '-';
-    else if (strand_code == 'b')
-      return (simreads_random::rand() & 1) ? '+' : '-';
-    else
-      throw runtime_error("bad strand code: " + to_string(strand_code));
-    return '\0';
+    switch (strand_code) {
+    case 'f': return '+';
+    case 'r': return '-';
+    case 'b': return (simreads_random::rand() & 1) ? '+' : '-';
+    default: std::abort();
+    }
   }
   const string &genome;
   ChromLookup cl;
