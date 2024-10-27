@@ -66,13 +66,15 @@ namespace simreads_random {
 // implementations of rand() on different OS meant that even with
 // the same seed, the results could be different. This meant testing
 // didn't work.
+
+std::random_device rd;
+std::mt19937 e;
 bool initialized = false;
-std::default_random_engine e;
 std::uniform_real_distribution<double> dr;
 std::uniform_int_distribution<uint64_t> di;
 void
-initialize(const size_t the_seed) {
-  e = std::default_random_engine(the_seed);
+initialize([[maybe_unused]] const size_t the_seed) {
+  e = std::mt19937(the_seed);
   initialized = true;
 }
 
