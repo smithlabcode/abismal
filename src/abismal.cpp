@@ -1,4 +1,4 @@
-/* Copyright (C) 2018-2023 Andrew D. Smith and Guilherme Sena
+/* Copyright (C) 2018-2025 Andrew D. Smith and Guilherme Sena
  *
  * Authors: Andrew D. Smith and Guilherme Sena
  *
@@ -98,15 +98,25 @@ get_strand_code(const char strand, const conversion_type conv) {
 struct ReadLoader {
   ReadLoader(const string &fn) : cur_line{0}, filename{fn}, in{fn, "r"} {}
 
-  bool good() const { return in; }
+  bool
+  good() const {
+    return in;
+  }
 
   operator bool() const { return in; }
 
-  size_t get_current_read() const { return cur_line / 4; }
+  size_t
+  get_current_read() const {
+    return cur_line / 4;
+  }
 
-  size_t get_current_byte() const { return in.tellg(); }
+  size_t
+  get_current_byte() const {
+    return in.tellg();
+  }
 
-  void load_reads(vector<string> &names, vector<string> &reads) {
+  void
+  load_reads(vector<string> &names, vector<string> &reads) {
     reads.clear();
     names.clear();
 
@@ -176,39 +186,60 @@ struct se_element {  // size = 8
   se_element(const score_t d, const flags_t f, const uint32_t p) :
     diffs(d), flags(f), pos(p) {}
 
-  bool operator==(const se_element &rhs) const {
+  bool
+  operator==(const se_element &rhs) const {
     return pos == rhs.pos && flags == rhs.flags;
   }
 
-  bool operator!=(const se_element &rhs) const {
+  bool
+  operator!=(const se_element &rhs) const {
     return pos != rhs.pos || flags != rhs.flags;
   }
 
   // this is used to keep PE candidates sorted in the max heap
-  bool operator<(const se_element &rhs) const { return diffs < rhs.diffs; }
+  bool
+  operator<(const se_element &rhs) const {
+    return diffs < rhs.diffs;
+  }
 
-  inline bool rc() const { return samflags::check(flags, samflags::read_rc); }
+  inline bool
+  rc() const {
+    return samflags::check(flags, samflags::read_rc);
+  }
 
-  inline bool elem_is_a_rich() const {
+  inline bool
+  elem_is_a_rich() const {
     return samflags::check(flags, bsflags::read_is_a_rich);
   }
 
-  inline bool ambig() const {
+  inline bool
+  ambig() const {
     return samflags::check(flags, samflags::secondary_aln);
   }
 
-  inline void set_ambig() { samflags::set(flags, samflags::secondary_aln); }
+  inline void
+  set_ambig() {
+    samflags::set(flags, samflags::secondary_aln);
+  }
 
-  inline bool empty() const { return pos == 0; }
+  inline bool
+  empty() const {
+    return pos == 0;
+  }
 
-  inline bool sure_ambig() const { return ambig() && diffs == 0; }
+  inline bool
+  sure_ambig() const {
+    return ambig() && diffs == 0;
+  }
 
-  inline void reset() {
+  inline void
+  reset() {
     pos = 0;
     diffs = MAX_DIFFS;
   }
 
-  inline void reset(const uint32_t readlen) {
+  inline void
+  reset(const uint32_t readlen) {
     reset();
     diffs = static_cast<score_t>(invalid_hit_frac * readlen);
   }
@@ -260,11 +291,18 @@ struct se_candidates {
   se_candidates() :
     sz(1), best(se_element()), v(vector<se_element>(max_size)) {}
 
-  inline bool full() const { return sz == max_size; };
+  inline bool
+  full() const {
+    return sz == max_size;
+  };
 
-  inline bool has_exact_match() const { return !best.empty(); };
+  inline bool
+  has_exact_match() const {
+    return !best.empty();
+  };
 
-  void update_exact_match(const flags_t s, const uint32_t p) {
+  void
+  update_exact_match(const flags_t s, const uint32_t p) {
     const se_element cand(0, s, p);
     if (best.empty())
       best = cand;  // cand has ambig flag set to false
@@ -273,17 +311,33 @@ struct se_candidates {
       best.set_ambig();
   }
 
-  bool enough_good_hits() const { return full() && good_diff(cutoff); }
+  bool
+  enough_good_hits() const {
+    return full() && good_diff(cutoff);
+  }
 
-  bool good_diff(const score_t d) const { return (d <= good_cutoff); }
+  bool
+  good_diff(const score_t d) const {
+    return (d <= good_cutoff);
+  }
 
-  bool should_do_sensitive() const { return (!full() || !good_diff(cutoff)); }
+  bool
+  should_do_sensitive() const {
+    return (!full() || !good_diff(cutoff));
+  }
 
-  inline void set_specific() { cutoff = good_cutoff; }
+  inline void
+  set_specific() {
+    cutoff = good_cutoff;
+  }
 
-  inline void set_sensitive() { cutoff = v.front().diffs; }
+  inline void
+  set_sensitive() {
+    cutoff = v.front().diffs;
+  }
 
-  void update_cand(const score_t d, const flags_t s, const uint32_t p) {
+  void
+  update_cand(const score_t d, const flags_t s, const uint32_t p) {
     if (full()) {
       pop_heap(begin(v), begin(v) + sz);
       v[sz - 1] = se_element(d, s, p);
@@ -294,8 +348,9 @@ struct se_candidates {
     push_heap(begin(v), begin(v) + sz);
   }
 
-  void update(const bool specific, const score_t d, const flags_t s,
-              const uint32_t p) {
+  void
+  update(const bool specific, const score_t d, const flags_t s,
+         const uint32_t p) {
     if (d == 0)
       update_exact_match(s, p);
     else
@@ -305,7 +360,8 @@ struct se_candidates {
     cutoff = (specific ? min16(cutoff, v.front().diffs) : v.front().diffs);
   }
 
-  void reset() {
+  void
+  reset() {
     best.reset();
     v.front().reset();
 
@@ -315,7 +371,8 @@ struct se_candidates {
     sz = 1;
   }
 
-  void reset(const uint32_t readlen) {
+  void
+  reset(const uint32_t readlen) {
     best.reset(readlen);
     v.front().reset(readlen);
     cutoff = v.front().diffs;
@@ -326,7 +383,8 @@ struct se_candidates {
   }
 
   // in SE reads, we sort to exclude duplicates
-  void prepare_for_alignments() {
+  void
+  prepare_for_alignments() {
     sort(begin(v), begin(v) + sz,  // no sort_heap here as heapify used "diffs"
          [](const se_element &a, const se_element &b) {
            return (a.pos < b.pos) || (a.pos == b.pos && a.flags < b.flags);
@@ -429,22 +487,28 @@ format_se(const bool allow_ambig, const se_element &res, const ChromLookup &cl,
 struct pe_element {
   pe_element() : aln_score(0), r1(se_element()), r2(se_element()) {}
 
-  score_t diffs() const { return r1.diffs + r2.diffs; }
+  score_t
+  diffs() const {
+    return r1.diffs + r2.diffs;
+  }
 
-  void reset(const uint32_t readlen1, const uint32_t readlen2) {
+  void
+  reset(const uint32_t readlen1, const uint32_t readlen2) {
     aln_score = 0;
     r1.reset(readlen1);
     r2.reset(readlen2);
     max_aln_score = simple_aln::best_pair_score(readlen1, readlen2);
   }
 
-  void reset() {
+  void
+  reset() {
     aln_score = 0;
     r1.reset();
     r2.reset();
   }
 
-  bool update(const score_t scr, const se_element &s1, const se_element &s2) {
+  bool
+  update(const score_t scr, const se_element &s1, const se_element &s2) {
     const auto rd = r1.diffs + r2.diffs;
     const auto sd = s1.diffs + s2.diffs;
     if (scr > aln_score || (scr == aln_score && sd < rd)) {
@@ -463,15 +527,23 @@ struct pe_element {
 
   // GS: this is used to decide whether ends should be
   // mapped as SE independently
-  inline bool should_report(const bool allow_ambig) const {
+  inline bool
+  should_report(const bool allow_ambig) const {
     return !empty() && (allow_ambig || !ambig());
   }
 
-  inline bool ambig() const { return r1.ambig(); }
+  inline bool
+  ambig() const {
+    return r1.ambig();
+  }
 
-  inline bool empty() const { return r1.empty(); }
+  inline bool
+  empty() const {
+    return r1.empty();
+  }
 
-  inline bool sure_ambig() const {
+  inline bool
+  sure_ambig() const {
     return ambig() && (aln_score == max_aln_score);
   }
 
@@ -621,7 +693,8 @@ format_pe(const bool allow_ambig, const pe_element &p, const ChromLookup &cl,
 struct pe_candidates {
   pe_candidates() : v(vector<se_element>(max_size_large)) {}
 
-  inline void reset(const uint32_t readlen) {
+  inline void
+  reset(const uint32_t readlen) {
     v.front().reset(readlen);
     sure_ambig = false;
     cutoff = v.front().diffs;
@@ -630,24 +703,44 @@ struct pe_candidates {
     capacity = max_size_small;
   }
 
-  inline void set_specific() { cutoff = good_cutoff; }
+  inline void
+  set_specific() {
+    cutoff = good_cutoff;
+  }
 
-  inline void set_sensitive() { cutoff = v.front().diffs; }
+  inline void
+  set_sensitive() {
+    cutoff = v.front().diffs;
+  }
 
-  inline bool should_align() { return (sz != max_size_large || cutoff != 0); }
+  inline bool
+  should_align() {
+    return (sz != max_size_large || cutoff != 0);
+  }
 
-  inline bool full() const { return sz == capacity; }
+  inline bool
+  full() const {
+    return sz == capacity;
+  }
 
-  inline bool good_diff(const score_t d) const { return (d <= good_cutoff); }
+  inline bool
+  good_diff(const score_t d) const {
+    return (d <= good_cutoff);
+  }
 
-  inline bool enough_good_hits() const { return full() && good_diff(cutoff); }
+  inline bool
+  enough_good_hits() const {
+    return full() && good_diff(cutoff);
+  }
 
-  inline bool should_do_sensitive() const {
+  inline bool
+  should_do_sensitive() const {
     return (capacity == max_size_small || !good_diff(cutoff));
   }
 
-  void update(const bool specific, const score_t d, const flags_t s,
-              const uint32_t p) {
+  void
+  update(const bool specific, const score_t d, const flags_t s,
+         const uint32_t p) {
     if (full()) {
       // doubles capacity if heap is filled with good matches
       if (specific && capacity != max_size_large && good_diff(d)) {
@@ -665,7 +758,8 @@ struct pe_candidates {
     sure_ambig = (full() && cutoff == 0);
   }
 
-  void prepare_for_mating() {
+  void
+  prepare_for_mating() {
     sort(
       begin(v), begin(v) + sz,  // no sort_heap here as heapify used "diffs"
       [](const se_element &a, const se_element &b) { return a.pos < b.pos; });
@@ -748,8 +842,9 @@ struct se_map_stats {
   // total_bases.
   double edit_distance_mean{};
 
-  void update(const bool allow_ambig, const string &read,
-              const bam_cigar_t &cigar, const se_element s) {
+  void
+  update(const bool allow_ambig, const string &read, const bam_cigar_t &cigar,
+         const se_element s) {
     ++total_reads;
     const bool valid = !s.empty();
     const bool ambig = s.ambig();
@@ -762,12 +857,14 @@ struct se_map_stats {
       update_error_rate(s.diffs, cigar);
   }
 
-  void update_error_rate(const score_t diffs, const bam_cigar_t &cigar) {
+  void
+  update_error_rate(const score_t diffs, const bam_cigar_t &cigar) {
     edit_distance += diffs;
     total_bases += cigar_rseq_ops(cigar);
   }
 
-  void assign_values() {
+  void
+  assign_values() {
     constexpr auto pct = [](const double a, const double b) {
       return ((b == 0) ? 0.0 : 100.0 * a / b);
     };
@@ -783,7 +880,8 @@ struct se_map_stats {
     percent_skipped = pct(skipped_reads, total_reads);
   }
 
-  string tostring(const size_t n_tabs = 0) {
+  string
+  tostring(const size_t n_tabs = 0) {
     static constexpr auto tab = "    ";
 
     assign_values();
@@ -887,10 +985,10 @@ struct pe_map_stats {
   se_map_stats end1_stats{};
   se_map_stats end2_stats{};
 
-  void update(const bool allow_ambig, const string &reads1,
-              const string &reads2, const bam_cigar_t &cig1,
-              const bam_cigar_t &cig2, const pe_element &p, const se_element s1,
-              const se_element s2) {
+  void
+  update(const bool allow_ambig, const string &reads1, const string &reads2,
+         const bam_cigar_t &cig1, const bam_cigar_t &cig2, const pe_element &p,
+         const se_element s1, const se_element s2) {
     const bool valid = !p.empty();
     const bool ambig = p.ambig();
     total_read_pairs++;
@@ -908,13 +1006,15 @@ struct pe_map_stats {
     }
   }
 
-  void update_error_rate(const score_t d1, const score_t d2,
-                         const bam_cigar_t &cig1, const bam_cigar_t &cig2) {
+  void
+  update_error_rate(const score_t d1, const score_t d2, const bam_cigar_t &cig1,
+                    const bam_cigar_t &cig2) {
     edit_distance_pairs += d1 + d2;
     total_bases_pairs += cigar_rseq_ops(cig1) + cigar_rseq_ops(cig2);
   }
 
-  void assign_values() {
+  void
+  assign_values() {
     constexpr auto pct = [](const double a, const double b) {
       return ((b == 0) ? 0.0 : 100.0 * a / b);
     };
@@ -932,7 +1032,8 @@ struct pe_map_stats {
     percent_skipped_pairs = pct(read_pairs_skipped, total_read_pairs_tmp);
   }
 
-  string tostring(const bool allow_ambig) {
+  string
+  tostring(const bool allow_ambig) {
     static string t = "    ";
 
     assign_values();
@@ -1050,7 +1151,8 @@ check_hits(const uint32_t offset, const PackedRead::const_iterator read_st,
 struct compare_bases {
   compare_bases(const genome_iterator g_) : g(g_) {}
 
-  bool operator()(const uint32_t mid, const two_letter_t chr) const {
+  bool
+  operator()(const uint32_t mid, const two_letter_t chr) const {
     return get_bit(*(g + mid)) < chr;
   }
 
@@ -1100,7 +1202,8 @@ get_three_letter_num_fast(const uint8_t nt) {
 template <const three_conv_type the_conv> struct compare_bases_three {
   compare_bases_three(const genome_iterator g_) : g(g_) {}
 
-  bool operator()(const uint32_t mid, const three_letter_t chr) const {
+  bool
+  operator()(const uint32_t mid, const three_letter_t chr) const {
     return get_three_letter_num_fast<the_conv>(*(g + mid)) < chr;
   }
 
