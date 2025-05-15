@@ -1,4 +1,4 @@
-/* Copyright (C) 2018-2023 Andrew D. Smith and Guilherme Sena
+/* Copyright (C) 2018-2025 Andrew D. Smith and Guilherme Sena
  *
  * Authors: Andrew D. Smith and Guilherme Sena
  *

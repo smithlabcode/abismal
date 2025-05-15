@@ -1,5 +1,4 @@
-/*
- * Copyright (C) 2018-2024 Andrew D. Smith
+/* Copyright (C) 2018-2025 Andrew D. Smith
  *
  * Author: Andrew D. Smith
  *
@@ -119,8 +118,12 @@ format_fasta_record(const string &name, const string &read) {
 }
 
 struct FragInfo {
-  void set_sequential_name() { name = "read" + to_string(frag_count++); }
-  string read1() const {
+  void
+  set_sequential_name() {
+    name = "read" + to_string(frag_count++);
+  }
+  string
+  read1() const {
     assert(!name.empty());
     string read = seq.substr(0, read_length);
     for (size_t i = 0; i < read_length - size(read); ++i)
@@ -128,7 +131,8 @@ struct FragInfo {
     return fasta_format ? format_fasta_record(name + ".1", read)
                         : format_fastq_record(name + ".1", read);
   }
-  string read2() const {
+  string
+  read2() const {
     assert(!name.empty());
     string read(seq);
     revcomp_inplace(read);
@@ -138,7 +142,8 @@ struct FragInfo {
     return fasta_format ? format_fasta_record(name + ".2", read)
                         : format_fastq_record(name + ".2", read);
   }
-  void erase_info_through_insert() {
+  void
+  erase_info_through_insert() {
     const size_t orig_ref_len = end_pos - start_pos;
     if (2 * read_length < size(seq)) {
       string cigar2(cigar);
@@ -152,11 +157,13 @@ struct FragInfo {
             seq.substr(size(seq) - read_length, read_length);
     }
   }
-  void remove_cigar_match_symbols() {
+  void
+  remove_cigar_match_symbols() {
     replace(begin(cigar), end(cigar), '=', 'M');
     merge_equal_neighbor_cigar_ops(cigar);
   }
-  void bisulfite_conversion(const bool random_pbat, const double bs_conv) {
+  void
+  bisulfite_conversion(const bool random_pbat, const double bs_conv) {
     if (pbat || (random_pbat && simreads_random::rand_double() < 0.5)) {
       for (auto it(begin(seq)); it != end(seq); ++it) {
         if (*it == 'G' && (simreads_random::rand_double() < bs_conv))
@@ -171,7 +178,10 @@ struct FragInfo {
     }
   }
 
-  bool rc() const { return strand == '-'; }
+  bool
+  rc() const {
+    return strand == '-';
+  }
 
   string chrom;
   size_t start_pos{};
@@ -290,7 +300,8 @@ struct FragSampler {
               const bool require_valid) :
     genome(g), cl(c), strand_code(sc), min_length(milen), max_length(malen),
     require_valid(require_valid) {}
-  void sample_fragment(FragInfo &the_info) const {
+  void
+  sample_fragment(FragInfo &the_info) const {
     const size_t frag_len = sim_frag_length(min_length, max_length);
     sim_frag_position(genome, frag_len, the_info.seq, the_info.start_pos,
                       require_valid);
@@ -308,12 +319,17 @@ struct FragSampler {
       revcomp_inplace(the_info.seq);
     the_info.cigar = to_string(frag_len) + "M";  // default, no muts
   }
-  char sim_strand() const {
+  char
+  sim_strand() const {
     switch (strand_code) {
-    case 'f': return '+';
-    case 'r': return '-';
-    case 'b': return (simreads_random::rand() & 1) ? '+' : '-';
-    default: std::abort();
+    case 'f':
+      return '+';
+    case 'r':
+      return '-';
+    case 'b':
+      return (simreads_random::rand() & 1) ? '+' : '-';
+    default:
+      std::abort();
     }
   }
   const string &genome;
@@ -337,7 +353,8 @@ struct FragMutator {
     insertion_rate += substitution_rate;
     deletion_rate += insertion_rate;
   }
-  void mutate(FragInfo &the_info) const {
+  void
+  mutate(FragInfo &the_info) const {
     string seq, cigar;
     size_t i = 0;
     the_info.score = 0;
@@ -370,7 +387,8 @@ struct FragMutator {
     compress_cigar(cbegin(cigar), cend(cigar), the_info.cigar);
     swap(seq, the_info.seq);
   }
-  char sample_mutation() const {
+  char
+  sample_mutation() const {
     const double x = simreads_random::rand_double();
     if (x > mutation_rate)
       return '=';
@@ -384,7 +402,8 @@ struct FragMutator {
         return 'D';
     }
   }
-  string tostring() const {
+  string
+  tostring() const {
     ostringstream oss;
     oss << "mutation_rate=" << mutation_rate << endl
         << "substitution_rate=" << substitution_rate << endl

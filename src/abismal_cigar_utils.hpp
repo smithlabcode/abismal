@@ -1,4 +1,4 @@
-/* Copyright (C) 2023 Andrew D. Smith and Guil Sena
+/* Copyright (C) 2023-2025 Andrew D. Smith and Guil Sena
  *
  * Authors: Andrew D. Smith and Guil Sena
  *
@@ -37,17 +37,19 @@ static const uint32_t ABISMAL_BAM_CIGAR_SHIFT = 4;
 inline uint32_t
 abismal_bam_cigar_gen(const uint32_t l, const int8_t o) {
   // ADS: "o" can have -1 for invalid cigar ops
-  return (l << ABISMAL_BAM_CIGAR_SHIFT| static_cast<uint32_t>(o));
+  return (l << ABISMAL_BAM_CIGAR_SHIFT | static_cast<uint32_t>(o));
 }
 
 static const uint8_t ABISMAL_BAM_CIGAR_MASK = 0xf;
 
 inline uint8_t
-abismal_bam_cigar_op(const uint32_t c) { return c & ABISMAL_BAM_CIGAR_MASK; }
+abismal_bam_cigar_op(const uint32_t c) {
+  return c & ABISMAL_BAM_CIGAR_MASK;
+}
 
 inline uint8_t
 abismal_bam_cigar_oplen(const uint32_t c) {
   return c >> ABISMAL_BAM_CIGAR_SHIFT;
 }
 
-#endif
+#endif  // ABISMAL_CIGAR_UTILS_HPP

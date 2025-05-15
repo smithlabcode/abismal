@@ -1,4 +1,4 @@
-/* Copyright (C) 2018-2020 Andrew D. Smith
+/* Copyright (C) 2018-2025 Andrew D. Smith
  *
  * Authors: Andrew D. Smith
  *
@@ -15,10 +15,11 @@
  * General Public License for more details.
  */
 
-#ifndef _DNA_FOUR_BIT_BISULFITE
-#define _DNA_FOUR_BIT_BISULFITE
-#include <cstdint> // for the int8_t and friends
+#ifndef DNA_FOUR_BIT_BISULFITE_HPP
+#define DNA_FOUR_BIT_BISULFITE_HPP
+#include <cstdint>  // for the int8_t and friends
 
+// clang-format off
 /* encoding of ASCII characters into T-rich bases, used
  * in encoding reads.
  * A: 0001 = 1
@@ -67,4 +68,7 @@ static const uint8_t encode_base_a_rich[256] = {
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 };
-#endif
+
+// clang-format on
+
+#endif  // DNA_FOUR_BIT_BISULFITE_HPP
