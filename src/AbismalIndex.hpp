@@ -18,20 +18,20 @@
 #ifndef ABISMAL_INDEX_HPP
 #define ABISMAL_INDEX_HPP
 
-#include <vector>
-#include <string>
-#include <fstream>
-#include <unordered_set>
 #include <algorithm>
-#include <deque>
 #include <cassert>
 #include <climits>
 #include <cmath>
 #include <cstdint>
+#include <deque>
 #include <filesystem>
+#include <fstream>
+#include <string>
+#include <unordered_set>
+#include <vector>
 
-#include "smithlab_utils.hpp"
 #include "dna_four_bit.hpp"
+#include "smithlab_utils.hpp"
 
 using element_t = size_t;
 using Genome = std::vector<element_t>;
@@ -41,20 +41,23 @@ using three_letter_t = uint8_t;
 struct random_base_generator {
   // ADS: other RNG behaves differently across systems (e.g. macos vs
   // ubuntu) and caused problems for comparing results when testing
-  static random_base_generator &init() {
+  static random_base_generator &
+  init() {
     static random_base_generator r;
     return r;
   }
   random_base_generator(const random_base_generator &) = delete;
   random_base_generator(random_base_generator &&) = delete;
-  char operator()() {
+  char
+  operator()() {
     constexpr auto m = 0x7fffffffu;  // 2^31
     constexpr auto a = 1103515245u;
     constexpr auto c = 12345u;
-    x = (a*x + c) & m;
+    x = (a * x + c) & m;
     // low order bits empicially confirmed to suck
-    return "ACGT"[x & 3]; // do this: (x >> 15);
+    return "ACGT"[x & 3];  // do this: (x >> 15);
   }
+
 private:
   random_base_generator() {}
   uint32_t x{1};
@@ -63,72 +66,80 @@ private:
 static random_base_generator &random_base = random_base_generator::init();
 
 namespace seed {
-  // number of positions in the hashed portion of the seed
-  static const uint32_t key_weight = 25u;
-  static const uint32_t key_weight_three = 16u;
+// number of positions in the hashed portion of the seed
+static const uint32_t key_weight = 25u;
+static const uint32_t key_weight_three = 16u;
 
-  // window in which we select the best k-mer. The longer it is,
-  // the longer the minimum read length that guarantees an exact
-  // match will be mapped
+// window in which we select the best k-mer. The longer it is,
+// the longer the minimum read length that guarantees an exact
+// match will be mapped
 #ifdef ENABLE_SHORT
-  static const uint32_t window_size = 12u;
+static const uint32_t window_size = 12u;
 #else
-  static const uint32_t window_size = 20u;
+static const uint32_t window_size = 20u;
 #endif
 
-  // number of positions to sort within buckets
-  static const uint32_t n_sorting_positions = 256u;
+// number of positions to sort within buckets
+static const uint32_t n_sorting_positions = 256u;
 
-  static const size_t hash_mask = (1ull << seed::key_weight) - 1;
-  static const size_t hash_mask_three = pow(3, key_weight_three);
+static const size_t hash_mask = (1ull << seed::key_weight) - 1;
+static const size_t hash_mask_three = pow(3, key_weight_three);
 
-  // the purpose of padding the left and right ends of the
-  // concatenated genome is so that later we can avoid having to check
-  // the (unlikely) case that a read maps partly off either end of the
-  // genome.
-  static const size_t padding_size = std::numeric_limits<int16_t>::max();
+// the purpose of padding the left and right ends of the
+// concatenated genome is so that later we can avoid having to check
+// the (unlikely) case that a read maps partly off either end of the
+// genome.
+static const size_t padding_size = std::numeric_limits<int16_t>::max();
 
-  void read(FILE* in);
-  void write(FILE* out);
-};
+void
+read(FILE *in);
+void
+write(FILE *out);
+}  // namespace seed
 
 struct ChromLookup {
   std::vector<std::string> names;
   std::vector<uint32_t> starts;
 
   void
-  get_chrom_idx_and_offset(const uint32_t pos,
-                           uint32_t &chrom_idx,
+  get_chrom_idx_and_offset(const uint32_t pos, uint32_t &chrom_idx,
                            uint32_t &offset) const;
   bool
-  get_chrom_idx_and_offset(const uint32_t pos,
-                           const uint32_t readlen,
-                           uint32_t &chrom_idx,
-                           uint32_t &offset) const;
+  get_chrom_idx_and_offset(const uint32_t pos, const uint32_t readlen,
+                           uint32_t &chrom_idx, uint32_t &offset) const;
 
   uint32_t
   get_pos(const std::string &chrom, const uint32_t offset) const;
   uint32_t
-  get_genome_size() const {return starts.back();}
+  get_genome_size() const {
+    return starts.back();
+  }
 
-  FILE * read(FILE *in);
-  std::istream & read(std::istream &in);
-  void read(const std::string &infile);
+  FILE *
+  read(FILE *in);
+  std::istream &
+  read(std::istream &in);
+  void
+  read(const std::string &infile);
 
-  FILE * write(FILE *out) const;
-  std::ostream & write(std::ostream &out) const;
-  void write(const std::string &outfile) const;
+  FILE *
+  write(FILE *out) const;
+  std::ostream &
+  write(std::ostream &out) const;
+  void
+  write(const std::string &outfile) const;
 
-  std::string tostring() const;
+  std::string
+  tostring() const;
 };
 
 void
-load_genome(const std::string &genome_file,
-            std::vector<uint8_t> &genome, ChromLookup &cl);
+load_genome(const std::string &genome_file, std::vector<uint8_t> &genome,
+            ChromLookup &cl);
 
 void
-load_genome(const std::string &genome_file,
-            std::string &genome, ChromLookup &cl);
+load_genome(const std::string &genome_file, std::string &genome,
+            ChromLookup &cl);
 
 std::ostream &
 operator<<(std::ostream &out, const ChromLookup &cl);
@@ -142,61 +153,76 @@ struct AbismalIndex {
 
   uint32_t max_candidates{100u};
 
-  size_t counter_size; // number of kmers indexed
-  size_t counter_size_three; // number of kmers indexed
+  size_t counter_size;        // number of kmers indexed
+  size_t counter_size_three;  // number of kmers indexed
 
-  size_t index_size; // number of genome positions indexed
-  size_t index_size_three; // number of genome positions indexed
+  size_t index_size;        // number of genome positions indexed
+  size_t index_size_three;  // number of genome positions indexed
 
-  std::vector<uint32_t> index; // genome positions for each k-mer
-  std::vector<uint32_t> index_t; // genome positions for each k-mer
-  std::vector<uint32_t> index_a; // genome positions for each k-mer
+  std::vector<uint32_t> index;    // genome positions for each k-mer
+  std::vector<uint32_t> index_t;  // genome positions for each k-mer
+  std::vector<uint32_t> index_a;  // genome positions for each k-mer
 
-  std::vector<uint32_t> counter; // offset of each k-mer in "index"
-  std::vector<uint32_t> counter_t; // offset of each k-mer in "index"
-  std::vector<uint32_t> counter_a; // offset of each k-mer in "index"
+  std::vector<uint32_t> counter;    // offset of each k-mer in "index"
+  std::vector<uint32_t> counter_t;  // offset of each k-mer in "index"
+  std::vector<uint32_t> counter_a;  // offset of each k-mer in "index"
 
   // a vector indicating whether each position goes into two-
   // or three-letter encoding
   std::vector<bool> is_two_let;
   std::vector<bool> keep;
   std::vector<std::pair<size_t, size_t>> exclude{};
-  std::vector<std::pair<genome_four_bit_itr, genome_four_bit_itr>> exclude_itr{};
+  std::vector<std::pair<genome_four_bit_itr, genome_four_bit_itr>>
+    exclude_itr{};
 
-  Genome genome;  // the genome
-  ChromLookup cl; // the starting position of each chromosome
+  Genome genome;   // the genome
+  ChromLookup cl;  // the starting position of each chromosome
 
-  void create_index(const std::string &genome_file);
-  void create_index(const std::string &target_filename,
-                    const std::string &genome_file);
+  void
+  create_index(const std::string &genome_file);
+  void
+  create_index(const std::string &target_filename,
+               const std::string &genome_file);
 
   // count how many positions must be stored for each hash value
-  template<const bool use_mask> void initialize_bucket_sizes();
-  template<const bool use_mask> void get_bucket_sizes_two();
-  template<const three_conv_type the_conv, const bool use_mask>
-  void get_bucket_sizes_three();
+  template <const bool use_mask>
+  void
+  initialize_bucket_sizes();
+  template <const bool use_mask>
+  void
+  get_bucket_sizes_two();
+  template <const three_conv_type the_conv, const bool use_mask>
+  void
+  get_bucket_sizes_three();
 
   // selects which positions go into two-letter
-  void select_two_letter_positions();
+  void
+  select_two_letter_positions();
 
   // selects which positions to keep based on k-mer frequencies
-  void compress_dp();
+  void
+  compress_dp();
 
   // put genome positions in the appropriate buckets
-  void hash_genome();
+  void
+  hash_genome();
 
   // Sort each bucket, if the seed length is more than
   // seed::key_weight, then use binary search for the rest part of the seed
-  void sort_buckets();
+  void
+  sort_buckets();
 
   // convert the genome to 4-bit encoding
-  void encode_genome(const std::vector<uint8_t> &input_genome);
+  void
+  encode_genome(const std::vector<uint8_t> &input_genome);
 
   // write index to disk
-  void write(const std::string &index_file) const;
+  void
+  write(const std::string &index_file) const;
 
   // read index from disk
-  void read(const std::string &index_file);
+  void
+  read(const std::string &index_file);
 
   static const std::string internal_identifier;
   AbismalIndex() {}
@@ -204,9 +230,11 @@ struct AbismalIndex {
 
 // A/T nucleotide to 1-bit value (0100 | 0001 = 5) is for A or G.
 inline two_letter_t
-get_bit(const uint8_t nt) {return (nt & 5) == 0;}
+get_bit(const uint8_t nt) {
+  return (nt & 5) == 0;
+}
 
-template<const three_conv_type the_conv>
+template <const three_conv_type the_conv>
 inline three_letter_t
 get_three_letter_num(const uint8_t nt) {
   // the_conv = c_to_t: C=T=0, A=1, G=2
@@ -220,7 +248,8 @@ shift_hash_key(const uint8_t c, uint32_t &hash_key) {
   hash_key = ((hash_key << 1) | get_bit(c)) & seed::hash_mask;
 }
 
-template<const three_conv_type the_conv> inline void
+template <const three_conv_type the_conv>
+inline void
 shift_three_key(const uint8_t c, uint32_t &hash_key) {
   hash_key =
     (hash_key * 3 + get_three_letter_num<the_conv>(c)) % seed::hash_mask_three;
@@ -228,7 +257,8 @@ shift_three_key(const uint8_t c, uint32_t &hash_key) {
 
 // get the hash value for a k-mer (specified as some iterator/pointer)
 // and the encoding for the function above
-template<class T> inline void
+template <class T>
+inline void
 get_1bit_hash(T r, uint32_t &k) {
   const auto lim = r + seed::key_weight;
   k = 0;
@@ -238,7 +268,8 @@ get_1bit_hash(T r, uint32_t &k) {
   }
 }
 
-template<const three_conv_type the_conv, class T> inline void
+template <const three_conv_type the_conv, class T>
+inline void
 get_base_3_hash(T r, uint32_t &k) {
   const auto lim = r + seed::key_weight_three;
   k = 0;
