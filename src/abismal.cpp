@@ -4,21 +4,20 @@
  *
  * This file is part of ABISMAL.
  *
- * ABISMAL is free software: you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * ABISMAL is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU General Public License as published by the Free
+ * Software Foundation, either version 3 of the License, or (at your option)
+ * any later version.
  *
- * ABISMAL is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
+ * ABISMAL is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+ * details.
  */
 
 #include "abismal.hpp"
 
 #include <config.h>
-#include <omp.h>
 #include <unistd.h>
 
 #include <atomic>
@@ -26,9 +25,11 @@
 #include <cstdint>
 #include <fstream>
 #include <iostream>
+#include <mutex>
 #include <numeric>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "AbismalAlign.hpp"
@@ -42,6 +43,9 @@
 #include "smithlab_os.hpp"
 #include "smithlab_utils.hpp"
 
+using abismal_clock = std::chrono::steady_clock;
+using abismal_timepoint = std::chrono::time_point<abismal_clock>;
+
 using bamxx::bam_rec;
 
 using AbismalAlignSimple =
@@ -52,12 +56,24 @@ typedef std::int16_t score_t;   // aln score, edit distance, hamming distance
 typedef std::vector<uint8_t> Read;          // 4-bit encoding of reads
 typedef std::vector<element_t> PackedRead;  // 4-bit encoding of reads
 
+namespace abismal_concurrency {
+static constexpr std::uint32_t max_n_threads = 1024;
+static std::uint32_t n_threads = 1;
+static std::mutex read_mutex;
+static std::mutex write_mutex;
+static std::mutex report_mutex;
+static bool
+invalid_n_threads() {
+  return n_threads == 0 || n_threads > max_n_threads;
+}
+}  // namespace abismal_concurrency
+
 enum conversion_type { t_rich = false, a_rich = true };
 
 static void
-print_with_time(const std::string &s) {
-  auto tmp =
-    std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+log_msg(const std::string &s) {
+  using std::chrono::system_clock;
+  auto tmp = system_clock::to_time_t(system_clock::now());
   std::string time_fmt(std::ctime(&tmp));
   time_fmt.pop_back();
   std::cerr << "[" << time_fmt << "] " << s << std::endl;
@@ -133,7 +149,7 @@ struct ReadLoader {
     }
   }
 
-  std::uint32_t cur_line;
+  std::uint32_t cur_line{};
   std::string filename;
   bamxx::bgzf_file in;
 
@@ -1539,8 +1555,8 @@ map_single_ended(const bool show_progress, const bool allow_ambig,
   std::size_t the_byte = 0;
 
   while (rl) {
-#pragma omp critical
     {
+      const std::lock_guard<std::mutex> lock(abismal_concurrency::read_mutex);
       rl.load_reads(names, reads);
       the_byte = rl.get_current_byte();
     }
@@ -1583,8 +1599,8 @@ map_single_ended(const bool show_progress, const bool allow_ambig,
           bests[i].reset();
       }
     }
-#pragma omp critical
     {
+      const std::lock_guard<std::mutex> lock(abismal_concurrency::write_mutex);
       for (std::size_t i = 0; i < n_reads; ++i) {
         if (valid_bam_rec(mr[i]) && !out.write(hdr, mr[i]))
           throw std::runtime_error("failed to write bam");
@@ -1596,9 +1612,8 @@ map_single_ended(const bool show_progress, const bool allow_ambig,
       se_stats.update(allow_ambig, reads[i], cigar[i], bests[i]);
       cigar[i].clear();
     }
-    if (show_progress)
-#pragma omp critical
-    {
+    if (show_progress) {
+      const std::lock_guard<std::mutex> lock(abismal_concurrency::report_mutex);
       if (progress.time_to_report(the_byte))
         progress.report(std::cerr, the_byte);
     }
@@ -1644,8 +1659,8 @@ map_single_ended_rand(const bool show_progress, const bool allow_ambig,
   std::size_t the_byte = 0;
 
   while (rl) {
-#pragma omp critical
     {
+      const std::lock_guard<std::mutex> lock(abismal_concurrency::read_mutex);
       rl.load_reads(names, reads);
       the_byte = rl.get_current_byte();
     }
@@ -1697,8 +1712,8 @@ map_single_ended_rand(const bool show_progress, const bool allow_ambig,
           bests[i].reset();
       }
     }
-#pragma omp critical
     {
+      const std::lock_guard<std::mutex> lock(abismal_concurrency::write_mutex);
       for (std::size_t i = 0; i < n_reads; ++i)
         if (valid_bam_rec(mr[i]) && !out.write(hdr, mr[i]))
           throw std::runtime_error("failed to write bam");
@@ -1709,9 +1724,8 @@ map_single_ended_rand(const bool show_progress, const bool allow_ambig,
       se_stats.update(allow_ambig, reads[i], cigar[i], bests[i]);
       cigar[i].clear();
     }
-    if (show_progress)
-#pragma omp critical
-    {
+    if (show_progress) {
+      const std::lock_guard<std::mutex> lock(abismal_concurrency::report_mutex);
       if (progress.time_to_report(the_byte))
         progress.report(std::cerr, the_byte);
     }
@@ -1719,10 +1733,11 @@ map_single_ended_rand(const bool show_progress, const bool allow_ambig,
 }
 
 static std::string
-format_time_in_sec(const double t) {
-  // assumes time is in seconds as floating point
+format_duration(const abismal_timepoint start_time,
+                const abismal_timepoint stop_time) {
+  const std::chrono::duration<double> elapsed_seconds{stop_time - start_time};
   std::ostringstream oss;
-  oss << std::fixed << std::setprecision(2) << t << "s";
+  oss << std::fixed << std::setprecision(2) << elapsed_seconds.count() << "s";
   return oss.str();
 }
 
@@ -1735,21 +1750,26 @@ run_single_ended(const bool show_progress, const bool allow_ambig,
   ReadLoader rl(reads_file);
   ProgressBar progress(get_filesize(reads_file), "mapping reads");
 
-  const auto start_time = omp_get_wtime();
+  const auto start_time{abismal_clock::now()};
 
-#pragma omp parallel for
-  for (int i = 0; i < omp_get_num_threads(); ++i) {
-    if (random_pbat)
-      map_single_ended_rand(show_progress, allow_ambig, abismal_index, rl,
-                            se_stats, hdr, out, progress);
-    else
-      map_single_ended<conv>(show_progress, allow_ambig, abismal_index, rl,
-                             se_stats, hdr, out, progress);
+  std::vector<std::thread> threads;
+  for (auto i = 0u; i < abismal_concurrency::n_threads; ++i) {
+    threads.push_back(std::thread([&, i]() {
+      if (random_pbat)
+        map_single_ended_rand(show_progress, allow_ambig, abismal_index, rl,
+                              se_stats, hdr, out, progress);
+      else
+        map_single_ended<conv>(show_progress, allow_ambig, abismal_index, rl,
+                               se_stats, hdr, out, progress);
+    }));
   }
+  for (auto &thread : threads)
+    thread.join();
+
   if (show_progress) {
-    print_with_time("reads mapped: " + std::to_string(rl.get_current_read()));
-    print_with_time("total mapping time: " +
-                    format_time_in_sec((omp_get_wtime() - start_time)));
+    const auto stop_time{abismal_clock::now()};
+    log_msg("reads mapped: " + std::to_string(rl.get_current_read()));
+    log_msg("total mapping time: " + format_duration(start_time, stop_time));
   }
 }
 
@@ -1998,8 +2018,8 @@ map_paired_ended(const bool show_progress, const bool allow_ambig,
   std::size_t the_byte = 0;
 
   while (rl1 && rl2) {
-#pragma omp critical
     {
+      const std::lock_guard<std::mutex> lock(abismal_concurrency::read_mutex);
       rl1.load_reads(names1, reads1);
       rl2.load_reads(names2, reads2);
       the_byte = rl1.get_current_byte();
@@ -2076,8 +2096,8 @@ map_paired_ended(const bool show_progress, const bool allow_ambig,
                     bests_se1[i], bests_se2[i], mr1[i], mr2[i]);
     }
 
-#pragma omp critical
     {
+      const std::lock_guard<std::mutex> lock(abismal_concurrency::write_mutex);
       for (std::size_t i = 0; i < n_reads; ++i) {
         if (valid_bam_rec(mr1[i]) && !out.write(hdr, mr1[i]))
           throw std::runtime_error("failed to write bam");
@@ -2095,9 +2115,8 @@ map_paired_ended(const bool show_progress, const bool allow_ambig,
       cigar1[i].clear();
       cigar2[i].clear();
     }
-    if (show_progress)
-#pragma omp critical
-    {
+    if (show_progress) {
+      const std::lock_guard<std::mutex> lock(abismal_concurrency::report_mutex);
       if (progress.time_to_report(the_byte))
         progress.report(std::cerr, the_byte);
     }
@@ -2163,8 +2182,8 @@ map_paired_ended_rand(const bool show_progress, const bool allow_ambig,
   std::size_t the_byte = 0;
 
   while (rl1 && rl2) {
-#pragma omp critical
     {
+      const std::lock_guard<std::mutex> lock(abismal_concurrency::read_mutex);
       rl1.load_reads(names1, reads1);
       rl2.load_reads(names2, reads2);
       the_byte = rl1.get_current_byte();
@@ -2254,8 +2273,8 @@ map_paired_ended_rand(const bool show_progress, const bool allow_ambig,
                     bests_se1[i], bests_se2[i], mr1[i], mr2[i]);
     }
 
-#pragma omp critical
     {
+      const std::lock_guard<std::mutex> lock(abismal_concurrency::write_mutex);
       for (std::size_t i = 0; i < n_reads; ++i) {
         if (valid_bam_rec(mr1[i]) && !out.write(hdr, mr1[i]))
           throw std::runtime_error("failed to write bam");
@@ -2273,9 +2292,8 @@ map_paired_ended_rand(const bool show_progress, const bool allow_ambig,
       cigar1[i].clear();
       cigar2[i].clear();
     }
-    if (show_progress)
-#pragma omp critical
-    {
+    if (show_progress) {
+      const std::lock_guard<std::mutex> lock(abismal_concurrency::report_mutex);
       if (progress.time_to_report(the_byte))
         progress.report(std::cerr, the_byte);
     }
@@ -2292,22 +2310,26 @@ run_paired_ended(const bool show_progress, const bool allow_ambig,
   ReadLoader rl2(reads_file2);
   ProgressBar progress(get_filesize(reads_file1), "mapping reads");
 
-  double start_time = omp_get_wtime();
+  const auto start_time{abismal_clock::now()};
 
-#pragma omp parallel for
-  for (int i = 0; i < omp_get_num_threads(); ++i) {
-    if (random_pbat)
-      map_paired_ended_rand(show_progress, allow_ambig, abismal_index, rl1, rl2,
-                            pe_stats, hdr, out, progress);
-
-    else
-      map_paired_ended<conv>(show_progress, allow_ambig, abismal_index, rl1,
-                             rl2, pe_stats, hdr, out, progress);
+  std::vector<std::thread> threads;
+  for (auto i = 0u; i < abismal_concurrency::n_threads; ++i) {
+    threads.push_back(std::thread([&, i]() {
+      if (random_pbat)
+        map_paired_ended_rand(show_progress, allow_ambig, abismal_index, rl1,
+                              rl2, pe_stats, hdr, out, progress);
+      else
+        map_paired_ended<conv>(show_progress, allow_ambig, abismal_index, rl1,
+                               rl2, pe_stats, hdr, out, progress);
+    }));
   }
+  for (auto &thread : threads)
+    thread.join();
+
   if (show_progress) {
-    print_with_time("reads mapped: " + std::to_string(rl1.get_current_read()));
-    print_with_time("total mapping time: " +
-                    format_time_in_sec(omp_get_wtime() - start_time));
+    const auto stop_time{abismal_clock::now()};
+    log_msg("reads mapped: " + std::to_string(rl1.get_current_read()));
+    log_msg("total mapping time: " + format_duration(start_time, stop_time));
   }
 }
 
@@ -2315,7 +2337,7 @@ run_paired_ended(const bool show_progress, const bool allow_ambig,
 // file does not exist
 static inline bool
 file_exists(const std::string &filename) {
-  return (access(filename.c_str(), F_OK) == 0);
+  return (access(filename.data(), F_OK) == 0);
 }
 
 static int
@@ -2353,7 +2375,7 @@ abismal_make_sam_header(const ChromLookup &cl, const int argc,
   out << "CL:\"" << the_command.str() << "\"" << std::endl;
 
   hdr.h = sam_hdr_init();
-  return sam_hdr_add_lines(hdr.h, out.str().c_str(), out.str().size());
+  return sam_hdr_add_lines(hdr.h, out.str().data(), out.str().size());
 }
 
 int
@@ -2365,13 +2387,13 @@ abismal(int argc, const char **argv) {
     const std::string description =
       "map bisulfite converted reads " + version_str;
 
-    bool VERBOSE = false;
+    bool verbose = false;
     bool GA_conversion = false;
     bool allow_ambig = false;
     bool pbat_mode = false;
     bool random_pbat = false;
     bool write_bam_fmt = false;
-    int n_threads = 1;
+
     std::uint32_t max_candidates = 0;
     std::string index_file = "";
     std::string genome_file = "";
@@ -2406,8 +2428,9 @@ abismal(int argc, const char **argv) {
                       false, random_pbat);
     opt_parse.add_opt("a-rich", 'A', "indicates reads are a-rich (se mode)",
                       false, GA_conversion);
-    opt_parse.add_opt("threads", 't', "number of threads", false, n_threads);
-    opt_parse.add_opt("verbose", 'v', "print more run info", false, VERBOSE);
+    opt_parse.add_opt("threads", 't', "number of threads", false,
+                      abismal_concurrency::n_threads);
+    opt_parse.add_opt("verbose", 'v', "print more run info", false, verbose);
     std::vector<std::string> leftover_args;
     opt_parse.parse(argc, argv, leftover_args);
     if (argc == 1 || opt_parse.help_requested()) {
@@ -2420,7 +2443,7 @@ abismal(int argc, const char **argv) {
       return EXIT_SUCCESS;
     }
     if (opt_parse.option_missing()) {
-      std::cerr << "Missing required option." << std::endl;
+      std::cerr << "Missing required argument" << std::endl;
       std::cerr << opt_parse.option_missing_message() << std::endl;
       return EXIT_SUCCESS;
     }
@@ -2429,14 +2452,12 @@ abismal(int argc, const char **argv) {
       std::cerr << opt_parse.about_message() << std::endl;
       return EXIT_SUCCESS;
     }
-    if (n_threads <= 0) {
-      std::cerr << "Please choose a positive number of threads." << std::endl;
+    if (abismal_concurrency::invalid_n_threads()) {
+      std::cerr << "Please choose a valid number of threads" << std::endl;
       return EXIT_SUCCESS;
     }
     if (index_file.empty() == genome_file.empty()) {
-      std::cerr
-        << "Please select either an index file (-i) or a genome file (-g)."
-        << std::endl;
+      std::cerr << "Select one of index file (-i) or genome file (-g)\n";
       return EXIT_SUCCESS;
     }
 
@@ -2461,69 +2482,63 @@ abismal(int argc, const char **argv) {
     /****************** END COMMAND LINE OPTIONS *****************/
 
     /****************** BEGIN THREAD VALIDATION *****************/
-    omp_set_num_threads(n_threads);
-    const int n_procs = omp_get_num_procs();
-    int num_threads_fulfilled = 1;
-#pragma omp parallel
-    {
-      num_threads_fulfilled = omp_get_num_threads();
-    }
+    const auto n_cores = std::thread::hardware_concurrency();
+    abismal_concurrency::n_threads =
+      std::min(abismal_concurrency::n_threads, n_cores);
+    if (verbose && abismal_concurrency::n_threads > n_cores)
+      log_msg("[WARNING] requesting more threads than the "
+              "maximum of " +
+              std::to_string(n_cores) +
+              " processors available in "
+              "this device");
 
-    if (VERBOSE && n_threads > n_procs)
-      print_with_time("[WARNING] requesting more threads than the "
-                      "maximum of " +
-                      std::to_string(n_procs) +
-                      " processors available in "
-                      "this device");
-
-    if (VERBOSE)
-      print_with_time("using " + std::to_string(num_threads_fulfilled) +
-                      " threads to map reads.");
+    if (verbose)
+      log_msg("using " + std::to_string(abismal_concurrency::n_threads) +
+              " threads to map reads");
     /****************** END THREAD VALIDATION *****************/
 
-    const bool show_progress = VERBOSE && isatty(fileno(stderr));
+    const bool show_progress = verbose && isatty(fileno(stderr));
 
-    AbismalIndex::VERBOSE = VERBOSE;
+    AbismalIndex::VERBOSE = verbose;
 
-    if (VERBOSE) {
+    if (verbose) {
       if (paired_end)
-        print_with_time("input (PE): " + reads_file + ", " + reads_file2);
+        log_msg("input (PE): " + reads_file + ", " + reads_file2);
       else
-        print_with_time("input (SE): " + reads_file);
+        log_msg("input (SE): " + reads_file);
 
       std::string output_msg = "output ";
       output_msg += (write_bam_fmt ? "(BAM): " : "(SAM): ");
       output_msg += (outfile == "-" ? "[stdout]" : outfile);
-      print_with_time(output_msg.c_str());
+      log_msg(output_msg);
 
       if (!stats_outfile.empty())
-        print_with_time("map statistics (YAML): " + stats_outfile);
+        log_msg("map statistics (YAML): " + stats_outfile);
     }
 
     AbismalIndex abismal_index;
 
-    const double start_time = omp_get_wtime();
+    const auto start_time{abismal_clock::now()};
     if (!index_file.empty()) {
-      if (VERBOSE)
-        print_with_time("loading index " + index_file);
+      if (verbose)
+        log_msg("loading index " + index_file);
       abismal_index.read(index_file);
-
-      if (VERBOSE)
-        print_with_time("loading time: " +
-                        format_time_in_sec(omp_get_wtime() - start_time));
+      const auto stop_time{abismal_clock::now()};
+      if (verbose)
+        log_msg("loading time: " + format_duration(start_time, stop_time));
     }
     else {
-      if (VERBOSE)
-        print_with_time("indexing genome " + genome_file);
+      if (verbose)
+        log_msg("indexing genome " + genome_file);
       abismal_index.create_index(genome_file);
-      if (VERBOSE)
-        print_with_time("indexing time: " +
-                        format_time_in_sec(omp_get_wtime() - start_time));
+      const auto stop_time{abismal_clock::now()};
+      if (verbose)
+        log_msg("indexing time: " + format_duration(start_time, stop_time));
     }
 
     if (max_candidates != 0) {
-      print_with_time("manually setting max_candidates to " +
-                      std::to_string(max_candidates));
+      log_msg("manually setting max_candidates to " +
+              std::to_string(max_candidates));
       abismal_index.max_candidates = max_candidates;
     }
 
