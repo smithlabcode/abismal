@@ -17,6 +17,11 @@
 
 #include "AbismalIndex.hpp"
 
+#include "bamxx.hpp"
+#include "dna_four_bit.hpp"
+#include "smithlab_os.hpp"
+#include "smithlab_utils.hpp"
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -28,24 +33,7 @@
 #include <thread>
 #include <utility>
 
-#include "bamxx.hpp"
-#include "dna_four_bit.hpp"
-#include "smithlab_os.hpp"
-#include "smithlab_utils.hpp"
-
-using std::cerr;
-using std::clog;
-using std::endl;
-using std::ifstream;
-using std::ofstream;
-using std::pair;
-using std::runtime_error;
-using std::sort;
-using std::to_string;
-using std::vector;
-
-using std::chrono::duration;
-using std::chrono::steady_clock;
+using abismal_clock = std::chrono::steady_clock;
 using std::chrono::time_point;
 
 template <typename T> using num_lim = std::numeric_limits<T>;
@@ -57,21 +45,21 @@ const std::string AbismalIndex::internal_identifier = "AbismalIndex";
 using genome_iterator = genome_four_bit_itr;
 
 static std::string
-delta_seconds(const time_point<steady_clock> &a) {
-  const auto b = steady_clock::now();
+delta_seconds(const time_point<abismal_clock> &a) {
+  const auto b = abismal_clock::now();
   std::ostringstream oss;
   oss.setf(std::ios::fixed);
   oss.precision(2);
-  oss << "[time: " << duration<double>(b - a).count() << "s]";
+  oss << "[time: " << std::chrono::duration<double>(b - a).count() << "s]";
   return oss.str();
 }
 
 struct g_interval {
   std::string chrom{};
-  size_t start_pos{};
-  size_t end_pos{};
+  std::size_t start_pos{};
+  std::size_t end_pos{};
 
-  g_interval(const std::string &c, size_t s, size_t e) :
+  g_interval(const std::string &c, std::size_t s, std::size_t e) :
     chrom{c}, start_pos{s}, end_pos{e} {}
   g_interval() {}
   bool
@@ -90,18 +78,18 @@ operator<<(T &out, const g_interval &g) {
 }
 
 auto
-load_target_regions(const std::string &target_filename) -> vector<g_interval> {
+load_target_regions(const std::string &target_filename)
+  -> std::vector<g_interval> {
   constexpr auto msg = "failed parsing target region";
-  ifstream in(target_filename);
+  std::ifstream in(target_filename);
   if (!in)
     throw std::runtime_error("failed reading target file");
 
-  vector<g_interval> targets{};
+  std::vector<g_interval> targets{};
   std::string line;
   std::string chrom;
-  size_t start_pos = 0, end_pos = 0;
+  std::size_t start_pos = 0, end_pos = 0;
   while (getline(in, line)) {
-
     std::istringstream iss(line);
     if (!(iss >> chrom))
       throw std::runtime_error(msg);
@@ -109,7 +97,6 @@ load_target_regions(const std::string &target_filename) -> vector<g_interval> {
       throw std::runtime_error(msg);
     if (!(iss >> end_pos))
       throw std::runtime_error(msg);
-
     targets.emplace_back(chrom, start_pos, end_pos);
   }
 
@@ -117,11 +104,12 @@ load_target_regions(const std::string &target_filename) -> vector<g_interval> {
 }
 
 auto
-mask_non_target(const vector<pair<uint32_t, uint32_t>> &targets,
-                vector<uint8_t> &genome) {
+mask_non_target(
+  const std::vector<std::pair<std::uint32_t, std::uint32_t>> &targets,
+  std::vector<std::uint8_t> &genome) {
   const auto target_end = std::cend(targets);
   auto target_itr = std::cbegin(targets);
-  for (size_t i = 0; i < genome.size(); ++i) {
+  for (std::size_t i = 0; i < genome.size(); ++i) {
     if (target_itr == target_end || i < target_itr->first)
       genome[i] = 'N';
     else
@@ -131,8 +119,9 @@ mask_non_target(const vector<pair<uint32_t, uint32_t>> &targets,
 }
 
 auto
-contiguous_n(const vector<uint8_t> &genome) -> vector<pair<size_t, size_t>> {
-  vector<pair<size_t, size_t>> r{};
+contiguous_n(const std::vector<std::uint8_t> &genome)
+  -> std::vector<std::pair<std::size_t, std::size_t>> {
+  std::vector<std::pair<std::size_t, std::size_t>> r{};
   const auto g_beg = std::cbegin(genome);
   auto g_left = g_beg;
   bool inside_block = false;
@@ -153,9 +142,11 @@ contiguous_n(const vector<uint8_t> &genome) -> vector<pair<size_t, size_t>> {
 
 template <typename G>
 static inline auto
-get_exclude_itrs(const G &genome, const vector<pair<size_t, size_t>> &exclude)
-  -> vector<pair<genome_iterator, genome_iterator>> {
-  vector<pair<genome_iterator, genome_iterator>> exclude_itrs;
+get_exclude_itrs(
+  const G &genome,
+  const std::vector<std::pair<std::size_t, std::size_t>> &exclude)
+  -> std::vector<std::pair<genome_iterator, genome_iterator>> {
+  std::vector<std::pair<genome_iterator, genome_iterator>> exclude_itrs;
   const auto g_beg = genome_iterator(std::cbegin(genome));
   for (auto &i : exclude)
     exclude_itrs.emplace_back(g_beg + i.first, g_beg + i.second);
@@ -164,9 +155,10 @@ get_exclude_itrs(const G &genome, const vector<pair<size_t, size_t>> &exclude)
 
 template <typename G>
 static inline void
-replace_included_n(const vector<pair<size_t, size_t>> &exclude, G &genome) {
-  size_t j = 0;
-  for (size_t i = 0; i < genome.size(); ++i) {
+replace_included_n(
+  const std::vector<std::pair<std::size_t, std::size_t>> &exclude, G &genome) {
+  std::size_t j = 0;
+  for (std::size_t i = 0; i < genome.size(); ++i) {
     if (genome[i] == 'N' && i < exclude[j].first)
       genome[i] = random_base();
     if (exclude[j].second <= i)
@@ -174,20 +166,20 @@ replace_included_n(const vector<pair<size_t, size_t>> &exclude, G &genome) {
   }
 }
 
-static inline size_t
-get_compressed_size(const size_t original_size) {
-  const size_t nt_per_word = 2 * sizeof(original_size);
+static inline std::size_t
+get_compressed_size(const std::size_t original_size) {
+  const std::size_t nt_per_word = 2 * sizeof(original_size);
   return original_size / nt_per_word + (original_size % nt_per_word != 0);
 }
 
 static auto
-sort_by_chrom(const vector<std::string> &names,
-              const vector<g_interval> &u) -> vector<g_interval> {
+sort_by_chrom(const std::vector<std::string> &names,
+              const std::vector<g_interval> &u) -> std::vector<g_interval> {
   // This function will exclude any target regions that are not
   // corresponding to chromosomes in the given reference genome.
-  vector<g_interval> t(u.size());
+  std::vector<g_interval> t(u.size());
   auto t_itr = std::begin(t);
-  for (size_t i = 0; i < names.size(); ++i) {
+  for (std::size_t i = 0; i < names.size(); ++i) {
     const auto u_itr =
       find_if(std::cbegin(u), std::cend(u),
               [&](const g_interval &x) { return x.chrom == names[i]; });
@@ -209,27 +201,27 @@ void
 AbismalIndex::create_index(const std::string &targets_file,
                            const std::string &genome_file) {
 
-  auto s_time = steady_clock::now();
+  auto s_time = abismal_clock::now();
   if (VERBOSE)
-    clog << "[loading genome]";
-  vector<uint8_t> orig_genome;
+    std::clog << "[loading genome]";
+  std::vector<std::uint8_t> orig_genome;
   load_genome(genome_file, orig_genome, cl);
   if (VERBOSE)
-    clog << delta_seconds(s_time) << endl;
+    std::clog << delta_seconds(s_time) << std::endl;
 
-  s_time = steady_clock::now();
+  s_time = abismal_clock::now();
   if (VERBOSE)
-    clog << "[loading target regions]";
-  vector<g_interval> orig_targets = load_target_regions(targets_file);
+    std::clog << "[loading target regions]";
+  std::vector<g_interval> orig_targets = load_target_regions(targets_file);
   orig_targets = sort_by_chrom(cl.names, orig_targets);
   if (VERBOSE)
-    clog << delta_seconds(s_time) << endl;
+    std::clog << delta_seconds(s_time) << std::endl;
 
-  s_time = steady_clock::now();
+  s_time = abismal_clock::now();
   if (VERBOSE)
-    clog << "[cleaning reference genome]";
+    std::clog << "[cleaning reference genome]";
 
-  vector<pair<uint32_t, uint32_t>> targets;
+  std::vector<std::pair<std::uint32_t, std::uint32_t>> targets;
   for (auto &i : orig_targets)
     targets.emplace_back(cl.get_pos(i.chrom, i.start_pos),
                          cl.get_pos(i.chrom, i.end_pos));
@@ -238,26 +230,27 @@ AbismalIndex::create_index(const std::string &targets_file,
 
   exclude = contiguous_n(orig_genome);
 
-  auto rm_itr = std::remove_if(std::begin(exclude), std::end(exclude),
-                               [](const pair<size_t, size_t> &p) {
-                                 return p.second - p.first <= max_n_count;
-                               });
+  auto rm_itr =
+    std::remove_if(std::begin(exclude), std::end(exclude),
+                   [](const std::pair<std::size_t, std::size_t> &p) {
+                     return p.second - p.first <= max_n_count;
+                   });
   exclude.erase(rm_itr, std::cend(exclude));
 
   replace_included_n(exclude, orig_genome);
   if (VERBOSE)
-    clog << delta_seconds(s_time) << endl;
+    std::clog << delta_seconds(s_time) << std::endl;
 
-  s_time = steady_clock::now();
+  s_time = abismal_clock::now();
 
   if (VERBOSE)
-    clog << "[encoding genome]";
+    std::clog << "[encoding genome]";
   genome.resize(get_compressed_size(orig_genome.size()));
   encode_dna_four_bit(std::cbegin(orig_genome), std::cend(orig_genome),
                       std::begin(genome));
-  vector<uint8_t>().swap(orig_genome);
+  std::vector<std::uint8_t>().swap(orig_genome);
   if (VERBOSE)
-    clog << delta_seconds(s_time) << endl;
+    std::clog << delta_seconds(s_time) << std::endl;
 
   exclude_itr = get_exclude_itrs(genome, exclude);
 
@@ -276,40 +269,41 @@ AbismalIndex::create_index(const std::string &targets_file,
 void
 AbismalIndex::create_index(const std::string &genome_file) {
 
-  auto s_time = steady_clock::now();
+  auto s_time = abismal_clock::now();
   if (VERBOSE)
-    clog << "[loading genome]";
-  vector<uint8_t> orig_genome;
+    std::clog << "[loading genome]";
+  std::vector<std::uint8_t> orig_genome;
   load_genome(genome_file, orig_genome, cl);
   if (VERBOSE)
-    clog << "[" << cl.names.size() << " targets]" << delta_seconds(s_time)
-         << endl;
+    std::clog << "[" << cl.names.size() << " targets]" << delta_seconds(s_time)
+              << std::endl;
 
-  s_time = steady_clock::now();
+  s_time = abismal_clock::now();
   if (VERBOSE)
-    clog << "[cleaning reference genome]";
+    std::clog << "[cleaning reference genome]";
   exclude = contiguous_n(orig_genome);
 
-  auto rm_itr = std::remove_if(std::begin(exclude), std::end(exclude),
-                               [](const pair<size_t, size_t> &p) {
-                                 return p.second - p.first <= max_n_count;
-                               });
+  auto rm_itr =
+    std::remove_if(std::begin(exclude), std::end(exclude),
+                   [](const std::pair<std::size_t, std::size_t> &p) {
+                     return p.second - p.first <= max_n_count;
+                   });
   exclude.erase(rm_itr, std::cend(exclude));
 
   replace_included_n(exclude, orig_genome);
   if (VERBOSE)
-    clog << delta_seconds(s_time) << endl;
+    std::clog << delta_seconds(s_time) << std::endl;
 
-  s_time = steady_clock::now();
+  s_time = abismal_clock::now();
 
   if (VERBOSE)
-    clog << "[encoding genome]";
+    std::clog << "[encoding genome]";
   genome.resize(get_compressed_size(orig_genome.size()));
   encode_dna_four_bit(std::cbegin(orig_genome), std::cend(orig_genome),
                       std::begin(genome));
-  vector<uint8_t>().swap(orig_genome);
+  std::vector<std::uint8_t>().swap(orig_genome);
   if (VERBOSE)
-    clog << delta_seconds(s_time) << endl;
+    std::clog << delta_seconds(s_time) << std::endl;
 
   exclude_itr = get_exclude_itrs(genome, exclude);
 
@@ -333,7 +327,7 @@ AbismalIndex::get_bucket_sizes_two() {
   counter.clear();
   counter.resize(counter_size + 1, 0);  // one extra entry for convenience
 
-  uint32_t hash_key = 0;
+  std::uint32_t hash_key = 0;
   auto gi = genome_iterator(std::cbegin(genome));
 
   // start spooling the hash key
@@ -348,7 +342,7 @@ AbismalIndex::get_bucket_sizes_two() {
   // general loop to count positions for corresponding buckets
   const auto lim = cl.get_genome_size() - seed::key_weight + 1;
   // const auto itl_lim = std::cbegin(is_two_let) + lim;
-  for (size_t i = 0; i < lim; ++i) {
+  for (std::size_t i = 0; i < lim; ++i) {
     shift_hash_key(*gi++, hash_key);
     assert(nidx_itr != std::cend(exclude));
     if (i < nidx_itr->first && *keep_itr)
@@ -376,7 +370,7 @@ AbismalIndex::get_bucket_sizes_three() {
   else
     counter_a.resize(counter_size_three + 1, 0);
 
-  uint32_t hash_key = 0;
+  std::uint32_t hash_key = 0;
   auto gi = genome_iterator(std::cbegin(genome));
 
   // start building up the hash key
@@ -390,7 +384,7 @@ AbismalIndex::get_bucket_sizes_three() {
 
   // general loop to count positions for corresponding buckets
   const auto lim = cl.get_genome_size() - seed::key_weight_three + 1;
-  for (size_t i = 0; i < lim; ++i) {
+  for (std::size_t i = 0; i < lim; ++i) {
     shift_three_key<the_conv>(*gi++, hash_key);
     assert(nidx_itr != std::cend(exclude));
     if (i < nidx_itr->first && *keep_itr) {
@@ -406,22 +400,22 @@ AbismalIndex::get_bucket_sizes_three() {
   }
 }
 
-static inline uint32_t
-two_letter_cost(const uint32_t count) {
+static inline std::uint32_t
+two_letter_cost(const std::uint32_t count) {
   return count;
 }
 
-static inline uint64_t
-three_letter_cost(const uint32_t count_t, const uint32_t count_a) {
+static inline std::uint64_t
+three_letter_cost(const std::uint32_t count_t, const std::uint32_t count_a) {
   return (count_t + count_a) >> 1;
 }
 
 template <const bool use_mask>
 void
 AbismalIndex::initialize_bucket_sizes() {
-  auto s_time = steady_clock::now();
+  const auto s_time = abismal_clock::now();
   if (VERBOSE)
-    clog << "[computing bucket sizes]";
+    std::clog << "[computing bucket sizes]";
   std::thread t1([&]() { get_bucket_sizes_two<use_mask>(); });
   std::thread t2([&]() { get_bucket_sizes_three<c_to_t, use_mask>(); });
   std::thread t3([&]() { get_bucket_sizes_three<g_to_a, use_mask>(); });
@@ -429,14 +423,16 @@ AbismalIndex::initialize_bucket_sizes() {
   t2.join();
   t3.join();
   if (VERBOSE)
-    clog << delta_seconds(s_time) << endl;
+    std::clog << delta_seconds(s_time) << std::endl;
 }
 
 static inline auto
 get_block_bounds(
-  const size_t start_pos, const size_t step_size, const size_t end_pos,
-  const vector<pair<size_t, size_t>> &exclude) -> vector<pair<size_t, size_t>> {
-  vector<pair<size_t, size_t>> blocks;
+  const std::size_t start_pos, const std::size_t step_size,
+  const std::size_t end_pos,
+  const std::vector<std::pair<std::size_t, std::size_t>> &exclude)
+  -> std::vector<std::pair<std::size_t, std::size_t>> {
+  std::vector<std::pair<std::size_t, std::size_t>> blocks;
 
   auto block_start = start_pos;
   auto i = std::cbegin(exclude);
@@ -465,10 +461,10 @@ get_block_bounds(
 
 void
 AbismalIndex::select_two_letter_positions() {
-  constexpr size_t block_size = 1000000ul;
-  auto s_time = steady_clock::now();
+  constexpr std::size_t block_size = 1000000ul;
+  const auto s_time = abismal_clock::now();
   if (VERBOSE)
-    clog << "[selecting two-letter positions]";
+    std::clog << "[selecting two-letter positions]";
 
   // choose which have lower count under two-letters
   is_two_let.resize(cl.get_genome_size(), false);
@@ -496,7 +492,7 @@ AbismalIndex::select_two_letter_positions() {
       for (auto block_itr = curr_beg; block_itr != curr_end; ++block_itr) {
         auto block = *block_itr;
 
-        uint32_t hash_two = 0;
+        std::uint32_t hash_two = 0;
         auto gi_two = g_beg + block.first;
 
         // spool the two letter hash
@@ -504,7 +500,7 @@ AbismalIndex::select_two_letter_positions() {
         while (gi_two != gi_lim_two)
           shift_hash_key(*gi_two++, hash_two);
 
-        uint32_t hash_t = 0, hash_a = 0;
+        std::uint32_t hash_t = 0, hash_a = 0;
         auto gi_three = g_beg + block.first;
 
         // spool the three letter hash
@@ -534,15 +530,15 @@ AbismalIndex::select_two_letter_positions() {
   for (auto &thread : threads)
     thread.join();
   if (VERBOSE)
-    clog << delta_seconds(s_time) << endl;
+    std::clog << delta_seconds(s_time) << std::endl;
 }
 
 void
 AbismalIndex::hash_genome() {
   // count k-mers under each encoding with masking
-  auto s_time = steady_clock::now();
+  auto s_time = abismal_clock::now();
   if (VERBOSE)
-    clog << "[initializing index structures]";
+    std::clog << "[initializing index structures]";
   const auto inc_scan = [](auto &v) {
     std::inclusive_scan(std::cbegin(v), std::cend(v), std::begin(v));
   };
@@ -560,23 +556,23 @@ AbismalIndex::hash_genome() {
   index_t.resize(index_size_three, 0);
   index_a.resize(index_size_three, 0);
   if (VERBOSE)
-    clog << delta_seconds(s_time) << endl
-         << "[index sizes: two-letter=" << index_size << " "
-         << "three-letter=" << index_size_three << "]" << endl;
-  s_time = steady_clock::now();
+    std::clog << delta_seconds(s_time) << std::endl
+              << "[index sizes: two-letter=" << index_size << " "
+              << "three-letter=" << index_size_three << "]" << std::endl;
+  s_time = abismal_clock::now();
 
   if (VERBOSE)
-    clog << "[counting k-mers]";
+    std::clog << "[counting k-mers]";
   const auto lim = cl.get_genome_size() - seed::key_weight + 1;
 
   std::thread t4([&]() {
     auto gi_two = genome_iterator(std::cbegin(genome));
     const auto gi_lim = gi_two + (seed::key_weight - 1);
-    uint32_t hash_two = 0;
+    std::uint32_t hash_two = 0;
     while (gi_two != gi_lim)
       shift_hash_key(*gi_two++, hash_two);
     auto nidx_itr = std::cbegin(exclude);
-    for (size_t i = 0; i < lim; ++i) {
+    for (std::size_t i = 0; i < lim; ++i) {
       shift_hash_key(*gi_two++, hash_two);
       assert(nidx_itr != std::cend(exclude));
       if (i < nidx_itr->first && keep[i] && is_two_let[i]) {
@@ -591,11 +587,11 @@ AbismalIndex::hash_genome() {
   std::thread t5([&]() {
     auto gi_three = genome_iterator(std::cbegin(genome));
     const auto gi_lim = gi_three + (seed::key_weight_three - 1);
-    uint32_t hash_t = 0;
+    std::uint32_t hash_t = 0;
     while (gi_three != gi_lim)
       shift_three_key<c_to_t>(*gi_three++, hash_t);
     auto nidx_itr = std::cbegin(exclude);
-    for (size_t i = 0; i < lim; ++i) {
+    for (std::size_t i = 0; i < lim; ++i) {
       shift_three_key<c_to_t>(*gi_three++, hash_t);
       assert(nidx_itr != std::cend(exclude));
       if (i < nidx_itr->first && keep[i] && !is_two_let[i]) {
@@ -610,11 +606,11 @@ AbismalIndex::hash_genome() {
   std::thread t6([&]() {
     auto gi_three = genome_iterator(std::cbegin(genome));
     const auto gi_lim = gi_three + (seed::key_weight_three - 1);
-    uint32_t hash_a = 0;
+    std::uint32_t hash_a = 0;
     while (gi_three != gi_lim)
       shift_three_key<g_to_a>(*gi_three++, hash_a);
     auto nidx_itr = std::cbegin(exclude);
-    for (size_t i = 0; i < lim; ++i) {
+    for (std::size_t i = 0; i < lim; ++i) {
       shift_three_key<g_to_a>(*gi_three++, hash_a);
       assert(nidx_itr != std::cend(exclude));
       if (i < nidx_itr->first && keep[i] && !is_two_let[i]) {
@@ -631,13 +627,13 @@ AbismalIndex::hash_genome() {
   t6.join();
 
   if (VERBOSE)
-    clog << delta_seconds(s_time) << endl;
+    std::clog << delta_seconds(s_time) << std::endl;
 }
 
 struct dp_sol {
-  static const uint64_t sentinel = num_lim<uint64_t>::max();
-  uint64_t cost{sentinel};
-  uint64_t prev{sentinel};
+  static const std::uint64_t sentinel = num_lim<std::uint64_t>::max();
+  std::uint64_t cost{sentinel};
+  std::uint64_t prev{sentinel};
 };
 
 // ADS: Occupancy of the deque can be 0 through window_size, so
@@ -646,13 +642,15 @@ struct dp_sol {
 // or full. We need to ensure that the size of this deque ring buffer
 // is at least (window_size + 2).
 template <class T> struct fixed_ring_buffer {
-  constexpr static size_t qsz = 32ul;      // must be >= (seed::window_size + 2)
-  constexpr static size_t qsz_msk = 31ul;  // mask to keep positions in range
+  constexpr static std::size_t qsz =
+    32ul;  // must be >= (seed::window_size + 2)
+  constexpr static std::size_t qsz_msk =
+    31ul;  // mask to keep positions in range
 
   std::array<T, qsz> h;
 
   auto
-  size() const -> size_t {
+  size() const -> std::size_t {
     return (b == f) ? 0 : (b > f) ? b - f : qsz - (f - b);
   }
 
@@ -690,14 +688,14 @@ template <class T> struct fixed_ring_buffer {
     b &= qsz_msk;
   }
 
-  uint32_t f{0};
-  uint32_t b{0};
+  std::uint32_t f{0};
+  std::uint32_t b{0};
 };
 
 using deque = fixed_ring_buffer<dp_sol>;
 
 static inline void
-add_sol(deque &helper, const uint64_t prev, const uint64_t cost) {
+add_sol(deque &helper, const std::uint64_t prev, const std::uint64_t cost) {
   while (!helper.empty() && helper.back().cost > cost)
     helper.pop_back();
 
@@ -709,9 +707,9 @@ add_sol(deque &helper, const uint64_t prev, const uint64_t cost) {
   assert(!helper.empty() && helper.size() <= seed::window_size);
 }
 
-static inline uint64_t
-hybrid_cost(const bool is_two_let, const uint32_t count_two,
-            const uint32_t count_t, const uint32_t count_a) {
+static inline std::uint64_t
+hybrid_cost(const bool is_two_let, const std::uint32_t count_two,
+            const std::uint32_t count_t, const std::uint32_t count_a) {
   return is_two_let ? two_letter_cost(count_two)
                     : three_letter_cost(count_t, count_a);
 }
@@ -719,9 +717,9 @@ hybrid_cost(const bool is_two_let, const uint32_t count_two,
 void
 AbismalIndex::compress_dp() {
   constexpr auto block_size = 1000000ul;
-  auto s_time = steady_clock::now();
+  const auto s_time = abismal_clock::now();
   if (VERBOSE)
-    clog << "[dynamic programming to optimize seed selection]";
+    std::clog << "[dynamic programming to optimize seed selection]";
 
   // default is no position will be indexed
   std::fill(std::begin(keep), std::end(keep), false);
@@ -743,13 +741,13 @@ AbismalIndex::compress_dp() {
     threads.emplace_back([&, curr_beg, curr_end] {
       for (auto block_itr = curr_beg; block_itr != curr_end; ++block_itr) {
         auto block = *block_itr;
-        const size_t block_start = block.first;
-        const uint32_t current_block_size = block.second - block.first;
+        const std::size_t block_start = block.first;
+        const std::uint32_t current_block_size = block.second - block.first;
 
         if (current_block_size < seed::window_size)
           continue;
 
-        uint32_t hash_two = 0;
+        std::uint32_t hash_two = 0;
 
         // spool the hash for two letter encoding
         auto gi_two = genome_iterator(std::cbegin(genome)) + block_start;
@@ -758,7 +756,7 @@ AbismalIndex::compress_dp() {
         while (gi_two != gi_lim_two)
           shift_hash_key(*gi_two++, hash_two);
 
-        uint32_t hash_t = 0, hash_a = 0;
+        std::uint32_t hash_t = 0, hash_a = 0;
 
         // spool the hashes for three letter encodings
         auto gi_three = genome_iterator(std::cbegin(genome)) + block_start;
@@ -769,7 +767,7 @@ AbismalIndex::compress_dp() {
           shift_three_key<g_to_a>(gi3_val, hash_a);
         }
 
-        vector<dp_sol> opt(block_size + 1);
+        std::vector<dp_sol> opt(block_size + 1);
         deque helper;
 
         auto opt_itr = std::begin(opt);
@@ -778,7 +776,7 @@ AbismalIndex::compress_dp() {
 
         // do the base cases for the dynamic programming: the solutions
         // for the first "window size" positions
-        size_t i = 0;
+        std::size_t i = 0;
         for (; i < seed::window_size; ++opt_itr) {
           shift_hash_key(*gi_two++, hash_two);
           const auto gi3_val = *gi_three++;
@@ -817,9 +815,9 @@ AbismalIndex::compress_dp() {
         }
 
         // get solution for start of traceback
-        uint64_t opt_ans = num_lim<uint64_t>::max();
-        uint64_t last = num_lim<uint64_t>::max();
-        for (size_t i = current_block_size - 1;
+        std::uint64_t opt_ans = num_lim<std::uint64_t>::max();
+        std::uint64_t last = num_lim<std::uint64_t>::max();
+        for (std::size_t i = current_block_size - 1;
              i >= current_block_size - seed::window_size; --i) {
           const auto cand_cost = opt[i].cost;
           if (cand_cost < opt_ans) {
@@ -844,20 +842,20 @@ AbismalIndex::compress_dp() {
 
   max_candidates = 100u;  // GS: this is a heuristic
   if (VERBOSE)
-    clog << delta_seconds(s_time) << endl;
+    std::clog << delta_seconds(s_time) << std::endl;
 }
 
 struct BucketLess {
   BucketLess(const Genome &g) : g_start(std::begin(g)) {}
 
   bool
-  operator()(const uint32_t a, const uint32_t b) const {
+  operator()(const std::uint32_t a, const std::uint32_t b) const {
     auto idx1(g_start + a + seed::key_weight);
     const auto lim1(g_start + a + seed::n_sorting_positions);
     auto idx2(g_start + b + seed::key_weight);
     while (idx1 != lim1) {
-      const uint8_t c1 = get_bit(*idx1++);
-      const uint8_t c2 = get_bit(*idx2++);
+      const std::uint8_t c1 = get_bit(*idx1++);
+      const std::uint8_t c2 = get_bit(*idx2++);
       if (c1 != c2)
         return c1 < c2;
     }
@@ -869,7 +867,7 @@ struct BucketLess {
 
 template <const three_conv_type the_conv>
 static inline three_letter_t
-three_letter_num_srt(const uint8_t nt) {
+three_letter_num_srt(const std::uint8_t nt) {
   // C=T=0, A=1, G=4
   // A=G=0, C=2, T=8
   return the_conv == c_to_t ? nt & 5 : nt & 10;
@@ -879,13 +877,13 @@ template <const three_conv_type the_type> struct BucketLessThree {
   BucketLessThree(const Genome &g) : g_start(std::begin(g)) {}
 
   bool
-  operator()(const uint32_t a, const uint32_t b) const {
+  operator()(const std::uint32_t a, const std::uint32_t b) const {
     auto idx1(g_start + a + seed::key_weight_three);
     const auto lim1(g_start + a + seed::n_sorting_positions);
     auto idx2(g_start + b + seed::key_weight_three);
     while (idx1 != lim1) {
-      const uint8_t c1 = three_letter_num_srt<the_type>(*idx1++);
-      const uint8_t c2 = three_letter_num_srt<the_type>(*idx2++);
+      const std::uint8_t c1 = three_letter_num_srt<the_type>(*idx1++);
+      const std::uint8_t c2 = three_letter_num_srt<the_type>(*idx2++);
       if (c1 != c2)
         return c1 < c2;
     }
@@ -898,9 +896,9 @@ template <const three_conv_type the_type> struct BucketLessThree {
 void
 AbismalIndex::sort_buckets() {
   {
-    auto s_time = steady_clock::now();
+    const auto s_time = abismal_clock::now();
     if (VERBOSE)
-      clog << "[sorting two-letter buckets]";
+      std::clog << "[sorting two-letter buckets]";
     const auto b = std::begin(index);
     const BucketLess bucket_less(genome);
     const auto n_threads = std::min(counter_size, n_threads_global);
@@ -910,7 +908,7 @@ AbismalIndex::sort_buckets() {
       const auto start_idx = i * n_per;
       const auto stop_idx = std::min((i + 1) * n_per, counter_size);
       threads.push_back(std::thread([&, start_idx, stop_idx]() {
-        for (size_t i = start_idx; i < stop_idx; ++i)
+        for (std::size_t i = start_idx; i < stop_idx; ++i)
           if (counter[i + 1] > counter[i] + 1)
             std::sort(b + counter[i], b + counter[i + 1], bucket_less);
       }));
@@ -918,12 +916,12 @@ AbismalIndex::sort_buckets() {
     for (auto &thread : threads)
       thread.join();
     if (VERBOSE)
-      clog << delta_seconds(s_time) << endl;
+      std::clog << delta_seconds(s_time) << std::endl;
   }
   {
-    auto s_time = steady_clock::now();
+    const auto s_time = abismal_clock::now();
     if (VERBOSE)
-      clog << "[sorting three-letter T buckets]";
+      std::clog << "[sorting three-letter T buckets]";
     const auto b = std::begin(index_t);
     const BucketLessThree<c_to_t> bucket_less(genome);
     const auto n_threads = std::min(counter_size_three, n_threads_global);
@@ -933,7 +931,7 @@ AbismalIndex::sort_buckets() {
       const auto start_idx = i * n_per;
       const auto stop_idx = std::min((i + 1) * n_per, counter_size_three);
       threads.push_back(std::thread([&, start_idx, stop_idx]() {
-        for (size_t i = start_idx; i < stop_idx; ++i)
+        for (std::size_t i = start_idx; i < stop_idx; ++i)
           if (counter_t[i + 1] > counter_t[i] + 1)
             std::sort(b + counter_t[i], b + counter_t[i + 1], bucket_less);
       }));
@@ -941,12 +939,12 @@ AbismalIndex::sort_buckets() {
     for (auto &thread : threads)
       thread.join();
     if (VERBOSE)
-      clog << delta_seconds(s_time) << endl;
+      std::clog << delta_seconds(s_time) << std::endl;
   }
   {
-    auto s_time = steady_clock::now();
+    const auto s_time = abismal_clock::now();
     if (VERBOSE)
-      clog << "[sorting three-letter A buckets]";
+      std::clog << "[sorting three-letter A buckets]";
     const auto b = std::begin(index_a);
     const BucketLessThree<g_to_a> bucket_less(genome);
     const auto n_threads = std::min(counter_size_three, n_threads_global);
@@ -956,7 +954,7 @@ AbismalIndex::sort_buckets() {
       const auto start_idx = i * n_per;
       const auto stop_idx = std::min((i + 1) * n_per, counter_size_three);
       threads.push_back(std::thread([&, start_idx, stop_idx]() {
-        for (size_t i = start_idx; i < stop_idx; ++i)
+        for (std::size_t i = start_idx; i < stop_idx; ++i)
           if (counter_a[i + 1] > counter_a[i] + 1)
             std::sort(b + counter_a[i], b + counter_a[i + 1], bucket_less);
       }));
@@ -964,7 +962,7 @@ AbismalIndex::sort_buckets() {
     for (auto &thread : threads)
       thread.join();
     if (VERBOSE)
-      clog << delta_seconds(s_time) << endl;
+      std::clog << delta_seconds(s_time) << std::endl;
   }
 }
 
@@ -981,46 +979,47 @@ seed::read(FILE *in) {
   static constexpr auto error_msg{"failed to read seed data"};
 
   // key_weight
-  uint32_t key_weight_from_file = 0;
-  if (fread((char *)&key_weight_from_file, sizeof(uint32_t), 1, in) != 1)
+  std::uint32_t key_weight_from_file = 0;
+  if (fread((char *)&key_weight_from_file, sizeof(std::uint32_t), 1, in) != 1)
     throw std::runtime_error(error_msg);
 
   if (key_weight_from_file != key_weight) {
     throw std::runtime_error(
-      "inconsistent k-mer size. Expected: " + to_string(key_weight) +
-      ", got: " + to_string(key_weight_from_file));
+      "inconsistent k-mer size. Expected: " + std::to_string(key_weight) +
+      ", got: " + std::to_string(key_weight_from_file));
   }
 
   // window_size
-  uint32_t window_size_from_file = 0;
-  if (fread((char *)&window_size_from_file, sizeof(uint32_t), 1, in) != 1)
+  std::uint32_t window_size_from_file = 0;
+  if (fread((char *)&window_size_from_file, sizeof(std::uint32_t), 1, in) != 1)
     throw std::runtime_error(error_msg);
 
   if (window_size_from_file != window_size) {
-    throw std::runtime_error(
-      "inconsistent window size size. Expected: " + to_string(window_size) +
-      ", got: " + to_string(window_size_from_file));
+    throw std::runtime_error("inconsistent window size size. Expected: " +
+                             std::to_string(window_size) +
+                             ", got: " + std::to_string(window_size_from_file));
   }
 
   // n_sorting_positions
-  uint32_t n_sorting_positions_from_file = 0;
-  if (fread((char *)&n_sorting_positions_from_file, sizeof(uint32_t), 1, in) !=
-      1)
+  std::uint32_t n_sorting_positions_from_file = 0;
+  if (fread((char *)&n_sorting_positions_from_file, sizeof(std::uint32_t), 1,
+            in) != 1)
     throw std::runtime_error(error_msg);
 
   if (n_sorting_positions_from_file != n_sorting_positions) {
     throw std::runtime_error("inconsistent sorting size size. Expected: " +
-                             to_string(n_sorting_positions) + ", got: " +
-                             to_string(n_sorting_positions_from_file));
+                             std::to_string(n_sorting_positions) + ", got: " +
+                             std::to_string(n_sorting_positions_from_file));
   }
 }
 
 void
 seed::write(FILE *out) {
   static const std::string error_msg("failed to write seed data");
-  if (fwrite((char *)&seed::key_weight, sizeof(uint32_t), 1, out) != 1 ||
-      fwrite((char *)&seed::window_size, sizeof(uint32_t), 1, out) != 1 ||
-      fwrite((char *)&seed::n_sorting_positions, sizeof(uint32_t), 1, out) != 1)
+  if (fwrite((char *)&seed::key_weight, sizeof(std::uint32_t), 1, out) != 1 ||
+      fwrite((char *)&seed::window_size, sizeof(std::uint32_t), 1, out) != 1 ||
+      fwrite((char *)&seed::n_sorting_positions, sizeof(std::uint32_t), 1,
+             out) != 1)
     throw std::runtime_error(error_msg);
 }
 
@@ -1036,24 +1035,24 @@ AbismalIndex::write(const std::string &index_file) const {
 
   if (fwrite((char *)&genome[0], sizeof(element_t), genome.size(), out) !=
         genome.size() ||
-      fwrite((char *)&max_candidates, sizeof(uint32_t), 1, out) != 1 ||
-      fwrite((char *)&counter_size, sizeof(size_t), 1, out) != 1 ||
-      fwrite((char *)&counter_size_three, sizeof(size_t), 1, out) != 1 ||
-      fwrite((char *)&index_size, sizeof(size_t), 1, out) != 1 ||
-      fwrite((char *)&index_size_three, sizeof(size_t), 1, out) != 1 ||
-      fwrite((char *)(&counter[0]), sizeof(uint32_t), counter_size + 1, out) !=
-        (counter_size + 1) ||
-      fwrite((char *)(&counter_t[0]), sizeof(uint32_t), counter_size_three + 1,
-             out) != (counter_size_three + 1) ||
-      fwrite((char *)(&counter_a[0]), sizeof(uint32_t), counter_size_three + 1,
-             out) != (counter_size_three + 1) ||
+      fwrite((char *)&max_candidates, sizeof(std::uint32_t), 1, out) != 1 ||
+      fwrite((char *)&counter_size, sizeof(std::size_t), 1, out) != 1 ||
+      fwrite((char *)&counter_size_three, sizeof(std::size_t), 1, out) != 1 ||
+      fwrite((char *)&index_size, sizeof(std::size_t), 1, out) != 1 ||
+      fwrite((char *)&index_size_three, sizeof(std::size_t), 1, out) != 1 ||
+      fwrite((char *)(&counter[0]), sizeof(std::uint32_t), counter_size + 1,
+             out) != (counter_size + 1) ||
+      fwrite((char *)(&counter_t[0]), sizeof(std::uint32_t),
+             counter_size_three + 1, out) != (counter_size_three + 1) ||
+      fwrite((char *)(&counter_a[0]), sizeof(std::uint32_t),
+             counter_size_three + 1, out) != (counter_size_three + 1) ||
 
-      fwrite((char *)(&index[0]), sizeof(uint32_t), index_size, out) !=
+      fwrite((char *)(&index[0]), sizeof(std::uint32_t), index_size, out) !=
         (index_size) ||
-      fwrite((char *)(&index_t[0]), sizeof(uint32_t), index_size_three, out) !=
-        (index_size_three) ||
-      fwrite((char *)(&index_a[0]), sizeof(uint32_t), index_size_three, out) !=
-        (index_size_three))
+      fwrite((char *)(&index_t[0]), sizeof(std::uint32_t), index_size_three,
+             out) != (index_size_three) ||
+      fwrite((char *)(&index_a[0]), sizeof(std::uint32_t), index_size_three,
+             out) != (index_size_three))
     throw std::runtime_error("failed writing index");
 
   if (fclose(out) != 0)
@@ -1083,7 +1082,7 @@ AbismalIndex::read(const std::string &index_file) {
   seed::read(in);
   cl.read(in);
 
-  const size_t genome_to_read = (cl.get_genome_size() + 15) / 16;
+  const std::size_t genome_to_read = (cl.get_genome_size() + 15) / 16;
   // read the 4-bit encoded genome
   genome.resize(genome_to_read);
   if (fread((char *)&genome[0], sizeof(element_t), genome_to_read, in) !=
@@ -1091,43 +1090,43 @@ AbismalIndex::read(const std::string &index_file) {
     throw std::runtime_error(error_msg);
 
   // read the sizes of counter and index vectors
-  if (fread((char *)&max_candidates, sizeof(uint32_t), 1, in) != 1 ||
-      fread((char *)&counter_size, sizeof(size_t), 1, in) != 1 ||
-      fread((char *)&counter_size_three, sizeof(size_t), 1, in) != 1 ||
-      fread((char *)&index_size, sizeof(size_t), 1, in) != 1 ||
-      fread((char *)&index_size_three, sizeof(size_t), 1, in) != 1)
+  if (fread((char *)&max_candidates, sizeof(std::uint32_t), 1, in) != 1 ||
+      fread((char *)&counter_size, sizeof(std::size_t), 1, in) != 1 ||
+      fread((char *)&counter_size_three, sizeof(std::size_t), 1, in) != 1 ||
+      fread((char *)&index_size, sizeof(std::size_t), 1, in) != 1 ||
+      fread((char *)&index_size_three, sizeof(std::size_t), 1, in) != 1)
     throw std::runtime_error(error_msg);
 
   // allocate then read the counter vector
-  counter = vector<uint32_t>(counter_size + 1);
-  if (fread((char *)(&counter[0]), sizeof(uint32_t), (counter_size + 1), in) !=
-      (counter_size + 1))
+  counter = std::vector<std::uint32_t>(counter_size + 1);
+  if (fread((char *)(&counter[0]), sizeof(std::uint32_t), (counter_size + 1),
+            in) != (counter_size + 1))
     throw std::runtime_error(error_msg);
 
-  counter_t = vector<uint32_t>(counter_size_three + 1);
-  if (fread((char *)(&counter_t[0]), sizeof(uint32_t), (counter_size_three + 1),
-            in) != (counter_size_three + 1))
+  counter_t = std::vector<std::uint32_t>(counter_size_three + 1);
+  if (fread((char *)(&counter_t[0]), sizeof(std::uint32_t),
+            (counter_size_three + 1), in) != (counter_size_three + 1))
     throw std::runtime_error(error_msg);
 
-  counter_a = vector<uint32_t>(counter_size_three + 1);
-  if (fread((char *)(&counter_a[0]), sizeof(uint32_t), (counter_size_three + 1),
-            in) != (counter_size_three + 1))
+  counter_a = std::vector<std::uint32_t>(counter_size_three + 1);
+  if (fread((char *)(&counter_a[0]), sizeof(std::uint32_t),
+            (counter_size_three + 1), in) != (counter_size_three + 1))
     throw std::runtime_error(error_msg);
 
   // allocate the read the index vector
-  index = vector<uint32_t>(index_size);
-  if (fread((char *)(&index[0]), sizeof(uint32_t), index_size, in) !=
+  index = std::vector<std::uint32_t>(index_size);
+  if (fread((char *)(&index[0]), sizeof(std::uint32_t), index_size, in) !=
       index_size)
     throw std::runtime_error(error_msg);
 
-  index_t = vector<uint32_t>(index_size_three);
-  if (fread((char *)(&index_t[0]), sizeof(uint32_t), index_size_three, in) !=
-      index_size_three)
+  index_t = std::vector<std::uint32_t>(index_size_three);
+  if (fread((char *)(&index_t[0]), sizeof(std::uint32_t), index_size_three,
+            in) != index_size_three)
     throw std::runtime_error(error_msg);
 
-  index_a = vector<uint32_t>(index_size_three);
-  if (fread((char *)(&index_a[0]), sizeof(uint32_t), index_size_three, in) !=
-      index_size_three)
+  index_a = std::vector<std::uint32_t>(index_size_three);
+  if (fread((char *)(&index_a[0]), sizeof(std::uint32_t), index_size_three,
+            in) != index_size_three)
     throw std::runtime_error(error_msg);
 
   if (fclose(in) != 0)
@@ -1136,27 +1135,27 @@ AbismalIndex::read(const std::string &index_file) {
 
 std::ostream &
 ChromLookup::write(std::ostream &out) const {
-  const uint32_t n_chroms = names.size();
-  out.write((char *)&n_chroms, sizeof(uint32_t));
-  for (size_t i = 0; i < n_chroms; ++i) {
-    const uint32_t name_size = names[i].length();
-    out.write((char *)&name_size, sizeof(uint32_t));
+  const std::uint32_t n_chroms = names.size();
+  out.write((char *)&n_chroms, sizeof(std::uint32_t));
+  for (std::size_t i = 0; i < n_chroms; ++i) {
+    const std::uint32_t name_size = names[i].length();
+    out.write((char *)&name_size, sizeof(std::uint32_t));
     out.write(names[i].c_str(), name_size);
   }
-  out.write((char *)(&starts[0]), sizeof(uint32_t) * (n_chroms + 1));
+  out.write((char *)(&starts[0]), sizeof(std::uint32_t) * (n_chroms + 1));
   return out;
 }
 
 FILE *
 ChromLookup::write(FILE *out) const {
-  const uint32_t n_chroms = names.size();
-  fwrite((char *)&n_chroms, sizeof(uint32_t), 1, out);
-  for (size_t i = 0; i < n_chroms; ++i) {
-    const uint32_t name_size = names[i].length();
-    fwrite((char *)&name_size, sizeof(uint32_t), 1, out);
+  const std::uint32_t n_chroms = names.size();
+  fwrite((char *)&n_chroms, sizeof(std::uint32_t), 1, out);
+  for (std::size_t i = 0; i < n_chroms; ++i) {
+    const std::uint32_t name_size = names[i].length();
+    fwrite((char *)&name_size, sizeof(std::uint32_t), 1, out);
     fwrite(names[i].c_str(), 1, name_size, out);
   }
-  fwrite((char *)(&starts[0]), sizeof(uint32_t), n_chroms + 1, out);
+  fwrite((char *)(&starts[0]), sizeof(std::uint32_t), n_chroms + 1, out);
   return out;
 }
 
@@ -1171,17 +1170,17 @@ ChromLookup::write(const std::string &outfile) const {
 std::istream &
 ChromLookup::read(std::istream &in) {
   // read the number of chroms
-  uint32_t n_chroms = 0;
-  in.read((char *)&n_chroms, sizeof(uint32_t));
+  std::uint32_t n_chroms = 0;
+  in.read((char *)&n_chroms, sizeof(std::uint32_t));
 
   // allocate the number of chroms
   names.resize(n_chroms);
 
   // get each chrom name
-  for (size_t i = 0; i < n_chroms; ++i) {
-    uint32_t name_size = 0;
+  for (std::size_t i = 0; i < n_chroms; ++i) {
+    std::uint32_t name_size = 0;
     // get the size of the chrom name
-    in.read((char *)&name_size, sizeof(uint32_t));
+    in.read((char *)&name_size, sizeof(std::uint32_t));
     // allocate the chrom name
     names[i].resize(name_size);
     // read the chrom name
@@ -1189,8 +1188,8 @@ ChromLookup::read(std::istream &in) {
   }
 
   // allocate then read the starts vector
-  starts = vector<uint32_t>(n_chroms + 1);
-  in.read((char *)(&starts[0]), sizeof(uint32_t) * (n_chroms + 1));
+  starts = std::vector<std::uint32_t>(n_chroms + 1);
+  in.read((char *)(&starts[0]), sizeof(std::uint32_t) * (n_chroms + 1));
 
   return in;
 }
@@ -1200,17 +1199,17 @@ ChromLookup::read(FILE *in) {
   constexpr auto error_msg = "failed loading chrom info from index";
 
   // read the number of chroms in the reference
-  uint32_t n_chroms = 0;
-  if (fread((char *)&n_chroms, sizeof(uint32_t), 1, in) != 1)
+  std::uint32_t n_chroms = 0;
+  if (fread((char *)&n_chroms, sizeof(std::uint32_t), 1, in) != 1)
     throw std::runtime_error(error_msg);
 
   names.resize(n_chroms);  // allocate a name for each chrom
 
   // get each chrom name
-  for (size_t i = 0; i < n_chroms; ++i) {
-    uint32_t name_size = 0;
+  for (std::size_t i = 0; i < n_chroms; ++i) {
+    std::uint32_t name_size = 0;
     // get size of chrom name
-    if (fread((char *)&name_size, sizeof(uint32_t), 1, in) != 1)
+    if (fread((char *)&name_size, sizeof(std::uint32_t), 1, in) != 1)
       throw std::runtime_error(error_msg);
     // allocate the chrom name
     names[i].resize(name_size);
@@ -1220,8 +1219,8 @@ ChromLookup::read(FILE *in) {
   }
 
   // allocate then read the starts vector
-  starts = vector<uint32_t>(n_chroms + 1);
-  if (fread((char *)(&starts[0]), sizeof(uint32_t), n_chroms + 1, in) !=
+  starts = std::vector<std::uint32_t>(n_chroms + 1);
+  if (fread((char *)(&starts[0]), sizeof(std::uint32_t), n_chroms + 1, in) !=
       n_chroms + 1)
     throw std::runtime_error(error_msg);
 
@@ -1251,8 +1250,9 @@ ChromLookup::tostring() const {
 }
 
 void
-ChromLookup::get_chrom_idx_and_offset(const uint32_t pos, uint32_t &chrom_idx,
-                                      uint32_t &offset) const {
+ChromLookup::get_chrom_idx_and_offset(const std::uint32_t pos,
+                                      std::uint32_t &chrom_idx,
+                                      std::uint32_t &offset) const {
   auto idx = upper_bound(std::cbegin(starts), std::cend(starts), pos);
 
   assert(idx != std::cbegin(starts));
@@ -1263,19 +1263,20 @@ ChromLookup::get_chrom_idx_and_offset(const uint32_t pos, uint32_t &chrom_idx,
   offset = pos - starts[chrom_idx];
 }
 
-uint32_t
-ChromLookup::get_pos(const std::string &chrom, const uint32_t offset) const {
+std::uint32_t
+ChromLookup::get_pos(const std::string &chrom,
+                     const std::uint32_t offset) const {
   const auto itr = find(std::cbegin(names), std::cend(names), chrom);
   return itr == std::cend(names)
-           ? num_lim<uint32_t>::max()
+           ? num_lim<std::uint32_t>::max()
            : starts[std::distance(std::cbegin(names), itr)] + offset;
 }
 
 bool
-ChromLookup::get_chrom_idx_and_offset(const uint32_t pos,
-                                      const uint32_t readlen,
-                                      uint32_t &chrom_idx,
-                                      uint32_t &offset) const {
+ChromLookup::get_chrom_idx_and_offset(const std::uint32_t pos,
+                                      const std::uint32_t readlen,
+                                      std::uint32_t &chrom_idx,
+                                      std::uint32_t &offset) const {
   auto idx = upper_bound(std::cbegin(starts), std::cend(starts), pos);
 
   if (idx == std::cbegin(starts))
@@ -1335,7 +1336,7 @@ load_genome(const std::string &genome_file, std::string &genome,
 }
 
 void
-load_genome(const std::string &genome_file, vector<uint8_t> &genome,
+load_genome(const std::string &genome_file, std::vector<std::uint8_t> &genome,
             ChromLookup &cl) {
   load_genome_impl(genome_file, genome, cl);
 }
