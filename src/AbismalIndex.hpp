@@ -27,6 +27,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <thread>
 #include <unordered_set>
 #include <vector>
 
@@ -150,6 +151,7 @@ struct AbismalIndex {
   static bool VERBOSE;
 
   static const uint32_t max_n_count = 256ul;
+  static std::size_t n_threads_global;
 
   uint32_t max_candidates{100u};
 
@@ -177,6 +179,12 @@ struct AbismalIndex {
 
   Genome genome;   // the genome
   ChromLookup cl;  // the starting position of each chromosome
+
+  static void
+  set_n_threads(const std::uint32_t &n_threads_arg) {
+    n_threads_global =
+      std::min(std::thread::hardware_concurrency(), n_threads_arg);
+  }
 
   void
   create_index(const std::string &genome_file);
