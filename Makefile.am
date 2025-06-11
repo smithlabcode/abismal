@@ -37,8 +37,7 @@ SUBDIRS := src/smithlab_cpp
 install installdirs: SUBDIRS := $(filter-out src/smithlab_cpp, $(SUBDIRS))
 AM_CPPFLAGS = -I $(top_srcdir)/src/smithlab_cpp -I $(top_srcdir)/src/bamxx
 
-AM_CXXFLAGS = $(OPENMP_CXXFLAGS)
-AM_CXXFLAGS += -Wall -Wextra -Wpedantic -Wno-unknown-attributes
+AM_CXXFLAGS = -Wall -Wextra -Wpedantic -Wno-unknown-attributes
 if ENABLE_SHORT
 AM_CXXFLAGS += -DENABLE_SHORT
 endif
