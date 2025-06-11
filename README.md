@@ -17,13 +17,10 @@ See how to [get started](https://github.com/smithlabcode/abismal/blob/master/doc
 
 ### Requirements ###
 
-Currently abismal requires a C++ compiler that supports the C++11
-standard and OpenMP. The default compiler assumed is g++ (comes with
-GCC, available on your Linux or macOS machine). The g++ compiler has
-supported the C++11 standard since roughly 2012 (GCC 4.7) so this
-should not cause any problems. It also requires an OMP library and
-headers to be available, which rarely causes problems. Instructions to
-get HTSlib, for macOS or Linux systems, can be found below.
+Currently abismal requires a C++ compiler. The default compiler
+assumed is g++ (comes with GCC, available on your Linux or macOS
+machine). HTSlib is also required. Instructions to get HTSlib, for
+macOS or Linux systems, can be found below.
 
 If you have trouble with the `make` part of the installation procedure
 described below, please contact us via e-mail or through a [GitHub
