@@ -43,18 +43,6 @@ and headers can be found.
 dnl check for required libraries
 AC_SEARCH_LIBS([hts_version], [hts], [], [AC_MSG_FAILURE([$hts_fail_msg])])
 
-
-dnl OpenMP happens here
-AC_OPENMP([C++])
-AS_VAR_IF(OPENMP_CXXFLAGS, [], [
-dnl check for the OpenMP library; can't be later
-AC_SEARCH_LIBS([omp_get_num_threads], [gomp omp], [],
-               [AC_MSG_FAILURE([OpenMP library not found])])
-dnl now we get setup for the right OpenMP flags
-ADS_OPENMP([], [AC_MSG_FAILURE([OpenMP must be installed to build abismal])])
-])dnl end of OpenMP stuff
-
-
 dnl Optimize for shorter reads by compiling with a smaller window when
 dnl making the index. When abismal loads the index, it compares the
 dnl value with a constant so abismalidx and abismal must both be
