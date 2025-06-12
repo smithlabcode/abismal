@@ -42,7 +42,7 @@ jobs:
             autoreconf -i && \
             mkdir build && cd build && \
             ../configure && \
-            make -j4 LDFLAGS="-static-libgcc -static-libstdc++"
+            make -j4 LDFLAGS="-static-libgcc -static-libstdc++ -s"
         run: |
           docker exec build-container bash -c "$SCRIPT"
       - name: Get version number
