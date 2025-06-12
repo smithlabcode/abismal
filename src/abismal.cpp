@@ -1753,16 +1753,15 @@ run_single_ended(const bool show_progress, const bool allow_ambig,
   const auto start_time{abismal_clock::now()};
 
   std::vector<std::thread> threads;
-  for (auto i = 0u; i < abismal_concurrency::n_threads; ++i) {
-    threads.push_back(std::thread([&, i]() {
+  for (auto i = 0u; i < abismal_concurrency::n_threads; ++i)
+    threads.emplace_back([&] {
       if (random_pbat)
         map_single_ended_rand(show_progress, allow_ambig, abismal_index, rl,
                               se_stats, hdr, out, progress);
       else
         map_single_ended<conv>(show_progress, allow_ambig, abismal_index, rl,
                                se_stats, hdr, out, progress);
-    }));
-  }
+    });
   for (auto &thread : threads)
     thread.join();
 
@@ -2313,16 +2312,15 @@ run_paired_ended(const bool show_progress, const bool allow_ambig,
   const auto start_time{abismal_clock::now()};
 
   std::vector<std::thread> threads;
-  for (auto i = 0u; i < abismal_concurrency::n_threads; ++i) {
-    threads.push_back(std::thread([&, i]() {
+  for (auto i = 0u; i < abismal_concurrency::n_threads; ++i)
+    threads.emplace_back([&] {
       if (random_pbat)
         map_paired_ended_rand(show_progress, allow_ambig, abismal_index, rl1,
                               rl2, pe_stats, hdr, out, progress);
       else
         map_paired_ended<conv>(show_progress, allow_ambig, abismal_index, rl1,
                                rl2, pe_stats, hdr, out, progress);
-    }));
-  }
+    });
   for (auto &thread : threads)
     thread.join();
 
