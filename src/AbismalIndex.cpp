@@ -416,12 +416,12 @@ AbismalIndex::initialize_bucket_sizes() {
   const auto s_time = abismal_clock::now();
   if (VERBOSE)
     std::clog << "[computing bucket sizes]";
-  std::thread t1([&]() { get_bucket_sizes_two<use_mask>(); });
-  std::thread t2([&]() { get_bucket_sizes_three<c_to_t, use_mask>(); });
-  std::thread t3([&]() { get_bucket_sizes_three<g_to_a, use_mask>(); });
-  t1.join();
-  t2.join();
-  t3.join();
+  std::thread bucket_two_ltr([&] { get_bucket_sizes_two<use_mask>(); });
+  std::thread bucket_ct([&] { get_bucket_sizes_three<c_to_t, use_mask>(); });
+  std::thread bucket_ga([&] { get_bucket_sizes_three<g_to_a, use_mask>(); });
+  bucket_two_ltr.join();
+  bucket_ct.join();
+  bucket_ga.join();
   if (VERBOSE)
     std::clog << delta_seconds(s_time) << std::endl;
 }
@@ -479,11 +479,11 @@ AbismalIndex::select_two_letter_positions() {
   const auto n_blocks = std::size(blocks);
 
   const auto n_threads = std::min(n_blocks, n_threads_global);
-  std::vector<std::thread> threads;
 
   const auto blocks_beg = std::cbegin(blocks);
   const std::uint32_t n_per = (n_blocks + n_threads - 1) / n_threads;
 
+  std::vector<std::thread> threads;
   for (auto i = 0ul; i < n_threads; ++i) {
     const auto curr_beg = blocks_beg + i * n_per;
     const auto curr_end = blocks_beg + std::min(n_blocks, (i + 1) * n_per);
@@ -542,12 +542,12 @@ AbismalIndex::hash_genome() {
   const auto inc_scan = [](auto &v) {
     std::inclusive_scan(std::cbegin(v), std::cend(v), std::begin(v));
   };
-  std::thread t1([&]() { inc_scan(counter); });
-  std::thread t2([&]() { inc_scan(counter_t); });
-  std::thread t3([&]() { inc_scan(counter_a); });
-  t1.join();
-  t2.join();
-  t3.join();
+  std::thread scanner([&] { inc_scan(counter); });
+  std::thread scanner_t([&] { inc_scan(counter_t); });
+  std::thread scanner_a([&] { inc_scan(counter_a); });
+  scanner.join();
+  scanner_t.join();
+  scanner_a.join();
 
   index_size = counter[counter_size];
   index_size_three = counter_t[counter_size_three];
@@ -565,7 +565,7 @@ AbismalIndex::hash_genome() {
     std::clog << "[counting k-mers]";
   const auto lim = cl.get_genome_size() - seed::key_weight + 1;
 
-  std::thread t4([&]() {
+  std::thread ltr_counter([&] {
     auto gi_two = genome_iterator(std::cbegin(genome));
     const auto gi_lim = gi_two + (seed::key_weight - 1);
     std::uint32_t hash_two = 0;
@@ -584,7 +584,7 @@ AbismalIndex::hash_genome() {
     }
   });
 
-  std::thread t5([&]() {
+  std::thread ltr_counter_t([&] {
     auto gi_three = genome_iterator(std::cbegin(genome));
     const auto gi_lim = gi_three + (seed::key_weight_three - 1);
     std::uint32_t hash_t = 0;
@@ -603,7 +603,7 @@ AbismalIndex::hash_genome() {
     }
   });
 
-  std::thread t6([&]() {
+  std::thread ltr_counter_a([&] {
     auto gi_three = genome_iterator(std::cbegin(genome));
     const auto gi_lim = gi_three + (seed::key_weight_three - 1);
     std::uint32_t hash_a = 0;
@@ -622,9 +622,9 @@ AbismalIndex::hash_genome() {
     }
   });
 
-  t4.join();
-  t5.join();
-  t6.join();
+  ltr_counter.join();
+  ltr_counter_t.join();
+  ltr_counter_a.join();
 
   if (VERBOSE)
     std::clog << delta_seconds(s_time) << std::endl;
