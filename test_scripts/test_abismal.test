@@ -5,7 +5,7 @@ infile2=tests/tRex1.idx
 outfile1=tests/reads.sam
 outfile2=tests/reads.mstats
 if [[ -e "${infile1}" && -e "${infile2}" ]]; then
-    ./abismal -s ${outfile2} -o ${outfile1} -i ${infile2} ${infile1}
+    ./abismal map -s ${outfile2} -o ${outfile1} -i ${infile2} ${infile1}
     x1=$(md5sum -c tests/md5sum.txt | grep "${outfile1}:" | cut -d ' ' -f 2)
     x2=$(md5sum -c tests/md5sum.txt | grep "${outfile2}:" | cut -d ' ' -f 2)
     if [[ "${x1}" != "OK" || "${x2}" != "OK" ]]; then

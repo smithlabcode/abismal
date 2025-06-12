@@ -13,7 +13,7 @@ trap f ERR
 infile=tests/reads_1.fq
 infileidx=tests/tRex1.idx
 if [[ -e "${infile}" && -e "${infileidx}" ]]; then
-    ./abismal -v -B -t 2 -i ${infileidx} ${infile} > /dev/null;
+    ./abismal map -v -B -t 2 -i ${infileidx} ${infile} > /dev/null;
 else
     echo "missing input file(s); skipping test";
     exit 77;
@@ -22,7 +22,7 @@ fi
 infile1=tests/reads_pe_1.fq
 infile2=tests/reads_pe_2.fq
 if [[ -e "${infile1}" && -e "${infile2}" ]]; then
-    ./abismal -v -B -t 2 -i ${infileidx} ${infile1} ${infile2} > /dev/null;
+    ./abismal map -v -B -t 2 -i ${infileidx} ${infile1} ${infile2} > /dev/null;
 else
     echo "missing input file(s); skipping test";
     exit 77;
@@ -31,7 +31,7 @@ fi
 infile1=tests/reads_pbat_pe_1.fq
 infile2=tests/reads_pbat_pe_2.fq
 if [[ -e "${infile1}" && -e "${infile2}" ]]; then
-    ./abismal -v -B -t 2 -P -i ${infileidx} ${infile1} ${infile2} > /dev/null;
+    ./abismal map -v -B -t 2 -P -i ${infileidx} ${infile1} ${infile2} > /dev/null;
 else
     echo "missing input file(s); skipping tests";
     exit 77;
@@ -40,7 +40,7 @@ fi
 infile1=tests/reads_rpbat_pe_1.fq
 infile2=tests/reads_rpbat_pe_2.fq
 if [[ -e "${infile1}" && -e "${infile2}" ]]; then
-    ./abismal -v -B -t 2 -P -i ${infileidx} ${infile1} ${infile2} > /dev/null;
+    ./abismal map -v -B -t 2 -P -i ${infileidx} ${infile1} ${infile2} > /dev/null;
 else
     echo "missing input file(s); skipping test";
     exit 77;
