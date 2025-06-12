@@ -49,7 +49,7 @@ jobs:
           make -j4
       - name: Rename the binary
         run: |
-          mv abismal/build/abismal abismal_$(uname -m)
+          mv build/abismal abismal_$(uname -m)
       - name: Get version number
         id: vars
         run: |
