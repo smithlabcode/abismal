@@ -1,6 +1,6 @@
 dnl This file is part of abismal
 dnl
-dnl Copyright (C) 2019-2024: Andrew D. Smith and Guilherme de Sena Brandine
+dnl Copyright (C) 2019-2025: Andrew D. Smith and Guilherme de Sena Brandine
 dnl
 dnl Authors: Andrew D. Smith and Guilherme de Sena Brandine
 dnl
@@ -35,18 +35,20 @@ AC_CONFIG_SUBDIRS([src/smithlab_cpp])
 
 dnl check for HTSLib if requested
 hts_fail_msg="
-Failed to locate HTSLib on your system. Please use the LDFLAGS and
-CPPFLAGS variables to specify the directories where the HTSLib library
-and headers can be found.
+Failed to locate HTSLib on your system. Please use the LDFLAGS and CPPFLAGS
+variables to specify the directories where the HTSLib library and headers can
+be found.
 "
 
 dnl check for required libraries
-AC_SEARCH_LIBS([hts_version], [hts], [], [AC_MSG_FAILURE([$hts_fail_msg])])
+AC_SEARCH_LIBS([pthread_create], [pthread], [], [AC_MSG_FAILURE(["pthread library not found"])])
+AC_SEARCH_LIBS([gzopen], [z], [], [AC_MSG_FAILURE(["Zlib library not found"])])
+AC_SEARCH_LIBS([hts_version], [hts], [], [AC_MSG_FAILURE([$hts_fail_msg])], [-lz -lpthread])
 
-dnl Optimize for shorter reads by compiling with a smaller window when
-dnl making the index. When abismal loads the index, it compares the
-dnl value with a constant so abismalidx and abismal must both be
-dnl compiled this way to work together.
+dnl Optimize for shorter reads by compiling with a smaller window when making
+dnl the index. When abismal loads the index, it compares the value with a
+dnl constant so abismalidx and abismal must both be compiled this way to work
+dnl together.
 AC_ARG_ENABLE([short],
   [AS_HELP_STRING([--enable-short],
                   [optimize for very short reads @<:@no@:>@])],
@@ -63,3 +65,6 @@ tests/md5sum.txt:data/md5sum.txt
 tests/tRex1.fa:data/tRex1.fa
 ])
 AC_OUTPUT
+
+dnl ADS: use the flag below to get mostly static build
+dnl LDFLAGS="-static-libgcc -static-libstdc++"
