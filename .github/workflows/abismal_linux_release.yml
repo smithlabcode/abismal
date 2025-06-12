@@ -39,7 +39,7 @@ jobs:
             cp libhts.a /usr/local/lib/ && \
             cp -r ../htslib /usr/local/include/ && \
             cd /workspace && \
-            ./autogen.sh && \
+            autoreconf -i && \
             mkdir build && cd build && \
             ../configure && \
             make -j4 LDFLAGS="-static-libgcc -static-libstdc++"
