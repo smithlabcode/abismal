@@ -65,10 +65,8 @@ libabismal_a_SOURCES += \
 
 LDADD = libabismal.a src/smithlab_cpp/libsmithlab_cpp.a
 
-bin_PROGRAMS = abismal abismalidx simreads
+bin_PROGRAMS = abismal
 abismal_SOURCES = src/abismal_main.cpp
-abismalidx_SOURCES = src/abismalidx_main.cpp
-simreads_SOURCES = src/simreads_main.cpp
 
 TESTS = test_scripts/test_abismalidx.test \
 	test_scripts/test_simreads.test \
