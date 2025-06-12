@@ -39,7 +39,7 @@ struct abismal_command {
 auto
 operator<<(std::ostream &out, const abismal_command &cmd) -> std::ostream & {
   static const std::size_t pad_size = 4;
-  static const std::size_t offset = 15;
+  static const std::size_t offset = 8;
   static const std::string pad(pad_size, ' ');
   return out << pad << std::left << std::setw(offset) << (cmd.tag + ":")
              << cmd.description;
@@ -69,9 +69,9 @@ main(int argc, const char **argv) {
   try {
     // clang-format off
     std::vector<abismal_command> commands = {
-      {"map",    "map FASTQ reads to a FASTA reference genome or an index", abismal},
-      {"idx", "convert a FASTA reference genome to an abismal index",     abismalidx},
-      {"sim",   "simulate reads in a FASTA reference genome",               simreads}
+      {"map", "map FASTQ reads to an index or a FASTA reference genome", abismal},
+      {"idx", "make an index for a FASTA reference genome", abismalidx},
+      {"sim", "simulate WGBS reads for a FASTA reference genome", simreads}
     };
     // clang-format on
     if (argc < 2) {
