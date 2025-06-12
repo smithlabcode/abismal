@@ -40,6 +40,7 @@ jobs:
           sudo cp -r ../htslib /opt/abismal/include
       - name: Build abismal
         run: |
+          ls -lh
           ./autogen.sh
           mkdir build && cd build
           ../configure LDFLAGS="-L/opt/abismal/lib" CPPFLAGS="-I/opt/abismal/include"
