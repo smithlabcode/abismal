@@ -5,7 +5,7 @@ outfile1=tests/reads_pe_1.fq
 outfile2=tests/reads_pe_2.fq
 outprefix=tests/reads_pe
 if [[ -e "${infile}" ]]; then
-    ./simreads -seed 1 -o ${outprefix} -n 10000 -m 0.01 -b 0.98 ${infile};
+    ./abismal sim -seed 1 -o ${outprefix} -n 10000 -m 0.01 -b 0.98 ${infile};
     x1=$(md5sum -c tests/md5sum.txt | grep "${outfile1}:" | cut -d ' ' -f 2)
     x2=$(md5sum -c tests/md5sum.txt | grep "${outfile2}:" | cut -d ' ' -f 2)
     if [[ "${x1}" != "OK" || "${x2}" != "OK" ]]; then
