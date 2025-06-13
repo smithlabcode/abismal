@@ -17,11 +17,9 @@ jobs:
         run: sudo mkdir -p /opt/abismal/lib /opt/abismal/include
       - name: Install dependency headers and static libs
         run: |
-          brew install zlib gsl automake
+          brew install zlib automake
           sudo cp $(brew --prefix zlib)/lib/*.a /opt/abismal/lib
-          sudo cp $(brew --prefix gsl)/lib/*.a /opt/abismal/lib
           sudo cp -r $(brew --prefix zlib)/include/* /opt/abismal/include
-          sudo cp -r $(brew --prefix gsl)/include/* /opt/abismal/include
       - name: Build and install HTSlib
         run: |
           git clone --recursive https://github.com/samtools/htslib.git
@@ -36,7 +34,7 @@ jobs:
             --disable-ref-cache \
             --without-libdeflate \
             LDADD="-L/usr/local/lib"
-          make CFLAGS="-Wall -O2 -fvisibility=hidden" libhts.a
+          make -j4 CFLAGS="-Wall -O2 -fvisibility=hidden" libhts.a
           sudo cp libhts.a /opt/abismal/lib
       - name: Build abismal
         run: |
