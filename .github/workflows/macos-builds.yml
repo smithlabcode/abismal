@@ -28,4 +28,4 @@ jobs:
     - name: configure with g++-14
       run: ./configure CXX="g++-14" CPPFLAGS="-I$(brew --prefix)/include" LDFLAGS="-L$(brew --prefix)/lib"
     - name: Build with g++-14
-      run: make CXXFLAGS="-O3 -DNDEBUG -Wl,-ld_classic"
+      run: make -j4
