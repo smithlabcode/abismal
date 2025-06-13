@@ -1,4 +1,4 @@
-name: Abismal builds on macOS (x86)
+name: Abismal builds on macOS
 
 on:
   workflow_dispatch:
@@ -9,7 +9,10 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14
+    strategy:
+      matrix:
+        os: [macos-13, macos-15]
+    runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v4
       with:
@@ -22,7 +25,7 @@ jobs:
       run: brew install htslib
     - name: Generate configure script
       run: ./autogen.sh
-    - name: configure with g++-13
-      run: ./configure CXX="g++-13" CPPFLAGS="-I$(brew --prefix)/include" LDFLAGS="-L$(brew --prefix)/lib"
-    - name: Build with g++
+    - name: configure with g++-14
+      run: ./configure CXX="g++-14" CPPFLAGS="-I$(brew --prefix)/include" LDFLAGS="-L$(brew --prefix)/lib"
+    - name: Build with g++-14
       run: make CXXFLAGS="-O3 -DNDEBUG -Wl,-ld_classic"
