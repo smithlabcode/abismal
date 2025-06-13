@@ -42,7 +42,6 @@ jobs:
           sudo cp -r ../htslib /opt/abismal/include
       - name: Build abismal
         run: |
-          ls -lh
           ./autogen.sh
           mkdir build && cd build
           ../configure LDFLAGS="-L/opt/abismal/lib" CPPFLAGS="-I/opt/abismal/include"
@@ -80,6 +79,7 @@ jobs:
           lipo -create \
           binaries/abismal-*/abismal_* \
           -output abismal
+          chmod +x abismal
       - name: Get version number
         id: vn
         run: |
@@ -87,7 +87,7 @@ jobs:
             sed "s/\[//; s/\]//; s/,//" >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ github.token }}
-      - name: Upload the package files
+      - name: Upload the lipo binary
         uses: actions/upload-artifact@v4
         with:
           name: abismal-${{ steps.vn.outputs.vn }}-macOS
