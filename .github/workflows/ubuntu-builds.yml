@@ -1,4 +1,4 @@
-name: Abismal builds on Ubuntu
+name: Abismal build (Ubuntu)
 
 on:
   workflow_dispatch:
@@ -8,10 +8,8 @@ on:
     branches: [ "master" ]
 
 jobs:
-  build:
-
+  build-with-gcc:
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v4
       with:
@@ -25,14 +23,20 @@ jobs:
     - name: configure for GCC
       run: ./configure CXX="g++"
     - name: make with g++
-      run: make
-    - name: cleanup after GCC
-      run: make distclean
-    - name: install Clang dependencies
-      run: sudo apt-get install -y libomp-dev
+      run: make -j4
+  build-with-clang:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+    - name: Update apt
+      run: sudo apt update
+    - name: Install dependencies
+      run: sudo apt-get install -y libhts-dev libomp-dev
+    - name: Generate configure script
+      run: ./autogen.sh
     - name: configure for Clang
       run: ./configure CXX="clang++"
     - name: make with clang++
-      run: make
-    - name: cleanup after clang++
-      run: make clean
+      run: make -j4
