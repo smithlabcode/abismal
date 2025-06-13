@@ -20,5 +20,7 @@ jobs:
       run: sudo apt-get install -y libhts-dev
     - name: Generate configure script
       run: ./autogen.sh
+    - name: Generate the Makefile
+      run: ./configure
     - name: Distcheck
       run: make -j4 distcheck
