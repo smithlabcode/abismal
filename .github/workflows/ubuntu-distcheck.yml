@@ -1,4 +1,4 @@
-name: Abismal distribution check on Ubuntu
+name: Abismal distcheck (Ubuntu)
 
 on:
   workflow_dispatch:
@@ -9,11 +9,9 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         submodules: recursive
     - name: Update packages
@@ -22,9 +20,5 @@ jobs:
       run: sudo apt-get install -y libhts-dev
     - name: Generate configure script
       run: ./autogen.sh
-    - name: configure
-      run: ./configure
-    - name: make check with two threads
-      run: make -j2 check
-    - name: make distcheck
-      run: make distcheck
+    - name: Distcheck
+      run: make -j4 distcheck
