@@ -44,8 +44,8 @@ jobs:
         run: |
           ./autogen.sh
           mkdir build && cd build
-          ../configure LDFLAGS="-L/opt/abismal/lib" CPPFLAGS="-I/opt/abismal/include"
-          make -j4 CXX=g++-14 LDFLAGS="-static-libgcc -static-libstdc++"
+          ../configure CXX=g++-14 LDFLAGS="-L/opt/abismal/lib -static-libgcc -static-libstdc++" CPPFLAGS="-I/opt/abismal/include"
+          make -j4
       - name: Rename the binary
         run: |
           mv build/abismal abismal_$(uname -m)
