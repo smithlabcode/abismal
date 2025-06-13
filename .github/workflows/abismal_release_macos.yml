@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-macos-releases:
+  build-macos-binaries:
     strategy:
       matrix:
         os: [macos-13, macos-14]
@@ -14,9 +14,7 @@ jobs:
         with:
           submodules: recursive
       - name: Make abismal dependency directories
-        run: |
-          sudo mkdir -p /opt/abismal/lib
-          sudo mkdir -p /opt/abismal/include
+        run: sudo mkdir -p /opt/abismal/lib /opt/abismal/include
       - name: Install dependency headers and static libs
         run: |
           brew install zlib gsl automake
@@ -28,6 +26,7 @@ jobs:
         run: |
           git clone --recursive https://github.com/samtools/htslib.git
           cd htslib
+          sudo cp -r htslib /opt/abismal/include
           autoreconf -i
           mkdir build && cd build
           ../configure \
@@ -39,16 +38,14 @@ jobs:
             LDADD="-L/usr/local/lib"
           make CFLAGS="-Wall -O2 -fvisibility=hidden" libhts.a
           sudo cp libhts.a /opt/abismal/lib
-          sudo cp -r ../htslib /opt/abismal/include
       - name: Build abismal
         run: |
           ./autogen.sh
           mkdir build && cd build
-          ../configure CXX=g++-14 LDFLAGS="-L/opt/abismal/lib -static-libgcc -static-libstdc++" CPPFLAGS="-I/opt/abismal/include"
+          ../configure CXX=g++-14 LDFLAGS="-L/opt/abismal/lib -static-libgcc -static-libstdc++ -Wl,-dead_strip" CPPFLAGS="-I/opt/abismal/include"
           make -j4
       - name: Rename the binary
-        run: |
-          mv build/abismal abismal_$(uname -m)
+        run: mv build/abismal abismal_$(uname -m)
       - name: Get version number
         id: vars
         run: |
@@ -60,11 +57,11 @@ jobs:
       - name: Upload the binary
         uses: actions/upload-artifact@v4
         with:
-          name: abismal-${{ steps.vars.outputs.vn }}-${{ matrix.os }}-${{ steps.vars.outputs.arch }}
+          name: abismal-${{ steps.vars.outputs.arch }}
           path: |
             abismal_${{ steps.vars.outputs.arch }}
-  package:
-    needs: build-macos-releases
+  make-lipo:
+    needs: build-macos-binaries
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -82,9 +79,7 @@ jobs:
           chmod +x abismal
       - name: Get version number
         id: vn
-        run: |
-          awk '/AC_INIT/ {print "vn="$2}' configure.ac | \
-            sed "s/\[//; s/\]//; s/,//" >> "$GITHUB_OUTPUT"
+        run: awk '/AC_INIT/ {print "vn="$2}' configure.ac | sed "s/\[//; s/\]//; s/,//" >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Upload the lipo binary
