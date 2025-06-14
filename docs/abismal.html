@@ -1,82 +1,56 @@
 <!DOCTYPE html>
-<html  dir="ltr">
-
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>abismal reference manual</title>
-
-        <meta name="generator" content="pandoc-uikit" />
-                <meta name="author" content="Guilherme Sena" />
-                        <title>abismal reference manual</title>
-        <style type="text/css">code{white-space: pre;}</style>
-
-    </head>
-
-    <body>
-
-
-        <div class="uk-container uk-container-center uk-margin-top uk-margin-large-bottom">
-
-                        <div class="uk-grid" data-uk-grid-margin>
-                <div class="uk-width-1-1">
-                    <h1 class="uk-heading-large">abismal reference manual</h1>
-                                                            <p class="uk-text-large">Guilherme Sena</p>
-                                    </div>
-            </div>
-
-            <div class="uk-grid" data-uk-grid-margin >
-                <div class="uk-width-medium-1-4">
-                    <div class="uk-overflow-container" data-uk-sticky="{top:25,media: 768}">
-                        <div class="uk-panel uk-panel-box menu-begin" >
-
-                                                        <ul>
-                                                        <li><a href="#name">NAME</a></li>
-                                                        <li><a href="#synopsis">SYNOPSIS</a></li>
-                                                        <li><a href="#description">DESCRIPTION</a></li>
-                                                        <li><a href="#quick-installation">QUICK INSTALLATION</a></li>
-                                                        <li><a href="#options">OPTIONS</a></li>
-                                                        <li><a href="#input-fastq-format">INPUT FASTQ FORMAT</a></li>
-                                                        <li><a href="#output-sam-format">OUTPUT SAM FORMAT</a></li>
-                                                        <li><a href="#notation-used-by-abismal">NOTATION USED BY ABISMAL</a></li>
-                                                        <li><a href="#exit-values">EXIT VALUES</a></li>
-                                                        <li><a href="#reporting-bugs">REPORTING BUGS</a></li>
-                                                        <li><a href="#copyright">COPYRIGHT</a></li>
-                                                        </ul>
-
-                        </div>
-                    </div>
-                </div>
-
-                <div class="uk-width-medium-3-4">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <meta name="author" content="Andrew D Smith and Guilherme Sena" />
+  <title>abismal reference manual</title>
+  <style>
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    span.underline{text-decoration: underline;}
+    div.column{display: inline-block; vertical-align: top; width: 50%;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    ul.task-list{list-style: none;}
+  </style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">abismal reference manual</h1>
+<p class="author">Andrew D Smith and Guilherme Sena</p>
+</header>
 <h1 id="name">NAME</h1>
 <p>abismal - a fast and memory-efficient mapper for short whole genome bisulfite sequencing reads. Official release, discussion, source code and development versions are available at the abismal GitHub <a href="https://github.com/smithlabcode/abismal">repo</a>.</p>
 <h1 id="synopsis">SYNOPSIS</h1>
-<p>abismal <a href="#options">OPTIONS</a> -o output.sam &lt;input-1.fastq&gt; [&lt;input-2.fastq&gt;]</p>
-<h2 id="examples">Examples</h2>
-<pre><code>abismal -g ref.fa -o out.sam [-s out.stats] reads-1.fq
-abismal -g ref.fa -o out.sam [-s out.stats] reads-1.fq reads-2.fq</code></pre>
-<p>If a ref.idx file was created using abismalidx:</p>
-<pre><code>abismal -i ref.idx -o out.sam [-s out.stats] reads-1.fq
-abismal -i ref.idx -o out.sam [-s out.stats] reads-1.fq reads-2.fq</code></pre>
+<p>abismal map <a href="#options">OPTIONS</a> -o output.sam &lt;input-1.fastq&gt; [&lt;input-2.fastq&gt;]</p>
+<p>abismal idx <a href="#options">OPTIONS</a> &lt;reference-genome.fa&gt; <index-filename></p>
+<h1 id="examples">Examples</h1>
+<pre><code>abismal map -g ref.fa -o out.sam [-s out.stats] reads_1.fq
+abismal map -g ref.fa -o out.sam [-s out.stats] reads_1.fq reads_2.fq</code></pre>
+<p>If a ref.idx file was created using <code>abismal idx</code>, which makes mapping faster:</p>
+<pre><code>abismal map -i ref.idx -o out.sam [-s out.stats] reads_1.fq
+abismal map -i ref.idx -o out.sam [-s out.stats] reads_1.fq reads_2.fq</code></pre>
+<p>To make an index from a FASTA format reference genome named <code>ref.fa</code> output to the file named <code>ref.idx</code>:</p>
+<pre><code>abismal idx ref.fa ref.idx</code></pre>
 <h1 id="description">DESCRIPTION</h1>
 <p>abismal maps short bisulfite sequencing reads in FASTQ format to a reference genome in FASTA format and produces an output file in SAM format. Only reads that are mapped uniquely or ambiguously (optional) are reported in the SAM output.</p>
 <p>abismal can map reads assuming either C&gt;T or G&gt;A conversion in single-end reads. Both conversions are also accepted in paired-end mapping, but corresponding read pairs are assume to have complementary base conversions. The assumption of C&gt;T conversion means Ts in the read are considered matches to either Cs or Ts in the reference (in either strand). The assumption of G&gt;A conversion means that As in reads are considered matches to either Gs or As in the reference.</p>
 <p>absimal was built to map short reads of up to 250 bases. It should successfully map reads of size up to 1 million, but because it uses very short seeds for filtration, the mapping time will increase substantially.</p>
 <h1 id="quick-installation">QUICK INSTALLATION</h1>
 <p>Run the following commands to install abismal</p>
-<pre><code>wget https://github.com/smithlabcode/abismal/releases/download/v3.2.4/abismal-3.2.4.tar.gz
-tar -xvzf abismal-3.2.4.tar.gz
-cd abismal-3.2.4
+<pre><code>wget https://github.com/smithlabcode/abismal/releases/download/v3.3.0/abismal-3.3.0.tar.gz
+tar -xf abismal-3.3.0.tar.gz
+cd abismal-3.3.0
 ./configure --prefix=$(pwd)
 make
 make install</code></pre>
-<p>This will create a bin directory where binaries abismalidx and abismal are located. The abismalidx program indexes a FASTA reference genome, and abismal maps FASTQ reads to a reference.</p>
+<p>These commands assume dependencies are available. The <code>README.md</code> file in the GitHub abismal repo explains this in more detail. The above will create a bin directory where the abismal binary is located. The abismalidx program has been replaced by the <code>abismal idx</code> command. This indexes a FASTA reference genome, and <code>abismal map</code> maps FASTQ reads to a reference.</p>
 <h1 id="options">OPTIONS</h1>
 <p>-i FILE, -index FILE [required if -g not provided]</p>
-<p>Input index file generated by abismalidx. Either the -g or -i parameter must be provided (but not both). If -g is provided, abismal will read the indexed genome before starting to map reads. Using -i is recommended if several FASTQ files are mapped to the same genome.</p>
+<p>Input index file generated by <code>abismal idx</code>. Either the -g or -i parameter must be provided (but not both). If -g is provided, abismal will read the indexed genome before starting to map reads. Using -i is recommended if several FASTQ files are mapped to the same genome.</p>
 <p>-g FILE, -genome FILE [required if -i not provided]</p>
-<p>Input FASTA genome. Either the -g or -i parameter must be provided (but not both). If -g is provided, abismal will first index the input FASTA genome before starting to map reads. Using -g is recommended if only one sample will be mapped to a reference genome. In most practical cases, however, it is preferable to first index the genome using abismalidx, then using the output index file as input through the -i flag.</p>
+<p>Input FASTA genome. Either the -g or -i parameter must be provided (but not both). If -g is provided, abismal will first index the input FASTA genome before starting to map reads. Using -g is recommended if only one sample will be mapped to a reference genome. In most practical cases, however, it is preferable to first index the genome using <code>abismal idx</code>, then using the output index file as input through the -i flag.</p>
 <p>-o FILE, -outfile FILE</p>
 <p>Output file in SAM format by default. This argument is required.</p>
 <p>-B, -bam</p>
@@ -156,12 +130,12 @@ mate2:
 <p>-t NUM-THREADS, -threads NUM-THREADS [default : 1]</p>
 <p>number of threads that should be used to map reads. Each thread reads 1000 reads in parallel, so increasing this number uses more memory by a few kilobytes per additional thread. In most practical cases this should not be significantly different than single-thread mapping.</p>
 <p>-l MIN-FRAG-VALUE, -min-frag MIN-FRAG-VALUE [default : 32]</p>
-<p><strong>For paired-end mode only</strong>. The minimum size a concordant fragment can have. There are cases in which concordant pairs can “dovetail”, that is, the end of the reverse mate can pass the start of the forward mate. Ths parameter dictates the minimum size a dovetail read can have while accepting concordance. The schematic below depicts what the value of -l represents:</p>
+<p>(paired-end only) The minimum size a concordant fragment can have. There are cases in which concordant pairs can “dovetail”, that is, the end of the reverse mate can pass the start of the forward mate. Ths parameter dictates the minimum size a dovetail read can have while accepting concordance. The schematic below depicts what the value of -l represents:</p>
 <pre><code>                    [==================================&gt;] [FORWARD MATE]
 [&lt;==================================] [REVERSE MATE]
                     |-------l-------|</code></pre>
 <p>-L MAX-FRAG-VALUE, -max-frag MAX-FRAG-VALUE [default : 3000]</p>
-<p><strong>For paired-end mode only</strong>. The maximum size a concordant fragment, defined as the maximum distance between the genome start (smallest) coordinate of the forward mapped mate and the start (largest) coordinate of the reverse mapped strand, for a pair to be considered concordant. The schematic below depics how L is calculated.</p>
+<p>(paired-end only) The maximum size a concordant fragment, defined as the maximum distance between the genome start (smallest) coordinate of the forward mapped mate and the start (largest) coordinate of the reverse mapped strand, for a pair to be considered concordant. The schematic below depics how L is calculated.</p>
 <pre><code>[===============&gt;] [FORWARD MATE]
                                          [&lt;==============] [REVERSE MATE]
 |---------------------------L----------------------------|</code></pre>
@@ -170,13 +144,13 @@ mate2:
 <p>-a -ambig</p>
 <p>If this flag is provided, abismal will report a random location to reads that mapped ambiguously. These reads can be identified by the presence of bit 0x100 in the SAM flags.</p>
 <p>-P -pbat</p>
-<p><strong>For paired-end mapping only</strong>. Assumes the bisulfite conversion of the first end to be G&gt;A and the bisulfite conversion of the second end to be C&gt;T.</p>
+<p>(paired-end only) Assumes the bisulfite conversion of the first end to be G&gt;A and the bisulfite conversion of the second end to be C&gt;T.</p>
 <p>-R -random-pbat</p>
 <p>Maps reads in random PBAT mode.</p>
 <p>For single-end mapping, abismal will attempt to map reads assuming C&gt;T conversion, then G&gt;A, and keeping the conversion that attains the best alignment score.</p>
 <p>For paired-end mapping, abismal will attempt to map reads assuming end 1 has C&gt;T conversion and end 2 has G&gt;A conversion. Then it will map the same reads assuming end 1 has G&gt;A conversion. The conversion that attains highest sum of alignment scores is kept.</p>
 <p>-A -a-rich</p>
-<p><strong>For single-end mapping only</strong>. Indicates that reads are A-rich. Mapping with this flags assumes that the bisulfite conversion is G&gt;A instead of C&gt;T.</p>
+<p>(single-end only) Indicates that reads are A-rich. Mapping with this flags assumes that the bisulfite conversion is G&gt;A instead of C&gt;T.</p>
 <p>-v -verbose</p>
 <p>Prints more run info on the mapping progress, including a progress bar showing the percentage of input reads currently processed.</p>
 <h1 id="input-fastq-format">INPUT FASTQ FORMAT</h1>
@@ -196,7 +170,7 @@ IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII</code></pre>
 <p>For paired-end data, it is mandatory that both FASTQ ends have the same number of lines. Corresponding entries in each file are assumed to be mates.</p>
 <h1 id="output-sam-format">OUTPUT SAM FORMAT</h1>
 <h2 id="output-headers">Output headers</h2>
-<p>abismal representes mapped reads in the Sequence Alignment/Map (SAM) format. Detailed specification of SAM is available at <a href="https://samtools.github.io">the samtools documentation page</a>. BAM format is also supported, but the BAM format can be converted to SAM using samtools if desired.</p>
+<p>abismal representes mapped reads in the Sequence Alignment/Map (SAM) format. Detailed specification of SAM is available at the <a href="https://samtools.github.io">samtools</a> documentation page. BAM format is also supported.</p>
 <p>The output starts with SAM headers. Headers contain metadata information on the reference genome. Each header line starts with the @ character.</p>
 <p>The first line in the SAM output file is given by</p>
 <pre><code>@HD VN:1.0</code></pre>
@@ -204,7 +178,7 @@ IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII</code></pre>
 <pre><code>@SQ SN:[chrom-name] LN:[chrom-length]</code></pre>
 <p>where [chrom-name] is given by the first word of the chromosome name in the FASTA file (anything after the first white space is deleted), and [chrom-length] is the number of bases in the chromosome sequence.</p>
 <p>The last line of the headers is a copy of how the program was called to generate the SAM output, and is of the form</p>
-<pre><code>@PG ID:ABISMAL  VN:3.2.4  CL:&quot;[command-call]&quot;</code></pre>
+<pre><code>@PG ID:ABISMAL  VN:3.3.0  CL:[command-call]</code></pre>
 <p>where [command-call] is the shell command used to run abismal.</p>
 <h2 id="output-mapped-lines">Output mapped lines</h2>
 <p>Following the header lines, reads that are mapped once (or at least once if the -a flag is used) are reported. Each read is a set of thirteen tab-separated fields as follows.</p>
@@ -280,13 +254,10 @@ IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII</code></pre>
 <p>0 : Success.</p>
 <p>1 : Runtime error. When the program, fails, an error message will be shown in STDERR describing the problem encountered.</p>
 <h1 id="reporting-bugs">REPORTING BUGS</h1>
-<p>Bugs can be reported at the abismal GitHub page at the <a href="https://github.com/smithlabcode/abismal/issues">issues section</a>. the abismal GitHub page) as well as by e-mail to desenabr@usc.edu or andrewds@usc.edu. When reporting bugs, please provide the version of abismal used and the operating system used to run abismal. It is also helpful, when relevant, to provide small input datasets and the genome used so we can reproduce the issue and find the source of the problem.</p>
+<p>Bugs can be reported at the abismal GitHub <a href="https://github.com/smithlabcode/abismal/issues">issues</a> page or by e-mail to andrewds@usc.edu. When reporting bugs, please provide the version of abismal used and the operating system used to run abismal. It is also helpful, when relevant, to provide small input datasets and the genome used so we can reproduce the issue and find the source of the problem.</p>
 <h1 id="copyright">COPYRIGHT</h1>
-<p>Copyright (C) 2018-2023 Andrew D. Smith and Guilherme Sena</p>
+<p>Copyright (C) 2018-2025 Andrew D. Smith and Guilherme Sena</p>
 <p>abismal is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.</p>
 <p>abismal is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.</p>
-                </div>
-            </div>
-        </div>
-    </body>
+</body>
 </html>
