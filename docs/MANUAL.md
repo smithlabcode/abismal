@@ -61,9 +61,9 @@ seeds for filtration, the mapping time will increase substantially.
 Run the following commands to install abismal
 
 ```
-wget https://github.com/smithlabcode/abismal/releases/download/v3.2.4/abismal-3.2.4.tar.gz
-tar -xf abismal-3.2.4.tar.gz
-cd abismal-3.2.4
+wget https://github.com/smithlabcode/abismal/releases/download/v3.3.0/abismal-3.3.0.tar.gz
+tar -xf abismal-3.3.0.tar.gz
+cd abismal-3.3.0
 ./configure --prefix=$(pwd)
 make
 make install
@@ -148,7 +148,7 @@ pairs:
             edits: 1042712
             total_bases: 144131000
             error_rate: 0.723447
-        num_unmapped: 216991
+    num_unmapped: 216991
     num_discordant: 16085
     percent_unmapped: 21.6991
     percent_discordant: 1.6085
@@ -165,7 +165,7 @@ mate1:
             edits: 180656
             total_bases: 10305800
             error_rate: 1.75295
-        num_unmapped: 103412
+    num_unmapped: 103412
     num_skipped: 0
     percent_unmapped: 37.0195
     percent_skipped: 0
@@ -182,7 +182,7 @@ mate2:
             edits: 55687
             total_bases: 4380700
             error_rate: 1.27119
-        num_unmapped: 164315
+    num_unmapped: 164315
     num_skipped: 0
     percent_unmapped: 58.8215
     percent_skipped: 0
@@ -331,7 +331,7 @@ The last line of the headers is a copy of how the program was called to
 generate the SAM output, and is of the form
 
 ```
-@PG ID:ABISMAL  VN:3.2.4  CL:[command-call]
+@PG ID:ABISMAL  VN:3.3.0  CL:[command-call]
 ```
 
 where [command-call] is the shell command used to run abismal.
@@ -518,7 +518,7 @@ alignment for $r_2$
 
 This means that the fragment lengths from which the pair originates is at
 least $l$ and at most $L$. The default values of $l$ and $L$ are 32 and 3000,
-espectively, and can be set by the `-l` and `-L` flags.  Those are
+respectively, and can be set by the `-l` and `-L` flags.  Those are
 conservative values that cover most of the current protocols. We will
 incorporate automatic calculations of these values in the future based on the
 first high-quality read pairs that are mapped.
