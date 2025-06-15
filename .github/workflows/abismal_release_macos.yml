@@ -20,6 +20,18 @@ jobs:
           brew install zlib automake
           sudo cp $(brew --prefix zlib)/lib/*.a /opt/abismal/lib
           sudo cp -r $(brew --prefix zlib)/include/* /opt/abismal/include
+      - name: Build and install libdeflate
+        run: |
+          git clone https://github.com/ebiggers/libdeflate.git
+          cd libdeflate
+          cmake -B build \
+              -DLIBDEFLATE_BUILD_GZIP=off \
+              -DLIBDEFLATE_BUILD_TESTS=off \
+              -DLIBDEFLATE_BUILD_SHARED_LIB=off \
+              -DCMAKE_VERBOSE_MAKEFILE=on \
+              -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j4
+          sudo cmake --install build --prefix=/opt/abismal
       - name: Build and install HTSlib
         run: |
           git clone --recursive https://github.com/samtools/htslib.git
@@ -32,12 +44,13 @@ jobs:
             --disable-libcurl \
             --disable-lzma \
             --disable-ref-cache \
-            --without-libdeflate \
-            LDADD="-L/usr/local/lib"
+            --with-libdeflate \
+            LDFLAGS="-L/usr/local/lib"
           make -j4 CFLAGS="-Wall -O2 -fvisibility=hidden" libhts.a
           sudo cp libhts.a /opt/abismal/lib
       - name: Build abismal
         run: |
+          sed -i "s/dnl AC/AC/" configure.ac
           ./autogen.sh
           mkdir build && cd build
           ../configure CXX=g++-14 LDFLAGS="-L/opt/abismal/lib -static-libgcc -static-libstdc++ -Wl,-dead_strip" CPPFLAGS="-I/opt/abismal/include"
