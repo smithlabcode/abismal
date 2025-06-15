@@ -126,6 +126,20 @@ and we'll try to fix that.
 These instructions have been tested for Ubuntu 24.04 and Fedora 41. They will
 likely work on most APT and RPM-based distributions in 2025.
 
+Here are the basic commands if you are ready to build:
+
+```console
+wget https://github.com/smithlabcode/abismal/releases/download/v3.3.0/abismal-3.3.0.tar.gz
+tar -xf abismal-3.3.0.tar.gz
+cd abismal-3.3.0
+./configure --prefix=${HOME}
+make
+make install
+```
+
+If you that doesn't work, then check that you have the right dependencies. You
+can find them in the lists below, depending on your system.
+
 * Dependencies:
 
   Ubuntu/Debian
