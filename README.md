@@ -29,7 +29,7 @@ mapping program for bisulfite sequencing in DNA methylation studies.
   ./abismal idx hg38.fa hg38.idx
   ```
 
-* Map reads to the reference genome:
+* Map reads using that index:
 
   ```console
   ./abismal map -i hg38.idx -o reads.sam reads_1.fq reads_2.fq
@@ -255,7 +255,7 @@ to the configure script to see how to enable this option.
 
 ## Contacts
 
-Andrew D Smith *andrewds@usc.edu*
+Andrew D Smith andrewds@usc.edu
 
 ## Citation
 
