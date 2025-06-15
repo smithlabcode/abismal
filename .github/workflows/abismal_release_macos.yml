@@ -51,7 +51,7 @@ jobs:
           sudo cp libhts.a /opt/abismal/lib
       - name: Build abismal
         run: |
-          sed -i "s/dnl AC/AC/" configure.ac
+          sed -i.orig "s/dnl AC/AC/" configure.ac
           ./autogen.sh
           mkdir build && cd build
           ../configure CXX=g++-14 LDFLAGS="-L/opt/abismal/lib -static-libgcc -static-libstdc++ -Wl,-dead_strip" CPPFLAGS="-I/opt/abismal/include"
