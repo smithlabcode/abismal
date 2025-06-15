@@ -44,7 +44,7 @@ dnl check for required libraries
 AC_SEARCH_LIBS([pthread_create], [pthread], [], [AC_MSG_FAILURE(["pthread library not found"])])
 AC_SEARCH_LIBS([gzopen], [z], [], [AC_MSG_FAILURE(["Zlib library not found"])])
 dnl AC_SEARCH_LIBS([libdeflate_deflate_compress], [deflate], [], [AC_MSG_FAILURE(["libdeflate not found"])])
-AC_SEARCH_LIBS([hts_version], [hts], [], [AC_MSG_FAILURE([$hts_fail_msg])], [-lz -lpthread])
+AC_SEARCH_LIBS([hts_version], [hts], [], [AC_MSG_FAILURE([$hts_fail_msg])])
 
 dnl Optimize for shorter reads by compiling with a smaller window when making
 dnl the index. When abismal loads the index, it compares the value with a
