@@ -1766,6 +1766,7 @@ run_single_ended(const bool show_progress, const bool allow_ambig,
     thread.join();
 
   if (show_progress) {
+    std::cerr << "\n";
     const auto stop_time{abismal_clock::now()};
     log_msg("reads mapped: " + std::to_string(rl.get_current_read()));
     log_msg("total mapping time: " + format_duration(start_time, stop_time));
@@ -2325,6 +2326,7 @@ run_paired_ended(const bool show_progress, const bool allow_ambig,
     thread.join();
 
   if (show_progress) {
+    std::cerr << "\n";
     const auto stop_time{abismal_clock::now()};
     log_msg("reads mapped: " + std::to_string(rl1.get_current_read()));
     log_msg("total mapping time: " + format_duration(start_time, stop_time));
