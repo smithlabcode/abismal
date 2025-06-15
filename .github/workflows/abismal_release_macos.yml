@@ -45,7 +45,8 @@ jobs:
             --disable-lzma \
             --disable-ref-cache \
             --with-libdeflate \
-            LDFLAGS="-L/usr/local/lib"
+            LDFLAGS="-L/opt/abismal/lib" \
+            CPPFLAGS="-I/opt/abismal/include"
           make -j4 CFLAGS="-Wall -O2 -fvisibility=hidden" libhts.a
           sudo cp libhts.a /opt/abismal/lib
       - name: Build abismal
