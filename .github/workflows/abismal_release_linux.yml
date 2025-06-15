@@ -25,6 +25,17 @@ jobs:
             export DEBIAN_FRONTEND=noninteractive && \
             apt-get update && apt-get install --no-install-recommends -y automake && \
             find /usr -name libz.so -exec rm {} \; && \
+            git clone https://github.com/ebiggers/libdeflate.git && \
+            cd libdeflate && \
+            cmake -B build \
+                -DLIBDEFLATE_BUILD_GZIP=off \
+                -DLIBDEFLATE_BUILD_TESTS=off \
+                -DLIBDEFLATE_BUILD_SHARED_LIB=off \
+                -DCMAKE_VERBOSE_MAKEFILE=on \
+                -DCMAKE_BUILD_TYPE=Release && \
+            cmake --build build -j4 && \
+            cmake --install build --prefix=/usr/local/lib && \
+            cd .. && \
             git clone --recursive https://github.com/samtools/htslib.git && \
             cd htslib && \
             autoreconf -i && \
@@ -34,11 +45,12 @@ jobs:
                 --disable-libcurl \
                 --disable-lzma \
                 --disable-ref-cache \
-                LDADD="-L/usr/local/lib" && \
+                --with-libdeflate && \
             make -j4 CFLAGS="-Wall -O2 -fvisibility=hidden" libhts.a && \
             cp libhts.a /usr/local/lib/ && \
             cp -r ../htslib /usr/local/include/ && \
             cd /workspace && \
+            sed -i "s/dnl AC/AC/" configure.ac && \
             autoreconf -i && \
             mkdir build && cd build && \
             ../configure && \
