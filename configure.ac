@@ -33,6 +33,11 @@ AC_PROG_RANLIB
 
 AC_CONFIG_SUBDIRS([src/smithlab_cpp])
 
+dnl arg for using libdeflate, which might happen by default anyway
+AC_ARG_WITH([libdeflate],
+  [AS_HELP_STRING([--with-libdeflate], [use libdeflate for BAM output])],
+  [with_libdeflate=yes], [with_libdeflate=no])
+
 dnl check for HTSLib if requested
 hts_fail_msg="
 Failed to locate HTSLib on your system. Please use the LDFLAGS and CPPFLAGS
@@ -40,10 +45,14 @@ variables to specify the directories where the HTSLib library and headers can
 be found.
 "
 
-dnl check for required libraries
+dnl check for required/requested libraries
 AC_SEARCH_LIBS([pthread_create], [pthread], [], [AC_MSG_FAILURE(["pthread library not found"])])
 AC_SEARCH_LIBS([gzopen], [z], [], [AC_MSG_FAILURE(["Zlib library not found"])])
-dnl AC_SEARCH_LIBS([libdeflate_deflate_compress], [deflate], [], [AC_MSG_FAILURE(["libdeflate not found"])])
+AS_IF([test "x$with_libdeflate" = "xyes"],
+  [
+    AC_SEARCH_LIBS([libdeflate_deflate_compress], [deflate], [],
+                   [AC_MSG_ERROR([--with-libdeflate specified but libdeflate not found])])
+  ])
 AC_SEARCH_LIBS([hts_version], [hts], [], [AC_MSG_FAILURE([$hts_fail_msg])])
 
 dnl Optimize for shorter reads by compiling with a smaller window when making
@@ -57,9 +66,7 @@ AC_ARG_ENABLE([short],
 AM_CONDITIONAL([ENABLE_SHORT], [test "x$enable_short" = "xyes"])
 
 
-AC_CONFIG_FILES([
-Makefile
-])
+AC_CONFIG_FILES([Makefile])
 dnl make the test data files available in the build tree
 AC_CONFIG_LINKS([
 tests/md5sum.txt:data/md5sum.txt
