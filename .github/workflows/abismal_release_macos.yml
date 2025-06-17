@@ -51,10 +51,11 @@ jobs:
           sudo cp libhts.a /opt/abismal/lib
       - name: Build abismal
         run: |
-          sed -i.orig "s/dnl AC/AC/" configure.ac
           ./autogen.sh
           mkdir build && cd build
-          ../configure CXX=g++-14 LDFLAGS="-L/opt/abismal/lib -static-libgcc -static-libstdc++ -Wl,-dead_strip" CPPFLAGS="-I/opt/abismal/include"
+          ../configure --with-libdeflate \
+            CXX=g++-14 LDFLAGS="-L/opt/abismal/lib -static-libgcc -static-libstdc++ -Wl,-dead_strip" \
+            CPPFLAGS="-I/opt/abismal/include"
           make -j4
       - name: Rename the binary
         run: mv build/abismal abismal_$(uname -m)
