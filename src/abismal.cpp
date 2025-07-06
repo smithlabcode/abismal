@@ -2341,8 +2341,8 @@ file_exists(const std::string &filename) {
 }
 
 static int
-abismal_make_sam_header(const ChromLookup &cl, const int argc,
-                        const char **argv, bamxx::bam_header &hdr) {
+abismal_make_sam_header(const ChromLookup &cl, const int argc, char *argv[],
+                        bamxx::bam_header &hdr) {
   assert(cl.names.size() > 2);  // two entries exist for the padding
   assert(cl.starts.size() == cl.names.size() + 1);
   const std::vector<std::string> names(std::begin(cl.names) + 1,
@@ -2379,7 +2379,7 @@ abismal_make_sam_header(const ChromLookup &cl, const int argc,
 }
 
 int
-abismal(int argc, const char **argv) {
+abismal(int argc, char *argv[]) {
   try {
 
     const std::string version_str =

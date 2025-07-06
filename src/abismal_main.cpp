@@ -28,10 +28,10 @@ static const std::string PROGRAM_NAME = "abismal";
 struct abismal_command {
   std::string tag;
   std::string description;
-  std::function<int(const int, const char **)> fun;
+  std::function<int(int, char **)> fun;
 
   auto
-  operator()(const int argc, const char **argv) const -> int {
+  operator()(const int argc, char *argv[]) const -> int {
     return fun(argc - 1, argv + 1);
   }
 };
@@ -48,11 +48,13 @@ operator<<(std::ostream &out, const abismal_command &cmd) -> std::ostream & {
 // ADS: not sure of best way to acquire these below beyond simply
 // declaring them here
 int
-abismal(int argc, const char **argv);
+abismal(int argc, char *argv[]);
+
 int
-abismalidx(int argc, const char **argv);
+abismalidx(int argc, char *argv[]);
+
 int
-simreads(int argc, const char **argv);
+simreads(int argc, char *argv[]);
 
 void
 print_help(const std::vector<abismal_command> &commands) {
@@ -65,7 +67,7 @@ print_help(const std::vector<abismal_command> &commands) {
 }
 
 int
-main(int argc, const char **argv) {
+main(int argc, char *argv[]) {
   try {
     // clang-format off
     std::vector<abismal_command> commands = {

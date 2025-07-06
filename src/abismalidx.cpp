@@ -36,7 +36,7 @@
 #include <vector>
 
 int
-abismalidx(int argc, const char **argv) {
+abismalidx(int argc, char *argv[]) {
 
   try {
 
