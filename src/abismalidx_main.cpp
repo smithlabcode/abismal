@@ -18,6 +18,6 @@
 #include "abismalidx.hpp"
 
 int
-main(int argc, const char **argv) {
+main(int argc, char *argv[]) {
   return abismalidx(argc, argv);
 }

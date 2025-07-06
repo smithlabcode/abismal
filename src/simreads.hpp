@@ -15,10 +15,10 @@
  * General Public License for more details.
  */
 
-#ifndef SIMREADS_HPP
-#define SIMREADS_HPP
+#ifndef SRC_SIMREADS_HPP_
+#define SRC_SIMREADS_HPP_
 
 int
-simreads(int argc, const char **argv);
+simreads(int argc, char *argv[]);
 
-#endif  // SIMREADS_HPP
+#endif  // SRC_SIMREADS_HPP_

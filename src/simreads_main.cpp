@@ -18,6 +18,6 @@
 #include "simreads.hpp"
 
 int
-main(int argc, const char **argv) {
+main(int argc, char *argv[]) {
   return simreads(argc, argv);
 }

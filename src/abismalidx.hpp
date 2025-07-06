@@ -15,10 +15,10 @@
  * General Public License for more details.
  */
 
-#ifndef ABISMALIDX_HPP
-#define ABISMALIDX_HPP
+#ifndef SRC_ABISMALIDX_HPP_
+#define SRC_ABISMALIDX_HPP_
 
 int
-abismalidx(int argc, const char **argv);
+abismalidx(int argc, char *argv[]);
 
-#endif  // ABISMALIDX_HPP
+#endif  // SRC_ABISMALIDX_HPP_
