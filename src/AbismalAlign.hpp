@@ -34,7 +34,7 @@
 // subsequence.
 typedef int16_t score_t;
 typedef genome_four_bit_itr genome_iterator;
-typedef std::vector<uint32_t> bam_cigar_t;
+typedef std::vector<std::uint32_t> bam_cigar_t;
 
 static inline score_t
 count_deletions(const bam_cigar_t &cigar) {
@@ -63,18 +63,19 @@ static const score_t indel = -4;
 static const std::array<score_t, 2> score_lookup = {match, mismatch};
 
 inline score_t
-default_score(const uint32_t len, const score_t diffs) {
+default_score(const std::uint32_t len, const score_t diffs) {
   return match * (len - diffs) + mismatch * diffs;
 }
 
 inline score_t
-mismatch_score(const uint8_t q_base, const uint8_t t_base) {
+mismatch_score(const std::uint8_t q_base, const std::uint8_t t_base) {
   return score_lookup[(q_base & t_base) == 0];
 }
 
 // edit distance as a function of aln_score and len
 inline score_t
-edit_distance(const score_t scr, const uint32_t len, const bam_cigar_t &cigar) {
+edit_distance(const score_t scr, const std::uint32_t len,
+              const bam_cigar_t &cigar) {
   if (scr == 0)
     return len;
   const score_t ins = count_insertions(cigar);
@@ -90,17 +91,17 @@ edit_distance(const score_t scr, const uint32_t len, const bam_cigar_t &cigar) {
 }
 
 inline score_t
-best_single_score(const uint32_t readlen) {
+best_single_score(const std::uint32_t readlen) {
   return match * readlen;
 }
 
 inline score_t
-best_pair_score(const uint32_t readlen1, const uint32_t readlen2) {
+best_pair_score(const std::uint32_t readlen1, const std::uint32_t readlen2) {
   return best_single_score(readlen1) + best_single_score(readlen2);
 }
 }  // namespace simple_aln
 
-template <score_t (*scr_fun)(const uint8_t, const uint8_t),
+template <score_t (*scr_fun)(const std::uint8_t, const std::uint8_t),
           score_t indel_pen = -1>
 struct AbismalAlign {
   explicit AbismalAlign(const genome_iterator &target_start) :
@@ -109,72 +110,75 @@ struct AbismalAlign {
   template <const bool do_traceback>
   score_t
   align(const score_t diffs, const score_t max_diffs,
-        const std::vector<uint8_t> &query, const uint32_t t_pos);
+        const std::vector<std::uint8_t> &query, const std::uint32_t t_pos);
 
   void
   build_cigar_len_and_pos(const score_t diffs, const score_t max_diffs,
-                          bam_cigar_t &cigar, uint32_t &len, uint32_t &t_pos);
+                          bam_cigar_t &cigar, std::uint32_t &len,
+                          std::uint32_t &t_pos);
 
   void
-  reset(const uint32_t max_read_length);
+  reset(const std::uint32_t max_read_length);
 
   std::vector<score_t> table;
   std::vector<int8_t> traceback;
   const genome_iterator target;
-  const size_t bw;
+  const std::size_t bw{};
 
   // these are kept because they are needed in both
   // align and build_cigar
-  uint16_t q_sz_max;
-  uint16_t q_sz;
+  std::uint16_t q_sz_max{};
+  std::uint16_t q_sz{};
 
-  static const size_t max_off_diag = 30;
+  static const std::size_t max_off_diag = 30;
 };
 
-template <score_t (*scr_fun)(const uint8_t, const uint8_t), score_t indel_pen>
+template <score_t (*scr_fun)(const std::uint8_t, const std::uint8_t),
+          score_t indel_pen>
 void
 AbismalAlign<scr_fun, indel_pen>::reset(
-  const uint32_t max_read_length) {  // uses cigar
+  const std::uint32_t max_read_length) {  // uses cigar
   q_sz_max = max_read_length;
 
   // size of alignment matrix and traceback matrix is maximum query
   // length times the width of the band around the diagonal
-  const size_t n_cells = (q_sz_max + bw) * bw;
+  const std::size_t n_cells = (q_sz_max + bw) * bw;
   table.resize(n_cells);
   traceback.resize(n_cells, -1);  // ADS: -1 no meaning for traceback
 }
 
 // for making the CIGAR string
-static const uint8_t left_symbol = ABISMAL_BAM_CINS;             // I
-static const uint8_t above_symbol = ABISMAL_BAM_CDEL;            // D
-static const uint8_t diag_symbol = ABISMAL_BAM_CMATCH;           // M
-static const uint8_t soft_clip_symbol = ABISMAL_BAM_CSOFT_CLIP;  // S
+static const std::uint8_t left_symbol = ABISMAL_BAM_CINS;             // I
+static const std::uint8_t above_symbol = ABISMAL_BAM_CDEL;            // D
+static const std::uint8_t diag_symbol = ABISMAL_BAM_CMATCH;           // M
+static const std::uint8_t soft_clip_symbol = ABISMAL_BAM_CSOFT_CLIP;  // S
 
 static inline bool  // consumes reference
-is_deletion(const uint8_t c) {
+is_deletion(const std::uint8_t c) {
   return c == above_symbol;
 }
 
 static inline bool  // does not consume reference
-is_insertion(const uint8_t c) {
+is_insertion(const std::uint8_t c) {
   return c == left_symbol;
 }
 
 static inline void
-get_traceback(const size_t n_col, const std::vector<score_t> &table,
+get_traceback(const std::size_t n_col, const std::vector<score_t> &table,
               const std::vector<int8_t> &traceback,
-              std::vector<uint32_t> &cigar, size_t &the_row, size_t &the_col) {
+              std::vector<std::uint32_t> &cigar, std::size_t &the_row,
+              std::size_t &the_col) {
   int8_t prev_arrow = traceback[the_row * n_col + the_col];
-  const bool is_del = is_deletion(prev_arrow);
-  const bool is_ins = is_insertion(prev_arrow);
+  bool is_del = is_deletion(prev_arrow);
+  bool is_ins = is_insertion(prev_arrow);
   the_row -= !is_ins;
   the_col -= is_ins;
   the_col += is_del;  // ADS: straight up IS diagonal!
-  uint32_t n = 1;
+  std::uint32_t n = 1;
   while (table[the_row * n_col + the_col] > 0) {
     const int8_t arrow = traceback[the_row * n_col + the_col];
-    const bool is_del = is_deletion(arrow);
-    const bool is_ins = is_insertion(arrow);
+    is_del = is_deletion(arrow);
+    is_ins = is_insertion(arrow);
     the_row -= !is_ins;
     the_col -= is_ins;
     the_col += is_del;
@@ -201,11 +205,12 @@ min16(const T a, const T b) {
 }
 
 static score_t
-get_best_score(const std::vector<score_t> &table, const size_t n_cells,
-               const size_t n_col, size_t &best_i, size_t &best_j) {
+get_best_score(const std::vector<score_t> &table, const std::size_t n_cells,
+               const std::size_t n_col, std::size_t &best_i,
+               std::size_t &best_j) {
   auto best_cell_itr =
     std::max_element(std::begin(table), std::begin(table) + n_cells);
-  const size_t best_cell = std::distance(std::begin(table), best_cell_itr);
+  const std::size_t best_cell = std::distance(std::begin(table), best_cell_itr);
   best_i = best_cell / n_col;
   best_j = best_cell % n_col;
   return *best_cell_itr;
@@ -217,11 +222,11 @@ get_best_score(const std::vector<score_t> &table, const size_t n_cells,
 // below. Using the __attribute__ helps with GCC, and it should be
 // ignored if not supported.
 
-template <score_t (*scr_fun)(const uint8_t, const uint8_t), class T,
+template <score_t (*scr_fun)(const std::uint8_t, const std::uint8_t), class T,
           class QueryConstItr>
 __attribute__((optimize("no-tree-loop-vectorize"))) void
 from_diag(T next_row, const T next_row_end, T cur_row, QueryConstItr query_seq,
-          uint8_t ref_base) {
+          std::uint8_t ref_base) {
   while (next_row != next_row_end) {
     const score_t score = scr_fun(*query_seq++, ref_base) + *cur_row++;
     max16(*next_row++, score);
@@ -249,11 +254,11 @@ from_left(T left_itr, T target, const T target_end) {
 }
 
 /********* SAME FUNCTIONS AS ABOVE BUT WITH TRACEBACK ********/
-template <score_t (*scr_fun)(const uint8_t, const uint8_t), class T,
+template <score_t (*scr_fun)(const std::uint8_t, const std::uint8_t), class T,
           class QueryConstItr, class U>
 __attribute__((optimize("no-tree-loop-vectorize"))) void
 from_diag(T next_row, const T next_row_end, T cur_row, QueryConstItr query_seq,
-          uint8_t ref_base, U traceback) {
+          std::uint8_t ref_base, U traceback) {
   while (next_row != next_row_end) {
     const score_t score = scr_fun(*query_seq, ref_base) + *cur_row;
     max16(*next_row, score);
@@ -292,32 +297,33 @@ from_left(T left_itr, T target, const T target_end, U traceback) {
 }
 
 inline void
-make_default_cigar(const uint32_t len, std::string &cigar) {
+make_default_cigar(const std::uint32_t len, std::string &cigar) {
   cigar = std::to_string(len) + 'M';
 }
 
 inline void
-make_default_cigar(const uint32_t len, bam_cigar_t &cigar) {
+make_default_cigar(const std::uint32_t len, bam_cigar_t &cigar) {
   // ADS: below is = { abismal_bam_cigar_gen(len, 0)};
   cigar = {(len << ABISMAL_BAM_CIGAR_SHIFT)};
 }
 
-template <score_t (*scr_fun)(const uint8_t, const uint8_t), score_t indel_pen>
+template <score_t (*scr_fun)(const std::uint8_t, const std::uint8_t),
+          score_t indel_pen>
 template <const bool do_traceback>
 score_t
 AbismalAlign<scr_fun, indel_pen>::align(const score_t diffs,
                                         const score_t max_diffs,
-                                        const std::vector<uint8_t> &qseq,
-                                        const uint32_t t_pos) {
+                                        const std::vector<std::uint8_t> &qseq,
+                                        const std::uint32_t t_pos) {
   q_sz = qseq.size();
   // edge case: diffs = 0 so alignment is "trivial"
   if (diffs == 0)
     return simple_aln::best_single_score(q_sz);
 
   // if diffs is small bw can be reduced
-  const size_t bandwidth =
-    min16(bw, static_cast<size_t>(2 * min16(diffs, max_diffs) + 1));
-  const size_t n_cells = (q_sz + bandwidth) * bandwidth;
+  const std::size_t bandwidth =
+    min16(bw, static_cast<std::size_t>(2 * min16(diffs, max_diffs) + 1));
+  const std::size_t n_cells = (q_sz + bandwidth) * bandwidth;
 
   std::fill(std::begin(table), std::begin(table) + n_cells, 0);
   if (do_traceback)
@@ -325,8 +331,8 @@ AbismalAlign<scr_fun, indel_pen>::align(const score_t diffs,
 
   // GS: non-negative because of padding. The mapper
   // must ensure t_pos is large enough when calling the function
-  const size_t t_beg = t_pos - ((bandwidth - 1) / 2);
-  const size_t t_shift = q_sz + bandwidth;
+  const std::size_t t_beg = t_pos - ((bandwidth - 1) / 2);
+  const std::size_t t_shift = q_sz + bandwidth;
 
   // points to relevant reference sequence positions
   genome_iterator t_itr = target + t_beg;
@@ -337,9 +343,9 @@ AbismalAlign<scr_fun, indel_pen>::align(const score_t diffs,
   auto prev(std::begin(table));
   auto cur(prev);
 
-  for (size_t i = 1; i < t_shift; ++i) {
-    const size_t left = (i < bandwidth ? bandwidth - i : 0);
-    const size_t right = min16(bandwidth, t_shift - i);
+  for (std::size_t i = 1; i < t_shift; ++i) {
+    const std::size_t left = (i < bandwidth ? bandwidth - i : 0);
+    const std::size_t right = min16(bandwidth, t_shift - i);
 
     cur += bandwidth;  // next row in aln matrix
     if (do_traceback) {
@@ -363,20 +369,21 @@ AbismalAlign<scr_fun, indel_pen>::align(const score_t diffs,
   }
 
   // locate the end of the alignment as max score
-  size_t the_row = 0, the_col = 0;
+  std::size_t the_row = 0, the_col = 0;
   return get_best_score(table, n_cells, bandwidth, the_row, the_col);
 }
 
-template <score_t (*scr_fun)(const uint8_t, const uint8_t), score_t indel_pen>
+template <score_t (*scr_fun)(const std::uint8_t, const std::uint8_t),
+          score_t indel_pen>
 void
 AbismalAlign<scr_fun, indel_pen>::build_cigar_len_and_pos(  // uses cigar
   const score_t diffs, const score_t max_diffs, bam_cigar_t &cigar,
-  uint32_t &len, uint32_t &t_pos) {
+  std::uint32_t &len, std::uint32_t &t_pos) {
   // locate the end of the alignment as max score
-  const size_t bandwidth =
-    min16(bw, static_cast<size_t>(2 * min16(diffs, max_diffs) + 1));
-  const size_t n_cells = (q_sz + bandwidth) * bandwidth;
-  size_t the_row = 0, the_col = 0;
+  const std::size_t bandwidth =
+    min16(bw, static_cast<std::size_t>(2 * min16(diffs, max_diffs) + 1));
+  const std::size_t n_cells = (q_sz + bandwidth) * bandwidth;
+  std::size_t the_row = 0, the_col = 0;
   const score_t r = get_best_score(table, n_cells, bandwidth, the_row, the_col);
 
   // GS: unlikely, but possible, case where the score = 0, which
@@ -389,7 +396,7 @@ AbismalAlign<scr_fun, indel_pen>::build_cigar_len_and_pos(  // uses cigar
   }
 
   // soft clip "S" at the start of the (reverse) uncompressed cigar
-  const size_t soft_clip_bottom =
+  const std::size_t soft_clip_bottom =
     (q_sz + (bandwidth - 1)) - (the_row + the_col);
 
   // run traceback, the_row and the_col now point to start of tb
@@ -397,7 +404,7 @@ AbismalAlign<scr_fun, indel_pen>::build_cigar_len_and_pos(  // uses cigar
   get_traceback(bandwidth, table, traceback, cigar, the_row, the_col);
 
   // soft clip "S" at the end of the (reverse) uncompressed cigar
-  const size_t soft_clip_top = (the_row + the_col) - (bandwidth - 1);
+  const std::size_t soft_clip_top = (the_row + the_col) - (bandwidth - 1);
 
   // if there is any soft clip at the top, now append it
   if (soft_clip_top > 0)
@@ -415,7 +422,7 @@ AbismalAlign<scr_fun, indel_pen>::build_cigar_len_and_pos(  // uses cigar
   len = q_sz - soft_clip_bottom - soft_clip_top;
 
   // ADS: should have documented this better the first time around...
-  const size_t t_beg = t_pos - ((bandwidth - 1) / 2);
+  const std::size_t t_beg = t_pos - ((bandwidth - 1) / 2);
   t_pos = t_beg + the_row;
 }
 
