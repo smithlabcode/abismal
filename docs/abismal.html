@@ -35,7 +35,7 @@ abismal map -i ref.idx -o out.sam [-s out.stats] reads_1.fq reads_2.fq</code></p
 <pre><code>abismal idx ref.fa ref.idx</code></pre>
 <h1 id="description">DESCRIPTION</h1>
 <p>abismal maps short bisulfite sequencing reads in FASTQ format to a reference genome in FASTA format and produces an output file in SAM format. Only reads that are mapped uniquely or ambiguously (optional) are reported in the SAM output.</p>
-<p>abismal can map reads assuming either C&gt;T or G&gt;A conversion in single-end reads. Both conversions are also accepted in paired-end mapping, but corresponding read pairs are assume to have complementary base conversions. The assumption of C&gt;T conversion means Ts in the read are considered matches to either Cs or Ts in the reference (in either strand). The assumption of G&gt;A conversion means that As in reads are considered matches to either Gs or As in the reference.</p>
+<p>abismal can map reads assuming either C-to-T or G-to-A conversion in single-end reads. Both conversions are also accepted in paired-end mapping, but corresponding read pairs are assume to have complementary base conversions. The assumption of C-to-T conversion means Ts in the read are considered matches to either Cs or Ts in the reference (in either strand). The assumption of G-to-A conversion means that As in reads are considered matches to either Gs or As in the reference.</p>
 <p>absimal was built to map short reads of up to 250 bases. It should successfully map reads of size up to 1 million, but because it uses very short seeds for filtration, the mapping time will increase substantially.</p>
 <h1 id="quick-installation">QUICK INSTALLATION</h1>
 <p>Run the following commands to install abismal</p>
@@ -128,7 +128,7 @@ mate2:
     percent_unmapped: 58.8215
     percent_skipped: 0</code></pre>
 <p>-t NUM-THREADS, -threads NUM-THREADS [default : 1]</p>
-<p>number of threads that should be used to map reads. Each thread reads 1000 reads in parallel, so increasing this number uses more memory by a few kilobytes per additional thread. In most practical cases this should not be significantly different than single-thread mapping.</p>
+<p>Number of threads that should be used to map reads. Each thread reads 1000 reads in parallel, so increasing this number uses more memory by a few kilobytes per additional thread. In most practical cases this should not be significantly different than single-thread mapping.</p>
 <p>-l MIN-FRAG-VALUE, -min-frag MIN-FRAG-VALUE [default : 32]</p>
 <p>(paired-end only) The minimum size a concordant fragment can have. There are cases in which concordant pairs can “dovetail”, that is, the end of the reverse mate can pass the start of the forward mate. Ths parameter dictates the minimum size a dovetail read can have while accepting concordance. The schematic below depicts what the value of -l represents:</p>
 <pre><code>                    [==================================&gt;] [FORWARD MATE]
@@ -144,13 +144,15 @@ mate2:
 <p>-a -ambig</p>
 <p>If this flag is provided, abismal will report a random location to reads that mapped ambiguously. These reads can be identified by the presence of bit 0x100 in the SAM flags.</p>
 <p>-P -pbat</p>
-<p>(paired-end only) Assumes the bisulfite conversion of the first end to be G&gt;A and the bisulfite conversion of the second end to be C&gt;T.</p>
+<p>(paired-end only) Assumes the bisulfite conversion of the first end to be G-to-A and the bisulfite conversion of the second end to be C-to-T.</p>
 <p>-R -random-pbat</p>
 <p>Maps reads in random PBAT mode.</p>
-<p>For single-end mapping, abismal will attempt to map reads assuming C&gt;T conversion, then G&gt;A, and keeping the conversion that attains the best alignment score.</p>
-<p>For paired-end mapping, abismal will attempt to map reads assuming end 1 has C&gt;T conversion and end 2 has G&gt;A conversion. Then it will map the same reads assuming end 1 has G&gt;A conversion. The conversion that attains highest sum of alignment scores is kept.</p>
+<p>For single-end mapping, abismal will attempt to map reads assuming C-to-T conversion, then G-to-A, and keeping the conversion that attains the best alignment score.</p>
+<p>For paired-end mapping, abismal will attempt to map reads assuming end 1 has C-to-T conversion and end 2 has G-to-A conversion. Then it will map the same reads assuming end 1 has G-to-A conversion. The conversion that attains highest sum of alignment scores is kept.</p>
 <p>-A -a-rich</p>
-<p>(single-end only) Indicates that reads are A-rich. Mapping with this flags assumes that the bisulfite conversion is G&gt;A instead of C&gt;T.</p>
+<p>(single-end only) Indicates that reads are A-rich. Mapping with this flags assumes that the bisulfite conversion is G-to-A instead of C-to-T.</p>
+<p>-S -sam-orientation</p>
+<p>Report read sequences (the QSEQ in SAM terminology) in the SAM/BAM output file using the SAM orientation, which reverse-complements the read if the flags indicate it is mapped to the negative strand. The default is to always report the read exactly as it appears in the FASTQ input file.</p>
 <p>-v -verbose</p>
 <p>Prints more run info on the mapping progress, including a progress bar showing the percentage of input reads currently processed.</p>
 <h1 id="input-fastq-format">INPUT FASTQ FORMAT</h1>
@@ -199,10 +201,11 @@ IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII</code></pre>
 <p>The last two fields are optional tags that can be used downstream</p>
 <ul>
 <li>NM: The edit distance (mismatches + insertions + deletions) in the alignment between the read and reference</li>
-<li>CV: The bisulfite letter conversion assumed when mapping the read. If the read was assumed A-rich (G&gt;A conversion), the value CV:A:A is reported. If the read was assumed T-rich (C&gt;T conversion), then the value CV:A:T is reported. If the -R flag is not set, all reads coming from the same FASTQ file will have the same assumed conversion. If the -R flag is used, this tag provides the conversion used in the reported alignment.</li>
+<li>CV: The bisulfite letter conversion assumed when mapping the read. If the read was assumed A-rich (G-to-A conversion), the value CV:A:A is reported. If the read was assumed T-rich (C-to-T conversion), then the value CV:A:T is reported. If the -R flag is not set, all reads coming from the same FASTQ file will have the same assumed conversion. If the -R flag is used, this tag provides the conversion used in the reported alignment.</li>
 </ul>
 <h2 id="important-note-on-seq-reads-reported-in-the-sam-output">IMPORTANT NOTE ON SEQ READS REPORTED IN THE SAM OUTPUT</h2>
 <p>In a strict sense, the SEQ field reported by abismal does not comply with the SAM standard. Properly formatted SAM files reverse-complement reads that map to the reverse strand of the reference genome, whereas abismal reports reads identical to the input FASTQ. This is done deliberately to maintain consistency with the conversion type reported in the CV tag. This standard allows downstream analyses on letter frequencies and conversion types. Tools to reverse-complement the SEQ field and the letter in the CV tag can be used if properly formatted SAM files are necessary.</p>
+<p><strong>Update</strong> As of version 3.3.1, <code>abismal map</code> includes an option <code>-S</code> that will do the reverse complement prior to writing the read sequence in the SAM/BAM output for any read that maps to the negative strand of the reference.</p>
 <h2 id="filtering-concordantdiscordant-pairs-in-paired-end-sam">Filtering concordant/discordant pairs in paired-end SAM</h2>
 <p>In paired-end mapping, abismal will try to mate concordant pairs and find pairs whose sum of edit distances is below the user-defined cut-off (set to 10% of the mapped read length by default). If it cannot find such concordant pair (either due to ambiguity or low alignment score), abismal will map each end as single-end reads and report locations with sufficiently high similarity. In many cases, one may want to only keep concordant pairs, or even isolate discordant pairs to analyze their sequence patterns, mapping quality, etc.</p>
 <p>To isolate concordant pairs from paired-end output <code>out.sam</code>, use the following awk script, which isolates the SAM header and reads with an equal (=) symbol in the RNEXT field (reserved only for concordant pairs).</p>
@@ -232,11 +235,11 @@ IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII</code></pre>
 <h2 id="valid-alignments">Valid alignments</h2>
 <p>We say a candidate is a valid alignment if the edit distance is at most a fraction m of the read length. The acceptable fraction can be set through the -m or -max-distance flag in <a href="#options">options</a>. Some application-specific cases may require more or less acceptable error, so this parameter can be adjusted by the user.</p>
 <h2 id="concordant-pairs">Concordant pairs</h2>
-<p>On paired-end input, we say reads <span class="math inline"><em>r</em><sub>1</sub></span> and <span class="math inline"><em>r</em><sub>2</sub></span> with lengths <span class="math inline"><em>n</em><sub>1</sub></span> and <span class="math inline"><em>n</em><sub>2</sub></span>, respectively, are a corresponding pair are concordant if there exist positions <span class="math inline"><em>p</em><sub>1</sub></span> and <span class="math inline"><em>p</em><sub>2</sub></span> such that</p>
+<p>On paired-end input, we say reads <span class="math inline"><em>r</em>1</span> and <span class="math inline"><em>r</em>2</span> with lengths <span class="math inline"><em>n</em>1</span> and <span class="math inline"><em>n</em>2</span>, respectively, are a corresponding pair are concordant if there exist positions <span class="math inline"><em>p</em>1</span> and <span class="math inline"><em>p</em>2</span> such that</p>
 <ol type="1">
-<li><span class="math inline"><em>p</em><sub>1</sub></span> is a valid alignment for <span class="math inline"><em>r</em><sub>1</sub></span> and <span class="math inline"><em>p</em><sub>2</sub></span> is a valid alignment for <span class="math inline"><em>r</em><sub>2</sub></span></li>
-<li><span class="math inline"><em>p</em><sub>1</sub></span> and <span class="math inline"><em>p</em><sub>2</sub></span> are in opposite strands of the genome, and</li>
-<li><span class="math inline"><em>p</em><sub>2</sub> − <em>p</em><sub>1</sub> ≥ <em>l</em></span> and <span class="math inline"><em>p</em><sub>2</sub> − <em>p</em><sub>1</sub> ≤ <em>L</em> − <em>n</em>2</span>.</li>
+<li><span class="math inline"><em>p</em>1</span> is a valid alignment for <span class="math inline"><em>r</em>1</span> and <span class="math inline"><em>p</em>2</span> is a valid alignment for <span class="math inline"><em>r</em>2</span></li>
+<li><span class="math inline"><em>p</em>1</span> and <span class="math inline"><em>p</em>2</span> are in opposite strands of the genome, and</li>
+<li><span class="math inline"><em>p</em>2 − <em>p</em>1 ≥ <em>l</em></span> and <span class="math inline"><em>p</em>2 − <em>p</em>1 ≤ <em>L</em> − <em>n</em>2</span>.</li>
 </ol>
 <p>This means that the fragment lengths from which the pair originates is at least <span class="math inline"><em>l</em></span> and at most <span class="math inline"><em>L</em></span>. The default values of <span class="math inline"><em>l</em></span> and <span class="math inline"><em>L</em></span> are 32 and 3000, respectively, and can be set by the <code>-l</code> and <code>-L</code> flags. Those are conservative values that cover most of the current protocols. We will incorporate automatic calculations of these values in the future based on the first high-quality read pairs that are mapped.</p>
 <h2 id="discordant-pairs">Discordant pairs</h2>

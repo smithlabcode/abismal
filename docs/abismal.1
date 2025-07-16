@@ -49,15 +49,15 @@ format.
 Only reads that are mapped uniquely or ambiguously (optional) are
 reported in the SAM output.
 .PP
-abismal can map reads assuming either C>T or G>A conversion in
+abismal can map reads assuming either C-to-T or G-to-A conversion in
 single-end reads.
 Both conversions are also accepted in paired-end mapping, but
 corresponding read pairs are assume to have complementary base
 conversions.
-The assumption of C>T conversion means Ts in the read are considered
+The assumption of C-to-T conversion means Ts in the read are considered
 matches to either Cs or Ts in the reference (in either strand).
-The assumption of G>A conversion means that As in reads are considered
-matches to either Gs or As in the reference.
+The assumption of G-to-A conversion means that As in reads are
+considered matches to either Gs or As in the reference.
 .PP
 absimal was built to map short reads of up to 250 bases.
 It should successfully map reads of size up to 1 million, but because it
@@ -213,7 +213,7 @@ mate2:
 .PP
 -t NUM-THREADS, -threads NUM-THREADS [default : 1]
 .PP
-number of threads that should be used to map reads.
+Number of threads that should be used to map reads.
 Each thread reads 1000 reads in parallel, so increasing this number uses
 more memory by a few kilobytes per additional thread.
 In most practical cases this should not be significantly different than
@@ -274,26 +274,34 @@ flags.
 -P -pbat
 .PP
 (paired-end only) Assumes the bisulfite conversion of the first end to
-be G>A and the bisulfite conversion of the second end to be C>T.
+be G-to-A and the bisulfite conversion of the second end to be C-to-T.
 .PP
 -R -random-pbat
 .PP
 Maps reads in random PBAT mode.
 .PP
-For single-end mapping, abismal will attempt to map reads assuming C>T
-conversion, then G>A, and keeping the conversion that attains the best
-alignment score.
+For single-end mapping, abismal will attempt to map reads assuming
+C-to-T conversion, then G-to-A, and keeping the conversion that attains
+the best alignment score.
 .PP
 For paired-end mapping, abismal will attempt to map reads assuming end 1
-has C>T conversion and end 2 has G>A conversion.
-Then it will map the same reads assuming end 1 has G>A conversion.
+has C-to-T conversion and end 2 has G-to-A conversion.
+Then it will map the same reads assuming end 1 has G-to-A conversion.
 The conversion that attains highest sum of alignment scores is kept.
 .PP
 -A -a-rich
 .PP
 (single-end only) Indicates that reads are A-rich.
-Mapping with this flags assumes that the bisulfite conversion is G>A
-instead of C>T.
+Mapping with this flags assumes that the bisulfite conversion is G-to-A
+instead of C-to-T.
+.PP
+-S -sam-orientation
+.PP
+Report read sequences (the QSEQ in SAM terminology) in the SAM/BAM
+output file using the SAM orientation, which reverse-complements the
+read if the flags indicate it is mapped to the negative strand.
+The default is to always report the read exactly as it appears in the
+FASTQ input file.
 .PP
 -v -verbose
 .PP
@@ -430,10 +438,10 @@ NM: The edit distance (mismatches + insertions + deletions) in the
 alignment between the read and reference
 .IP \[bu] 2
 CV: The bisulfite letter conversion assumed when mapping the read.
-If the read was assumed A-rich (G>A conversion), the value CV:A:A is
+If the read was assumed A-rich (G-to-A conversion), the value CV:A:A is
 reported.
-If the read was assumed T-rich (C>T conversion), then the value CV:A:T
-is reported.
+If the read was assumed T-rich (C-to-T conversion), then the value
+CV:A:T is reported.
 If the -R flag is not set, all reads coming from the same FASTQ file
 will have the same assumed conversion.
 If the -R flag is used, this tag provides the conversion used in the
@@ -451,6 +459,11 @@ This standard allows downstream analyses on letter frequencies and
 conversion types.
 Tools to reverse-complement the SEQ field and the letter in the CV tag
 can be used if properly formatted SAM files are necessary.
+.PP
+\f[B]Update\f[R] As of version 3.3.1, \f[C]abismal map\f[R] includes an
+option \f[C]-S\f[R] that will do the reverse complement prior to writing
+the read sequence in the SAM/BAM output for any read that maps to the
+negative strand of the reference.
 .SS Filtering concordant/discordant pairs in paired-end SAM
 .PP
 In paired-end mapping, abismal will try to mate concordant pairs and
@@ -591,20 +604,19 @@ Some application-specific cases may require more or less acceptable
 error, so this parameter can be adjusted by the user.
 .SS Concordant pairs
 .PP
-On paired-end input, we say reads \f[I]r\f[R]~1~ and \f[I]r\f[R]~2~ with
-lengths \f[I]n\f[R]~1~ and \f[I]n\f[R]~2~, respectively, are a
-corresponding pair are concordant if there exist positions
-\f[I]p\f[R]~1~ and \f[I]p\f[R]~2~ such that
+On paired-end input, we say reads \f[I]r\f[R]1 and \f[I]r\f[R]2 with
+lengths \f[I]n\f[R]1 and \f[I]n\f[R]2, respectively, are a corresponding
+pair are concordant if there exist positions \f[I]p\f[R]1 and
+\f[I]p\f[R]2 such that
 .IP "1." 3
-\f[I]p\f[R]~1~ is a valid alignment for \f[I]r\f[R]~1~ and
-\f[I]p\f[R]~2~ is a valid alignment for \f[I]r\f[R]~2~
+\f[I]p\f[R]1 is a valid alignment for \f[I]r\f[R]1 and \f[I]p\f[R]2 is a
+valid alignment for \f[I]r\f[R]2
 .IP "2." 3
-\f[I]p\f[R]~1~ and \f[I]p\f[R]~2~ are in opposite strands of the genome,
-and
+\f[I]p\f[R]1 and \f[I]p\f[R]2 are in opposite strands of the genome, and
 .IP "3." 3
-\f[I]p\f[R]~2~\[u2005]\[mi]\[u2005]\f[I]p\f[R]~1~\[u2004]\[>=]\[u2004]\f[I]l\f[R]
+\f[I]p\f[R]2\[u2005]\[mi]\[u2005]\f[I]p\f[R]1\[u2004]\[>=]\[u2004]\f[I]l\f[R]
 and
-\f[I]p\f[R]~2~\[u2005]\[mi]\[u2005]\f[I]p\f[R]~1~\[u2004]\[<=]\[u2004]\f[I]L\f[R]\[u2005]\[mi]\[u2005]\f[I]n\f[R]2.
+\f[I]p\f[R]2\[u2005]\[mi]\[u2005]\f[I]p\f[R]1\[u2004]\[<=]\[u2004]\f[I]L\f[R]\[u2005]\[mi]\[u2005]\f[I]n\f[R]2.
 .PP
 This means that the fragment lengths from which the pair originates is
 at least \f[I]l\f[R] and at most \f[I]L\f[R].
