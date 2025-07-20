@@ -42,8 +42,6 @@ if ENABLE_SHORT
 AM_CXXFLAGS += -DENABLE_SHORT
 endif
 
-CXXFLAGS = -O3 -DNDEBUG # default has optimization on
-
 noinst_LIBRARIES = libabismal.a
 
 libabismal_a_SOURCES = \
