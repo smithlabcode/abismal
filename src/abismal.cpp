@@ -73,10 +73,10 @@ enum conversion_type { t_rich = false, a_rich = true };
 static void
 log_msg(const std::string &s) {
   using std::chrono::system_clock;
-  auto tmp = system_clock::to_time_t(system_clock::now());
+  const auto tmp = system_clock::to_time_t(system_clock::now());
   std::string time_fmt(std::ctime(&tmp));
   time_fmt.pop_back();
-  std::cerr << "[" << time_fmt << "] " << s << std::endl;
+  std::cerr << "[" << time_fmt << "] " << s << '\n';
 }
 
 static constexpr conversion_type
@@ -130,7 +130,7 @@ struct ReadLoader {
         // read too long, may pass the end of the genome
         if (std::size(line) >= seed::padding_size)
           throw std::runtime_error(
-            "found a read of size " + std::to_string(line.size()) +
+            "found a read of size " + std::to_string(std::size(line)) +
             ", which is too long. Maximum allowed read size = " +
             std::to_string(seed::padding_size));
 
@@ -165,13 +165,13 @@ const std::size_t ReadLoader::batch_size = 1000;
 const std::uint32_t ReadLoader::min_read_length =
   seed::key_weight + seed::window_size - 1;
 
-// GS: used to allocate the appropriate dimensions of the banded
-// alignment matrix for a batch of reads
+// GS: used to allocate the appropriate dimensions of the banded alignment
+// matrix for a batch of reads
 static inline void
 update_max_read_length(std::size_t &max_length,
                        const std::vector<std::string> &reads) {
-  for (auto &i : reads)
-    max_length = std::max(max_length, i.size());
+  for (const auto &i : reads)
+    max_length = std::max(max_length, std::size(i));
 }
 
 struct se_element {   // size = 8
@@ -388,7 +388,7 @@ struct se_candidates {
               [](const se_element &a, const se_element &b) {
                 return (a.pos < b.pos) || (a.pos == b.pos && a.flags < b.flags);
               });
-    sz = unique(std::begin(v), std::begin(v) + sz) - std::begin(v);
+    sz = std::unique(std::begin(v), std::begin(v) + sz) - std::cbegin(v);
   }
 
   bool sure_ambig;
@@ -460,21 +460,21 @@ format_se(const bool allow_ambig, const bool strict_sam, const se_element &res,
 
   sr.b = bam_init1();
   int ret = bam_set1(sr.b,
-                     read_name.size(),  // size_t l_qname,
-                     read_name.data(),  // const char *qname,
-                     flag,              // uint16_t flag,
-                     chrom_idx - 1,     // int32_t tid (-1 for padding)
-                     ref_s,             // hts_pos_t pos,
-                     255,               // uint8_t mapq,
-                     cigar.size(),      // size_t n_cigar,
-                     cigar.data(),      // const uint32_t *cigar,
-                     -1,                // int32_t mtid,
-                     -1,                //  hts_pos_t mpos,
-                     0,                 // hts_pos_t isize,
-                     read.size(),       // size_t l_seq,
-                     read.data(),       // const char *seq,
-                     nullptr,           // const char *qual,
-                     16);               // size_t l_aux);
+                     std::size(read_name),  // size_t l_qname,
+                     read_name.data(),      // const char *qname,
+                     flag,                  // uint16_t flag,
+                     chrom_idx - 1,         // int32_t tid (-1 for padding)
+                     ref_s,                 // hts_pos_t pos,
+                     255,                   // uint8_t mapq,
+                     std::size(cigar),      // size_t n_cigar,
+                     cigar.data(),          // const uint32_t *cigar,
+                     -1,                    // int32_t mtid,
+                     -1,                    //  hts_pos_t mpos,
+                     0,                     // hts_pos_t isize,
+                     std::size(read),       // size_t l_seq,
+                     read.data(),           // const char *seq,
+                     nullptr,               // const char *qual,
+                     16);                   // size_t l_aux);
   if (ret < 0)
     throw std::runtime_error("failed to format bam");
 
@@ -826,7 +826,7 @@ struct se_map_stats {
   // reads_mapped_unique_fraction is the ratio of reads_mapped_unique over
   // total_reads.
   [[nodiscard]] double
-  reads_mapped_unique_fraction() const {
+  reads_mapped_unique_frac() const {
     return total_reads > 0
              ? static_cast<double>(reads_mapped_unique) / total_reads
              : 0.0;
@@ -835,7 +835,7 @@ struct se_map_stats {
   // reads_mapped_ambiguous_fraction is the ratio of reads_mapped_ambiguous
   // over total_reads.
   [[nodiscard]] double
-  reads_mapped_ambiguous_fraction() const {
+  reads_mapped_ambiguous_frac() const {
     return total_reads > 0
              ? static_cast<double>(reads_mapped_ambiguous) / total_reads
              : 0.0;
@@ -851,7 +851,7 @@ struct se_map_stats {
   // reads_mapped_fraction is the ratio of reads_mapped over
   // total_reads.
   [[nodiscard]] double
-  reads_mapped_fraction() const {
+  reads_mapped_frac() const {
     return total_reads > 0 ? static_cast<double>(reads_mapped()) / total_reads
                            : 0.0;
   }
@@ -866,7 +866,7 @@ struct se_map_stats {
 
   // reads_unmapped_fraction is the ratio of reads_unmapped over total_reads
   [[nodiscard]] double
-  reads_unmapped_fraction() const {
+  reads_unmapped_frac() const {
     return total_reads > 0 ? static_cast<double>(reads_unmapped()) / total_reads
                            : 0.0;
   }
@@ -874,7 +874,7 @@ struct se_map_stats {
   // percent_skipped is the ratio of reads_skipped over total_reads,
   // multiplied by 100.
   [[nodiscard]] double
-  reads_skipped_fraction() const {
+  reads_skipped_frac() const {
     return total_reads > 0 ? static_cast<double>(reads_skipped) / total_reads
                            : 0.0;
   }
@@ -926,32 +926,28 @@ struct se_map_stats {
       update_error_rate(s.diffs, cigar);
   }
 
-  [[nodiscard]] auto
-  tostring(const std::size_t n_tabs = 0) const -> std::string {
+  [[nodiscard]] std::string
+  tostring() const {
     static constexpr auto tab = "    ";
     constexpr auto pct = [](const double x) { return x * 100.0; };
-
-    std::string t;
-    for (std::size_t i = 0; i < n_tabs; ++i)
-      t += tab;
     std::ostringstream oss;
     // clang-format off
-    oss << t << "total_reads: " << total_reads << '\n'
-        << t << "mapped: " << '\n'
-        << t << tab << "num_mapped: " << reads_mapped() << '\n'
-        << t << tab << "num_unique: " << reads_mapped_unique << '\n'
-        << t << tab << "num_ambiguous: " << reads_mapped_ambiguous << '\n'
-        << t << tab << "percent_mapped: " << pct(reads_mapped_fraction()) << '\n'
-        << t << tab << "percent_unique: " << pct(reads_mapped_unique_fraction()) << '\n'
-        << t << tab << "percent_ambiguous: " << pct(reads_mapped_ambiguous_fraction()) << '\n'
-        << t << tab << "unique_error:" << '\n'
-        << t << tab << tab << "edits: " << edit_distance << '\n'
-        << t << tab << tab << "total_bases: " << total_bases << '\n'
-        << t << tab << tab << "error_rate: " << edit_distance_mean() << '\n'
-        << t << "num_unmapped: " << reads_unmapped() << '\n'
-        << t << "num_skipped: " << reads_skipped << '\n'
-        << t << "percent_unmapped: " << pct(reads_unmapped_fraction()) << '\n'
-        << t << "percent_skipped: " << pct(reads_skipped_fraction()) << '\n';
+    oss << tab << "total_reads: " << total_reads << '\n'
+        << tab << "mapped:\n"
+        << tab << "num_mapped: " << reads_mapped() << '\n'
+        << tab << "num_unique: " << reads_mapped_unique << '\n'
+        << tab << "num_ambiguous: " << reads_mapped_ambiguous << '\n'
+        << tab << "percent_mapped: " << pct(reads_mapped_frac()) << '\n'
+        << tab << "percent_unique: " << pct(reads_mapped_unique_frac()) << '\n'
+        << tab << "percent_ambiguous: " << pct(reads_mapped_ambiguous_frac()) << '\n'
+        << tab << "unique_error:" << '\n'
+        << tab << tab << "edits: " << edit_distance << '\n'
+        << tab << tab << "total_bases: " << total_bases << '\n'
+        << tab << tab << "error_rate: " << edit_distance_mean() << '\n'
+        << tab << "num_unmapped: " << reads_unmapped() << '\n'
+        << tab << "num_skipped: " << reads_skipped << '\n'
+        << tab << "percent_unmapped: " << pct(reads_unmapped_frac()) << '\n'
+        << tab << "percent_skipped: " << pct(reads_skipped_frac()) << '\n';
     // clang-format on
     return oss.str();
   }
@@ -983,14 +979,14 @@ struct pe_map_stats {
     }
   }
 
-  [[nodiscard]] auto
-  tostring(const bool allow_ambig) const -> std::string {
+  [[nodiscard]] std::string
+  tostring(const bool allow_ambig) const {
     std::ostringstream oss;
-    oss << "pairs:\n" << both_stats.tostring(1);
+    oss << "pairs:\n" << both_stats.tostring();
     if (!allow_ambig)
       oss << "mate1:\n"
-          << end1_stats.tostring(1) << "mate2:\n"
-          << end2_stats.tostring(1);
+          << end1_stats.tostring() << "mate2:\n"
+          << end2_stats.tostring();
     return oss.str();
   }
 };
@@ -1447,15 +1443,15 @@ map_single_ended(const bool show_progress, const bool allow_ambig,
                  const bool strict_sam, const AbismalIndex &abismal_index,
                  ReadLoader &rl, se_map_stats &se_stats, bamxx::bam_header &hdr,
                  bamxx::bam_out &out, ProgressBar &progress) {
-  const auto counter_st(std::begin(abismal_index.counter));
-  const auto counter_t_st(std::begin(abismal_index.counter_t));
-  const auto counter_a_st(std::begin(abismal_index.counter_a));
+  const auto counter_st(std::cbegin(abismal_index.counter));
+  const auto counter_t_st(std::cbegin(abismal_index.counter_t));
+  const auto counter_a_st(std::cbegin(abismal_index.counter_a));
 
-  const auto index_st(std::begin(abismal_index.index));
-  const auto index_t_st(std::begin(abismal_index.index_t));
-  const auto index_a_st(std::begin(abismal_index.index_a));
+  const auto index_st(std::cbegin(abismal_index.index));
+  const auto index_t_st(std::cbegin(abismal_index.index_t));
+  const auto index_a_st(std::cbegin(abismal_index.index_a));
 
-  const genome_iterator genome_st(std::begin(abismal_index.genome));
+  const genome_iterator genome_st(std::cbegin(abismal_index.genome));
   const std::uint32_t max_candidates = abismal_index.max_candidates;
 
   // batch variables used in reporting the SAM entry
@@ -2108,6 +2104,7 @@ map_paired_ended_rand(const bool show_progress, const bool allow_ambig,
   std::size_t the_byte = 0;
 
   while (rl1 && rl2) {
+
     {
       const std::lock_guard<std::mutex> lock(abismal_concurrency::read_mutex);
       rl1.load_reads(names1, reads1);
@@ -2115,13 +2112,12 @@ map_paired_ended_rand(const bool show_progress, const bool allow_ambig,
       the_byte = rl1.get_current_byte();
     }
 
-    if (reads1.size() != reads2.size()) {
+    if (reads1.size() != reads2.size())
       throw std::runtime_error("paired-end batch sizes differ. Batch 1: " +
                                std::to_string(reads1.size()) +
                                ", batch 2: " + std::to_string(reads2.size()) +
                                ". Are you sure your paired-end inputs "
                                "have the same number of reads?");
-    }
 
     std::size_t max_batch_read_length = 0;
     update_max_read_length(max_batch_read_length, reads1);
@@ -2301,7 +2297,7 @@ abismal_make_sam_header(const ChromLookup &cl, const int argc, char *argv[],
   std::ostringstream the_command;
   copy(argv, argv + argc,
        std::ostream_iterator<const char *>(the_command, " "));
-  out << "CL:\"" << the_command.str() << "\"" << std::endl;
+  out << "CL:\"" << the_command.str() << "\"" << '\n';
 
   hdr.h = sam_hdr_init();
   return sam_hdr_add_lines(hdr.h, out.str().data(), out.str().size());
@@ -2366,26 +2362,26 @@ abismal(int argc, char *argv[]) {
     std::vector<std::string> leftover_args;
     opt_parse.parse(argc, argv, leftover_args);
     if (argc == 1 || opt_parse.help_requested()) {
-      std::cerr << opt_parse.help_message() << std::endl;
-      std::cerr << opt_parse.about_message() << std::endl;
+      std::cerr << opt_parse.help_message() << '\n'
+                << opt_parse.about_message() << '\n';
       return EXIT_SUCCESS;
     }
     if (opt_parse.about_requested()) {
-      std::cerr << opt_parse.about_message() << std::endl;
+      std::cerr << opt_parse.about_message() << '\n';
       return EXIT_SUCCESS;
     }
     if (opt_parse.option_missing()) {
-      std::cerr << "Missing required argument" << std::endl;
-      std::cerr << opt_parse.option_missing_message() << std::endl;
+      std::cerr << "Missing required argument\n"
+                << opt_parse.option_missing_message() << '\n';
       return EXIT_SUCCESS;
     }
     if (leftover_args.size() != 1 && leftover_args.size() != 2) {
-      std::cerr << opt_parse.help_message() << std::endl;
-      std::cerr << opt_parse.about_message() << std::endl;
+      std::cerr << opt_parse.help_message() << '\n'
+                << opt_parse.about_message() << '\n';
       return EXIT_SUCCESS;
     }
     if (abismal_concurrency::invalid_n_threads()) {
-      std::cerr << "Please choose a valid number of threads" << std::endl;
+      std::cerr << "Please choose a valid number of threads" << '\n';
       return EXIT_SUCCESS;
     }
     if (index_file.empty() == genome_file.empty()) {
@@ -2397,7 +2393,7 @@ abismal(int argc, char *argv[]) {
     std::string reads_file2;
 
     if (!file_exists(reads_file)) {
-      std::cerr << "cannot open read 1 FASTQ file: " << reads_file << std::endl;
+      std::cerr << "cannot open read 1 FASTQ file: " << reads_file << '\n';
       return EXIT_FAILURE;
     }
     bool paired_end = false;
@@ -2406,8 +2402,7 @@ abismal(int argc, char *argv[]) {
       reads_file2 = leftover_args.back();
 
       if (!file_exists(reads_file2)) {
-        std::cerr << "cannot open read 2 FASTQ file: " << reads_file2
-                  << std::endl;
+        std::cerr << "cannot open read 2 FASTQ file: " << reads_file2 << '\n';
         return EXIT_FAILURE;
       }
     }
@@ -2483,7 +2478,7 @@ abismal(int argc, char *argv[]) {
       throw std::runtime_error("failed to open output file: " + outfile);
 
     bamxx::bam_header hdr;
-    int ret = abismal_make_sam_header(abismal_index.cl, argc, argv, hdr);
+    const int ret = abismal_make_sam_header(abismal_index.cl, argc, argv, hdr);
 
     if (ret < 0)
       throw std::runtime_error("error formatting header");
@@ -2527,11 +2522,11 @@ abismal(int argc, char *argv[]) {
                                          : pe_stats.tostring(allow_ambig));
       else
         std::cerr << "failed to open stats output file: " << stats_outfile
-                  << std::endl;
+                  << '\n';
     }
   }
   catch (const std::exception &e) {
-    std::cerr << e.what() << std::endl;
+    std::cerr << e.what() << '\n';
     return EXIT_FAILURE;
   }
   return EXIT_SUCCESS;
