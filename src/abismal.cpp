@@ -134,8 +134,9 @@ struct ReadLoader {
             ", which is too long. Maximum allowed read size = " +
             std::to_string(seed::padding_size));
 
-        if (count_if(std::cbegin(line), std::cend(line),
-                     [](const char c) { return c != 'N'; }) < min_read_length)
+        if (std::count_if(std::cbegin(line), std::cend(line), [](const char c) {
+              return c != 'N';
+            }) < min_read_length)
           line.clear();
         else {
           while (line.back() == 'N')
@@ -286,8 +287,7 @@ max16(const T x, const T y) {
 }
 
 struct se_candidates {
-  se_candidates() :
-    sz(1), best(se_element()), v(std::vector<se_element>(max_size)) {}
+  se_candidates() : sz{1}, best{}, v{std::vector<se_element>(max_size)} {}
 
   inline bool
   full() const {
@@ -383,11 +383,11 @@ struct se_candidates {
   // in SE reads, we sort to exclude duplicates
   void
   prepare_for_alignments() {
-    sort(std::begin(v),
-         std::begin(v) + sz,  // no sort_heap here as heapify used "diffs"
-         [](const se_element &a, const se_element &b) {
-           return (a.pos < b.pos) || (a.pos == b.pos && a.flags < b.flags);
-         });
+    std::sort(std::begin(v),
+              std::begin(v) + sz,  // no sort_heap here as heapify used "diffs"
+              [](const se_element &a, const se_element &b) {
+                return (a.pos < b.pos) || (a.pos == b.pos && a.flags < b.flags);
+              });
     sz = unique(std::begin(v), std::begin(v) + sz) - std::begin(v);
   }
 
@@ -704,7 +704,7 @@ format_pe(
 }
 
 struct pe_candidates {
-  pe_candidates() : v(std::vector<se_element>(max_size_large)) {}
+  pe_candidates() : v{std::vector<se_element>(max_size_large)} {}
 
   inline void
   reset(const std::uint32_t readlen) {
@@ -773,11 +773,11 @@ struct pe_candidates {
 
   void
   prepare_for_mating() {
-    sort(
+    std::sort(
       std::begin(v),
       std::begin(v) + sz,  // no sort_heap here as heapify used "diffs"
       [](const se_element &a, const se_element &b) { return a.pos < b.pos; });
-    sz = unique(std::begin(v), std::begin(v) + sz) - std::begin(v);
+    sz = std::unique(std::begin(v), std::begin(v) + sz) - std::cbegin(v);
   }
 
   bool sure_ambig;
@@ -792,83 +792,99 @@ struct pe_candidates {
 };
 
 struct se_map_stats {
-  // total_reads is the total number of reads from the fastq file for
-  // mapping that are considered for mapping as single-end reads. This
-  // is all reads if the input is single-end, or all read ends for
-  // which concordant mapping is not found in the case of paired-end.
+  // total_reads is the total number of reads from the fastq file for mapping
+  // that are considered for mapping as single-end reads. This is all reads if
+  // the input is single-end, or all read ends for which concordant mapping is
+  // not found in the case of paired-end.
   std::atomic_uint32_t total_reads{};
 
   // reads_mapped_unique is the number of reads for which exactly one location
-  // in the reference genome has the best mapping score and that score meets the
-  // minimum critiera for a good match.
+  // in the reference genome has the best mapping score and that score meets
+  // the minimum critiera for a good match.
   std::atomic_uint32_t reads_mapped_unique{};
 
-  // reads_mapped_unique_fraction is the ratio of reads_mapped_unique
-  // over total_reads.
-  double reads_mapped_unique_fraction{};
-
   // reads_mapped_ambiguous is the number of reads that have two equally good
-  // mapping locations within the reference genome, both meeting the
-  // minimum criteria for a match.
+  // mapping locations within the reference genome, both meeting the minimum
+  // criteria for a match.
   std::atomic_uint32_t reads_mapped_ambiguous{};
 
-  // reads_mapped_ambiguous_fraction is the ratio of
-  // reads_mapped_ambiguous over total_reads.
-  double reads_mapped_ambiguous_fraction{};
+  // reads_skipped is the number of reads that are skipped and for which
+  // mapping is not attempted due to poor quality -- usually these are reads
+  // that are too short after adaptor trimming.
+  std::atomic_uint32_t reads_skipped{};
+
+  // edit_distance is the sum of edit distances over all reads that should be
+  // repored. This includes uniquely mapped reads but also ambiguously mapping
+  // reads if the user requests those among the output. This is used to obtain
+  // an average value.
+  std::atomic_uint64_t edit_distance{};
+
+  // total_bases is the total number of reference genome bases covered by all
+  // mapped reads. This is used to obtain an average value.
+  std::atomic_uint64_t total_bases{};
+
+  // reads_mapped_unique_fraction is the ratio of reads_mapped_unique over
+  // total_reads.
+  [[nodiscard]] double
+  reads_mapped_unique_fraction() const {
+    return total_reads > 0
+             ? static_cast<double>(reads_mapped_unique) / total_reads
+             : 0.0;
+  }
+
+  // reads_mapped_ambiguous_fraction is the ratio of reads_mapped_ambiguous
+  // over total_reads.
+  [[nodiscard]] double
+  reads_mapped_ambiguous_fraction() const {
+    return total_reads > 0
+             ? static_cast<double>(reads_mapped_ambiguous) / total_reads
+             : 0.0;
+  }
 
   // reads_mapped is the sum of reads_mapped_unique and
   // reads_mapped_ambiguous.
-  std::uint32_t reads_mapped{};
+  [[nodiscard]] std::uint32_t
+  reads_mapped() const {
+    return reads_mapped_unique + reads_mapped_ambiguous;
+  }
 
   // reads_mapped_fraction is the ratio of reads_mapped over
   // total_reads.
-  double reads_mapped_fraction{};
+  [[nodiscard]] double
+  reads_mapped_fraction() const {
+    return total_reads > 0 ? static_cast<double>(reads_mapped()) / total_reads
+                           : 0.0;
+  }
 
   // reads_unmapped is the number of reads that have no mapping location
   // in the reference genome with a score that meets the minimum
   // criteria.
-  std::atomic_uint32_t reads_unmapped{};
+  [[nodiscard]] std::uint32_t
+  reads_unmapped() const {
+    return total_reads - reads_mapped();
+  }
 
-  // percent_unmapped is the ratio of reads_unmapped over total_reads,
+  // reads_unmapped_fraction is the ratio of reads_unmapped over total_reads
+  [[nodiscard]] double
+  reads_unmapped_fraction() const {
+    return total_reads > 0 ? static_cast<double>(reads_unmapped()) / total_reads
+                           : 0.0;
+  }
+
+  // percent_skipped is the ratio of reads_skipped over total_reads,
   // multiplied by 100.
-  double percent_unmapped{};
-
-  // skipped_reads is the number of reads that are skipped and for which
-  // mapping is not attempted due to poor quality -- usually these are
-  // reads that are too short after adaptor trimming.
-  std::atomic_uint32_t skipped_reads{};
-
-  // percent_skipped is the ratio of skipped_reads over total_reads,
-  // multiplied by 100.
-  double percent_skipped{};
-
-  // edit_distance is the sum of edit distances over all reads that
-  // should be repored. This includes uniquely mapped reads but also
-  // ambiguously mapping reads if the user requests those among the
-  // output. This is used to obtain an average value.
-  std::atomic_uint64_t edit_distance{};
-
-  // total_bases is the total number of reference genome bases covered
-  // by all mapped reads. This is used to obtain an average value.
-  std::atomic_uint64_t total_bases{};
+  [[nodiscard]] double
+  reads_skipped_fraction() const {
+    return total_reads > 0 ? static_cast<double>(reads_skipped) / total_reads
+                           : 0.0;
+  }
 
   // edit_distance_mean is the ratio of edit_distance over
   // total_bases.
-  double edit_distance_mean{};
-
-  void
-  update(const bool allow_ambig, const std::string &read,
-         const bam_cigar_t &cigar, const se_element s) {
-    ++total_reads;
-    const bool valid = !s.empty();
-    const bool ambig = s.ambig();
-    reads_mapped_unique += (valid && !ambig);
-    reads_mapped_ambiguous += (valid && ambig);
-    reads_unmapped += !valid;
-    skipped_reads += read.empty();
-
-    if (valid && (allow_ambig || !ambig))
-      update_error_rate(s.diffs, cigar);
+  [[nodiscard]] double
+  edit_distance_mean() const {
+    return total_bases > 0 ? static_cast<double>(edit_distance) / total_bases
+                           : 0.0;
   }
 
   void
@@ -878,27 +894,42 @@ struct se_map_stats {
   }
 
   void
-  assign_values() {
-    constexpr auto pct = [](const double a, const double b) {
-      return ((b == 0) ? 0.0 : 100.0 * a / b);
-    };
-
-    reads_mapped = reads_mapped_unique + reads_mapped_ambiguous;
-    const std::uint32_t total_reads_tmp = total_reads;
-    const std::uint32_t denom = total_reads_tmp == 0 ? 1 : total_reads_tmp;
-    reads_mapped_fraction = pct(reads_mapped, denom);
-    reads_mapped_unique_fraction = pct(reads_mapped_unique, denom);
-    reads_mapped_ambiguous_fraction = pct(reads_mapped_ambiguous, denom);
-    edit_distance_mean = edit_distance / static_cast<double>(total_bases);
-    percent_unmapped = pct(reads_unmapped, total_reads);
-    percent_skipped = pct(skipped_reads, total_reads);
+  update_error_rate_for_pair(const score_t d1, const score_t d2,
+                             const bam_cigar_t &cig1, const bam_cigar_t &cig2) {
+    edit_distance += d1 + d2;
+    total_bases += cigar_rseq_ops(cig1) + cigar_rseq_ops(cig2);
   }
 
-  std::string
-  tostring(const std::size_t n_tabs = 0) {
-    static constexpr auto tab = "    ";
+  void
+  update(const bool allow_ambig, const std::string &read,
+         const bam_cigar_t &cigar, const se_element s) {
+    ++total_reads;
+    const bool valid = !s.empty();
+    const bool ambig = s.ambig();
+    reads_mapped_unique += (valid && !ambig);
+    reads_mapped_ambiguous += (valid && ambig);
+    reads_skipped += read.empty();
+    if (valid && (!ambig || allow_ambig))
+      update_error_rate(s.diffs, cigar);
+  }
 
-    assign_values();
+  void
+  update(const std::string &read, const bam_cigar_t &cigar,
+         const se_element s) {
+    ++total_reads;
+    const bool valid = !s.empty();
+    const bool ambig = s.ambig();
+    reads_mapped_unique += (valid && !ambig);
+    reads_mapped_ambiguous += (valid && ambig);
+    reads_skipped += read.empty();
+    if (valid && !ambig)
+      update_error_rate(s.diffs, cigar);
+  }
+
+  [[nodiscard]] auto
+  tostring(const std::size_t n_tabs = 0) const -> std::string {
+    static constexpr auto tab = "    ";
+    constexpr auto pct = [](const double x) { return x * 100.0; };
 
     std::string t;
     for (std::size_t i = 0; i < n_tabs; ++i)
@@ -907,95 +938,27 @@ struct se_map_stats {
     // clang-format off
     oss << t << "total_reads: " << total_reads << '\n'
         << t << "mapped: " << '\n'
-        << t + tab << "num_mapped: " << reads_mapped << '\n'
-        << t + tab << "num_unique: " << reads_mapped_unique << '\n'
-        << t + tab << "num_ambiguous: " << reads_mapped_ambiguous << '\n'
-        << t + tab << "percent_mapped: " << reads_mapped_fraction << '\n'
-        << t + tab << "percent_unique: " << reads_mapped_unique_fraction << '\n'
-        << t + tab << "percent_ambiguous: " << reads_mapped_ambiguous_fraction << '\n'
-        << t + tab << "unique_error:" << '\n'
-        << t + tab + tab << "edits: " << edit_distance << '\n'
-        << t + tab + tab << "total_bases: " << total_bases << '\n'
-        << t + tab + tab << "error_rate: " << edit_distance_mean << '\n'
-        << t << "num_unmapped: " << reads_unmapped << '\n'
-        << t << "num_skipped: " << skipped_reads << '\n'
-        << t << "percent_unmapped: " << percent_unmapped << '\n'
-        << t << "percent_skipped: " << percent_skipped << '\n';
+        << t << tab << "num_mapped: " << reads_mapped() << '\n'
+        << t << tab << "num_unique: " << reads_mapped_unique << '\n'
+        << t << tab << "num_ambiguous: " << reads_mapped_ambiguous << '\n'
+        << t << tab << "percent_mapped: " << pct(reads_mapped_fraction()) << '\n'
+        << t << tab << "percent_unique: " << pct(reads_mapped_unique_fraction()) << '\n'
+        << t << tab << "percent_ambiguous: " << pct(reads_mapped_ambiguous_fraction()) << '\n'
+        << t << tab << "unique_error:" << '\n'
+        << t << tab << tab << "edits: " << edit_distance << '\n'
+        << t << tab << tab << "total_bases: " << total_bases << '\n'
+        << t << tab << tab << "error_rate: " << edit_distance_mean() << '\n'
+        << t << "num_unmapped: " << reads_unmapped() << '\n'
+        << t << "num_skipped: " << reads_skipped << '\n'
+        << t << "percent_unmapped: " << pct(reads_unmapped_fraction()) << '\n'
+        << t << "percent_skipped: " << pct(reads_skipped_fraction()) << '\n';
     // clang-format on
     return oss.str();
   }
 };
 
 struct pe_map_stats {
-  // total_read_pairs is the total number of read pairs in the pair of
-  // input fastq files.
-  std::atomic_uint32_t total_read_pairs{};
-
-  // reads_mapped_unique is the number of read pairs for which exactly
-  // one pair of concordant locations in the reference genome has the
-  // best mapping score for the pair and that score meets the minimum
-  // critiera for a good match.
-  std::atomic_uint32_t read_pairs_mapped_unique{};
-
-  // read_pairs_mapped_unique_fraction is the ratio of
-  // read_pairs_mapped_unique over total_read_pairs. This value
-  // should be between 0 and 1, but for historical reasons is scaled
-  // for display as a percentage.
-  double read_pairs_mapped_unique_fraction{};
-
-  // read_pairs_mapped_ambiguous is the number of reads that have two
-  // equally good concordant mapping location pairs in the reference
-  // genome, both meeting the minimum criteria for a match.
-  std::atomic_uint32_t read_pairs_mapped_ambiguous{};
-
-  // read_pairs_mapped_ambiguous_fraction is the ratio of
-  // read_pairs_mapped_ambiguous over total_read_pairs. This value
-  // should be between 0 and 1, but for historical reasons is scaled
-  // for display as a percentage.
-  double read_pairs_mapped_ambiguous_fraction{};
-
-  // read_pairs_mapped is the sum of read_pairs_mapped_unique and
-  // read_pairs_mapped_ambiguous.
-  std::uint32_t read_pairs_mapped{};
-
-  // read_pairs_mapped_fraction is the ratio of read_pairs_mapped over
-  // total_read_pairs.
-  double read_pairs_mapped_fraction{};
-
-  // read_pairs_unmapped is the number of read pairs for which no
-  // concordant pair of locations satisfies the mapping criteria for
-  // both ends.
-  std::atomic_uint32_t read_pairs_unmapped{};
-
-  // percent_unmapped_pairs is the ratio of reads_pairs_unmapped over
-  // total_read_pairs, multiplied by 100.
-  double percent_unmapped_pairs{};
-
-  // read_pairs_skipped is the number of read pairs that are skipped
-  // as a pair and for which concordant mapping is not attempted due
-  // to poor quality -- usually this is because of the quality for one
-  // member of the pair, as in the case of end2 being generally very
-  // poor quality.
-  std::atomic_uint32_t read_pairs_skipped{};
-
-  // percent_skipped_pairs is the ratio of read_pairs_skipped over
-  // total_read_pairs, multiplied by 100.
-  double percent_skipped_pairs{};
-
-  // edit_distance_pairs is the total number of reference genome bases
-  // covered by all concordantly mapped read pairs. This is used to
-  // obtain an average value.
-  std::atomic_uint64_t edit_distance_pairs{};
-
-  // total_bases_pairs is the total number of reference genome bases
-  // covered by all concordantly mapped read pairs. This is used to
-  // obtain an average value.
-  std::atomic_uint64_t total_bases_pairs{};
-
-  // edit_distance_pairs_mean is the ratio of edit_distance_pairs over
-  // total_bases_pairs.
-  double edit_distance_pairs_mean{};
-
+  se_map_stats both_stats{};
   se_map_stats end1_stats{};
   se_map_stats end2_stats{};
 
@@ -1004,80 +967,29 @@ struct pe_map_stats {
          const std::string &reads2, const bam_cigar_t &cig1,
          const bam_cigar_t &cig2, const pe_element &p, const se_element s1,
          const se_element s2) {
+    ++both_stats.total_reads;
     const bool valid = !p.empty();
     const bool ambig = p.ambig();
-    total_read_pairs++;
-    read_pairs_mapped_ambiguous += (valid && ambig);
-    read_pairs_mapped_unique += (valid && !ambig);
-    read_pairs_unmapped += !valid;
-    read_pairs_skipped += (reads1.empty() || reads2.empty());
+    both_stats.reads_mapped_unique += (valid && !ambig);
+    both_stats.reads_mapped_ambiguous += (valid && ambig);
+    both_stats.reads_skipped += (reads1.empty() || reads2.empty());
 
     if (p.should_report(allow_ambig)) {
-      update_error_rate(p.r1.diffs, p.r2.diffs, cig1, cig2);
+      both_stats.update_error_rate_for_pair(p.r1.diffs, p.r2.diffs, cig1, cig2);
     }
     else {
-      end1_stats.update(false, reads1, cig1, s1);
-      end2_stats.update(false, reads1, cig2, s2);
+      end1_stats.update(reads1, cig1, s1);
+      end2_stats.update(reads1, cig2, s2);
     }
   }
 
-  void
-  update_error_rate(const score_t d1, const score_t d2, const bam_cigar_t &cig1,
-                    const bam_cigar_t &cig2) {
-    edit_distance_pairs += d1 + d2;
-    total_bases_pairs += cigar_rseq_ops(cig1) + cigar_rseq_ops(cig2);
-  }
-
-  void
-  assign_values() {
-    constexpr auto pct = [](const double a, const double b) {
-      return ((b == 0) ? 0.0 : 100.0 * a / b);
-    };
-
-    read_pairs_mapped = read_pairs_mapped_unique + read_pairs_mapped_ambiguous;
-    const std::uint32_t total_read_pairs_tmp = total_read_pairs;
-    const std::uint32_t denom =
-      total_read_pairs_tmp == 0 ? 1 : total_read_pairs_tmp;
-    read_pairs_mapped_fraction = pct(read_pairs_mapped, denom);
-    read_pairs_mapped_unique_fraction = pct(read_pairs_mapped_unique, denom);
-    read_pairs_mapped_ambiguous_fraction =
-      pct(read_pairs_mapped_ambiguous, denom);
-    edit_distance_pairs_mean =
-      edit_distance_pairs / static_cast<double>(total_bases_pairs);
-    percent_unmapped_pairs = pct(read_pairs_unmapped, total_read_pairs_tmp);
-    percent_skipped_pairs = pct(read_pairs_skipped, total_read_pairs_tmp);
-  }
-
-  std::string
-  tostring(const bool allow_ambig) {
-    static std::string t = "    ";
-
-    assign_values();
-
+  [[nodiscard]] auto
+  tostring(const bool allow_ambig) const -> std::string {
     std::ostringstream oss;
-    oss << "pairs:" << '\n'
-        << t << "total_pairs: " << total_read_pairs << '\n'
-        << t << "mapped:" << '\n'
-        << t + t << "num_mapped: " << read_pairs_mapped << '\n'
-        << t + t << "num_unique: " << read_pairs_mapped_unique << '\n'
-        << t + t << "num_ambiguous: " << read_pairs_mapped_ambiguous << '\n'
-        << t + t << "percent_mapped: " << read_pairs_mapped_fraction << '\n'
-        << t + t << "percent_unique: " << read_pairs_mapped_unique_fraction
-        << '\n'
-        << t + t
-        << "percent_ambiguous: " << read_pairs_mapped_ambiguous_fraction << '\n'
-        << t + t << "unique_error:" << '\n'
-        << t + t + t << "edits: " << edit_distance_pairs << '\n'
-        << t + t + t << "total_bases: " << total_bases_pairs << '\n'
-        << t + t + t << "error_rate: " << edit_distance_pairs_mean << '\n'
-        << t << "num_unmapped: " << read_pairs_unmapped << '\n'
-        << t << "num_skipped: " << read_pairs_skipped << '\n'
-        << t << "percent_unmapped: " << percent_unmapped_pairs << '\n'
-        << t << "percent_skipped: " << percent_skipped_pairs << '\n';
-
+    oss << "pairs:\n" << both_stats.tostring(1);
     if (!allow_ambig)
-      oss << "mate1:" << '\n'
-          << end1_stats.tostring(1) << "mate2:" << '\n'
+      oss << "mate1:\n"
+          << end1_stats.tostring(1) << "mate2:\n"
           << end2_stats.tostring(1);
     return oss.str();
   }
