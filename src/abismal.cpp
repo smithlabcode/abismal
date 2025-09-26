@@ -927,27 +927,30 @@ struct se_map_stats {
   }
 
   [[nodiscard]] std::string
-  tostring() const {
+  tostring(const std::size_t n_tabs = 0) const {
     static constexpr auto tab = "    ";
     constexpr auto pct = [](const double x) { return x * 100.0; };
+    std::string t;
+    for (std::size_t i = 0; i < n_tabs; ++i)
+      t += tab;
     std::ostringstream oss;
     // clang-format off
-    oss << tab << "total_reads: " << total_reads << '\n'
-        << tab << "mapped:\n"
-        << tab << "num_mapped: " << reads_mapped() << '\n'
-        << tab << "num_unique: " << reads_mapped_unique << '\n'
-        << tab << "num_ambiguous: " << reads_mapped_ambiguous << '\n'
-        << tab << "percent_mapped: " << pct(reads_mapped_frac()) << '\n'
-        << tab << "percent_unique: " << pct(reads_mapped_unique_frac()) << '\n'
-        << tab << "percent_ambiguous: " << pct(reads_mapped_ambiguous_frac()) << '\n'
-        << tab << "unique_error:" << '\n'
-        << tab << tab << "edits: " << edit_distance << '\n'
-        << tab << tab << "total_bases: " << total_bases << '\n'
-        << tab << tab << "error_rate: " << edit_distance_mean() << '\n'
-        << tab << "num_unmapped: " << reads_unmapped() << '\n'
-        << tab << "num_skipped: " << reads_skipped << '\n'
-        << tab << "percent_unmapped: " << pct(reads_unmapped_frac()) << '\n'
-        << tab << "percent_skipped: " << pct(reads_skipped_frac()) << '\n';
+    oss << t << "total_reads: " << total_reads << '\n'
+        << t << "mapped:\n"
+        << t << "    num_mapped: " << reads_mapped() << '\n'
+        << t << "    num_unique: " << reads_mapped_unique << '\n'
+        << t << "    num_ambiguous: " << reads_mapped_ambiguous << '\n'
+        << t << "    percent_mapped: " << pct(reads_mapped_frac()) << '\n'
+        << t << "    percent_unique: " << pct(reads_mapped_unique_frac()) << '\n'
+        << t << "    percent_ambiguous: " << pct(reads_mapped_ambiguous_frac()) << '\n'
+        << t << "    unique_error:\n"
+        << t << "        edits: " << edit_distance << '\n'
+        << t << "        total_bases: " << total_bases << '\n'
+        << t << "        error_rate: " << edit_distance_mean() << '\n'
+        << t << "num_unmapped: " << reads_unmapped() << '\n'
+        << t << "num_skipped: " << reads_skipped << '\n'
+        << t << "percent_unmapped: " << pct(reads_unmapped_frac()) << '\n'
+        << t << "percent_skipped: " << pct(reads_skipped_frac()) << '\n';
     // clang-format on
     return oss.str();
   }
@@ -982,11 +985,11 @@ struct pe_map_stats {
   [[nodiscard]] std::string
   tostring(const bool allow_ambig) const {
     std::ostringstream oss;
-    oss << "pairs:\n" << both_stats.tostring();
-    if (!allow_ambig)
-      oss << "mate1:\n"
-          << end1_stats.tostring() << "mate2:\n"
-          << end2_stats.tostring();
+    oss << "pairs:\n" << both_stats.tostring(1);
+    if (!allow_ambig) {
+      oss << "mate1:\n" << end1_stats.tostring(1);
+      oss << "mate2:\n" << end2_stats.tostring(1);
+    }
     return oss.str();
   }
 };
