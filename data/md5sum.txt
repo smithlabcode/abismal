@@ -10,7 +10,7 @@ e8a5fe0aec564a972ca7a3a36c0022f7  tests/reads_pbat_pe.sam
 14e935a5b8a20c8a7422834c3327d1c7  tests/reads_pe.sam
 98d6ad9d563e3318756bd5fc3fcbc263  tests/reads_rpbat_pe.sam
 8126d46074213ad3674181f4ea4f8bd1  tests/reads.sam
-d4034607fe75c7a207666fd3698a8fdb  tests/reads.mstats
-8361153e3610769ed1697fd0551c4adf  tests/reads_pbat_pe.mstats
-00d3c8c0de72cca992b3561c7734b381  tests/reads_pe.mstats
-dfe8102b04166f5127bddfc9c09893f0  tests/reads_rpbat_pe.mstats
+981dd110d1675c77533a485204fb13cc  tests/reads.mstats
+ba2a0cdbc3e431adf9f85e36d00d783a  tests/reads_pbat_pe.mstats
+c8211fb637c03050b348e51f2ff91f3a  tests/reads_pe.mstats
+bd54ba1e720039cb4b662faa4f0e04b3  tests/reads_rpbat_pe.mstats
