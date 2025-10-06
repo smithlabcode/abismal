@@ -6,11 +6,11 @@ aff19aeae4184c38cf364b3a94527098  tests/reads_pbat_pe_2.fq
 e94e71292fccd255bad3f3694efe7a4b  tests/reads_rpbat_pe_1.fq
 8bfa00acd0639dc66acd5aa8ac0369d5  tests/reads_rpbat_pe_2.fq
 bcbf01be810cbf4051292813eb6b9225  tests/tRex1.idx
-ffff35a5110b3312555fc3ccaa78c99a  tests/reads_pbat_pe.sam
-af094fdc32b41a1605bb6d5b71e1b767  tests/reads_pe.sam
-8370999d6ad6d5afc99ec483f16cc214  tests/reads_rpbat_pe.sam
-a6d0c51aa69795b9bf3f9e424af35978  tests/reads.sam
-6793c72a4957578afd2092f45f6dab5f  tests/reads.mstats
+e8a5fe0aec564a972ca7a3a36c0022f7  tests/reads_pbat_pe.sam
+14e935a5b8a20c8a7422834c3327d1c7  tests/reads_pe.sam
+98d6ad9d563e3318756bd5fc3fcbc263  tests/reads_rpbat_pe.sam
+8126d46074213ad3674181f4ea4f8bd1  tests/reads.sam
+d4034607fe75c7a207666fd3698a8fdb  tests/reads.mstats
 8361153e3610769ed1697fd0551c4adf  tests/reads_pbat_pe.mstats
 00d3c8c0de72cca992b3561c7734b381  tests/reads_pe.mstats
 dfe8102b04166f5127bddfc9c09893f0  tests/reads_rpbat_pe.mstats
