@@ -445,7 +445,7 @@ format_se(const bool allow_ambig, const se_element &res, const ChromLookup &cl,
   if (!valid || !chrom_and_posn(cl, cigar, res.pos, ref_s, ref_e, chrom_idx))
     return map_unmapped;
 
-  // ADS: we might be doing format_se for a mate in paried reads
+  // ADS: we might be doing format_se for an end in paried reads
   std::uint16_t flag = 0;
   if (res.rc()) {
     flag |= BAM_FREVERSE;
@@ -985,8 +985,8 @@ struct pe_map_stats {
     std::ostringstream oss;
     oss << both_stats.tostring("pairs");
     if (!allow_ambig) {
-      oss << end1_stats.tostring("mate1");
-      oss << end2_stats.tostring("mate2");
+      oss << end1_stats.tostring("read1");
+      oss << end2_stats.tostring("read2");
     }
     return oss.str();
   }
@@ -1803,7 +1803,7 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
     s2.pos = best_pos2;
     s2.diffs = simple_aln::edit_distance(best_scr2, len2, cigar2);
 
-    // last check if, after alignment, mates are still concordant
+    // last check if, after alignment, ends are still concordant
     const std::uint32_t frag_end = best_pos2 + len2;
     if (frag_end >= best_pos1 + pe_element::min_dist &&
         frag_end <= best_pos1 + pe_element::max_dist) {
@@ -2505,7 +2505,7 @@ abismal(int argc, char *argv[]) {
     if (!stats_outfile.empty()) {
       std::ofstream stats_of(stats_outfile);
       if (stats_of)
-        stats_of << (reads_file2.empty() ? se_stats.tostring("mate1")
+        stats_of << (reads_file2.empty() ? se_stats.tostring("read1")
                                          : pe_stats.tostring(allow_ambig));
       else
         std::cerr << "failed to open stats out file: " << stats_outfile << '\n';
