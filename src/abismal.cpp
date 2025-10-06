@@ -17,8 +17,6 @@
 
 #include "abismal.hpp"
 
-// ADS: specific to general headers, so those outside project control don't
-// bring in names.
 #include "AbismalAlign.hpp"
 #include "AbismalIndex.hpp"
 #include "OptionParser.hpp"
@@ -925,14 +923,14 @@ struct se_map_stats {
   }
 
   [[nodiscard]] std::string
-  tostring(const std::string &label, const std::size_t n_tabs = 1) const {
+  tostring(const std::string &label, const std::size_t n_tabs = 0) const {
     static constexpr auto tab = "    ";
     constexpr auto pct = [](const double x) { return x * 100.0; };
     std::string t;
     for (std::size_t i = 0; i < n_tabs; ++i)
       t += tab;
     std::ostringstream oss;
-    oss << t << label << '\n';
+    oss << t << label << ":\n";
     t += tab;
     // clang-format off
     oss << t << "total_reads: " << total_reads << '\n'
