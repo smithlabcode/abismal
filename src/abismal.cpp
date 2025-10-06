@@ -431,8 +431,7 @@ chrom_and_posn(const ChromLookup &cl, const bam_cigar_t &cig,
 enum map_type { map_unmapped, map_unique, map_ambig };
 
 static map_type
-format_se(const bool allow_ambig, const bool strict_sam, const se_element &res,
-          const ChromLookup &cl,
+format_se(const bool allow_ambig, const se_element &res, const ChromLookup &cl,
           // ADS: 'read' should not be used after a call to 'format_se'
           std::string &read, const std::string &read_name,
           const bam_cigar_t &cigar, bam_rec &sr) {
@@ -449,8 +448,7 @@ format_se(const bool allow_ambig, const bool strict_sam, const se_element &res,
   std::uint16_t flag = 0;
   if (res.rc()) {
     flag |= BAM_FREVERSE;
-    if (strict_sam)
-      revcomp_inplace(read);
+    revcomp_inplace(read);
   }
 
   if (allow_ambig && ambig)
@@ -591,8 +589,7 @@ valid_pair(const pe_element &best, const std::uint32_t readlen1,
  */
 static map_type
 format_pe(
-  const bool allow_ambig, const bool strict_sam, const pe_element &p,
-  const ChromLookup &cl,
+  const bool allow_ambig, const pe_element &p, const ChromLookup &cl,
   // ADS: 'read1' and 'read2' should not be used after a call to format_pe
   std::string &read1, std::string &read2, const std::string &name1,
   const std::string &name2, const bam_cigar_t &cig1, const bam_cigar_t &cig2,
@@ -627,14 +624,12 @@ format_pe(
   if (p.r1.rc()) {  // ADS: is p.r1.rc() always !p.r2.rc()?
     flag1 |= BAM_FREVERSE;
     flag2 |= BAM_FMREVERSE;
-    if (strict_sam)
-      revcomp_inplace(read1);
+    revcomp_inplace(read1);
   }
   if (p.r2.rc()) {
     flag2 |= BAM_FREVERSE;
     flag1 |= BAM_FMREVERSE;
-    if (strict_sam)
-      revcomp_inplace(read2);
+    revcomp_inplace(read2);
   }
   if (allow_ambig && ambig) {
     // ADS: mark ambig for both the same way?
@@ -996,24 +991,23 @@ struct pe_map_stats {
 
 static void
 select_output(
-  const bool allow_ambig, const bool strict_sam, const ChromLookup &cl,
+  const bool allow_ambig, const ChromLookup &cl,
   // ADS: 'read1' and 'read2' should not be used after a call to 'select_output'
   std::string &read1, const std::string &name1, std::string &read2,
   const std::string &name2, const bam_cigar_t &cig1, const bam_cigar_t &cig2,
   pe_element &best, se_element &se1, se_element &se2, bam_rec &sr1,
   bam_rec &sr2) {
-  const map_type pe_map_type =
-    format_pe(allow_ambig, strict_sam, best, cl, read1, read2, name1, name2,
-              cig1, cig2, sr1, sr2);
+  const map_type pe_map_type = format_pe(allow_ambig, best, cl, read1, read2,
+                                         name1, name2, cig1, cig2, sr1, sr2);
 
   if (!best.should_report(allow_ambig) || pe_map_type == map_unmapped) {
     if (pe_map_type == map_unmapped)
       best.reset();
-    if (format_se(allow_ambig, strict_sam, se1, cl, read1, name1, cig1, sr1) ==
+    if (format_se(allow_ambig, se1, cl, read1, name1, cig1, sr1) ==
         map_unmapped)
       se1.reset();
 
-    if (format_se(allow_ambig, strict_sam, se2, cl, read2, name2, cig2, sr2) ==
+    if (format_se(allow_ambig, se2, cl, read2, name2, cig2, sr2) ==
         map_unmapped)
       se2.reset();
   }
@@ -1443,8 +1437,8 @@ reset_bam_rec(bam_rec &b) {
 template <const conversion_type conv>
 static void
 map_single_ended(const bool show_progress, const bool allow_ambig,
-                 const bool strict_sam, const AbismalIndex &abismal_index,
-                 ReadLoader &rl, se_map_stats &se_stats, bamxx::bam_header &hdr,
+                 const AbismalIndex &abismal_index, ReadLoader &rl,
+                 se_map_stats &se_stats, bamxx::bam_header &hdr,
                  bamxx::bam_out &out, ProgressBar &progress) {
   const auto counter_st(std::cbegin(abismal_index.counter));
   const auto counter_t_st(std::cbegin(abismal_index.counter_t));
@@ -1519,8 +1513,8 @@ map_single_ended(const bool show_progress, const bool allow_ambig,
         align_se_candidates(pread, pread_rc, pread, pread_rc,
                             se_element::valid_frac, res, bests[i], cigar[i],
                             aln);
-        if (format_se(allow_ambig, strict_sam, bests[i], abismal_index.cl,
-                      reads[i], names[i], cigar[i], mr[i]) == map_unmapped)
+        if (format_se(allow_ambig, bests[i], abismal_index.cl, reads[i],
+                      names[i], cigar[i], mr[i]) == map_unmapped)
           bests[i].reset();
       }
     }
@@ -1547,10 +1541,9 @@ map_single_ended(const bool show_progress, const bool allow_ambig,
 
 static void
 map_single_ended_rand(const bool show_progress, const bool allow_ambig,
-                      const bool strict_sam, const AbismalIndex &abismal_index,
-                      ReadLoader &rl, se_map_stats &se_stats,
-                      bamxx::bam_header &hdr, bamxx::bam_out &out,
-                      ProgressBar &progress) {
+                      const AbismalIndex &abismal_index, ReadLoader &rl,
+                      se_map_stats &se_stats, bamxx::bam_header &hdr,
+                      bamxx::bam_out &out, ProgressBar &progress) {
   const auto counter_st(std::cbegin(abismal_index.counter));
   const auto counter_t_st(std::cbegin(abismal_index.counter_t));
   const auto counter_a_st(std::cbegin(abismal_index.counter_a));
@@ -1633,8 +1626,8 @@ map_single_ended_rand(const bool show_progress, const bool allow_ambig,
         align_se_candidates(pread_t, pread_t_rc, pread_a, pread_a_rc,
                             se_element::valid_frac, res, bests[i], cigar[i],
                             aln);
-        if (format_se(allow_ambig, strict_sam, bests[i], abismal_index.cl,
-                      reads[i], names[i], cigar[i], mr[i]) == map_unmapped)
+        if (format_se(allow_ambig, bests[i], abismal_index.cl, reads[i],
+                      names[i], cigar[i], mr[i]) == map_unmapped)
           bests[i].reset();
       }
     }
@@ -1670,7 +1663,7 @@ format_duration(const abismal_timepoint start_time,
 template <const conversion_type conv, const bool random_pbat>
 static void
 run_single_ended(const bool show_progress, const bool allow_ambig,
-                 const bool strict_sam, const std::string &reads_file,
+                 const std::string &reads_file,
                  const AbismalIndex &abismal_index, se_map_stats &se_stats,
                  bamxx::bam_header &hdr, bamxx::bam_out &out) {
   ReadLoader rl(reads_file);
@@ -1682,11 +1675,11 @@ run_single_ended(const bool show_progress, const bool allow_ambig,
   for (auto i = 0u; i < abismal_concurrency::n_threads; ++i)
     threads.emplace_back([&] {
       if (random_pbat)
-        map_single_ended_rand(show_progress, allow_ambig, strict_sam,
-                              abismal_index, rl, se_stats, hdr, out, progress);
+        map_single_ended_rand(show_progress, allow_ambig, abismal_index, rl,
+                              se_stats, hdr, out, progress);
       else
-        map_single_ended<conv>(show_progress, allow_ambig, strict_sam,
-                               abismal_index, rl, se_stats, hdr, out, progress);
+        map_single_ended<conv>(show_progress, allow_ambig, abismal_index, rl,
+                               se_stats, hdr, out, progress);
     });
   for (auto &thread : threads)
     thread.join();
@@ -1883,8 +1876,8 @@ map_fragments(const std::uint32_t max_candidates, const std::string &read1,
 template <const conversion_type conv>
 static void
 map_paired_ended(const bool show_progress, const bool allow_ambig,
-                 const bool strict_sam, const AbismalIndex &abismal_index,
-                 ReadLoader &rl1, ReadLoader &rl2, pe_map_stats &pe_stats,
+                 const AbismalIndex &abismal_index, ReadLoader &rl1,
+                 ReadLoader &rl2, pe_map_stats &pe_stats,
                  bamxx::bam_header &hdr, bamxx::bam_out &out,
                  ProgressBar &progress) {
   const auto counter_st(std::begin(abismal_index.counter));
@@ -2016,9 +2009,9 @@ map_paired_ended(const bool show_progress, const bool allow_ambig,
                             se_element::valid_frac / 2.0, res_se2, bests_se2[i],
                             cigar2[i], aln);
       }
-      select_output(allow_ambig, strict_sam, abismal_index.cl, reads1[i],
-                    names1[i], reads2[i], names2[i], cigar1[i], cigar2[i],
-                    bests[i], bests_se1[i], bests_se2[i], mr1[i], mr2[i]);
+      select_output(allow_ambig, abismal_index.cl, reads1[i], names1[i],
+                    reads2[i], names2[i], cigar1[i], cigar2[i], bests[i],
+                    bests_se1[i], bests_se2[i], mr1[i], mr2[i]);
     }
 
     {
@@ -2050,8 +2043,8 @@ map_paired_ended(const bool show_progress, const bool allow_ambig,
 
 static void
 map_paired_ended_rand(const bool show_progress, const bool allow_ambig,
-                      const bool strict_sam, const AbismalIndex &abismal_index,
-                      ReadLoader &rl1, ReadLoader &rl2, pe_map_stats &pe_stats,
+                      const AbismalIndex &abismal_index, ReadLoader &rl1,
+                      ReadLoader &rl2, pe_map_stats &pe_stats,
                       bamxx::bam_header &hdr, bamxx::bam_out &out,
                       ProgressBar &progress) {
   const auto counter_st(std::begin(abismal_index.counter));
@@ -2193,9 +2186,9 @@ map_paired_ended_rand(const bool show_progress, const bool allow_ambig,
                             se_element::valid_frac / 2.0, res_se2, bests_se2[i],
                             cigar2[i], aln);
       }
-      select_output(allow_ambig, strict_sam, abismal_index.cl, reads1[i],
-                    names1[i], reads2[i], names2[i], cigar1[i], cigar2[i],
-                    bests[i], bests_se1[i], bests_se2[i], mr1[i], mr2[i]);
+      select_output(allow_ambig, abismal_index.cl, reads1[i], names1[i],
+                    reads2[i], names2[i], cigar1[i], cigar2[i], bests[i],
+                    bests_se1[i], bests_se2[i], mr1[i], mr2[i]);
     }
 
     {
@@ -2228,8 +2221,7 @@ map_paired_ended_rand(const bool show_progress, const bool allow_ambig,
 template <const conversion_type conv, const bool random_pbat>
 static void
 run_paired_ended(const bool show_progress, const bool allow_ambig,
-                 const bool strict_sam, const std::string &reads_file1,
-                 const std::string &reads_file2,
+                 const std::string &reads_file1, const std::string &reads_file2,
                  const AbismalIndex &abismal_index, pe_map_stats &pe_stats,
                  bamxx::bam_header &hdr, bamxx::bam_out &out) {
   ReadLoader rl1(reads_file1);
@@ -2242,13 +2234,11 @@ run_paired_ended(const bool show_progress, const bool allow_ambig,
   for (auto i = 0u; i < abismal_concurrency::n_threads; ++i)
     threads.emplace_back([&] {
       if (random_pbat)
-        map_paired_ended_rand(show_progress, allow_ambig, strict_sam,
-                              abismal_index, rl1, rl2, pe_stats, hdr, out,
-                              progress);
+        map_paired_ended_rand(show_progress, allow_ambig, abismal_index, rl1,
+                              rl2, pe_stats, hdr, out, progress);
       else
-        map_paired_ended<conv>(show_progress, allow_ambig, strict_sam,
-                               abismal_index, rl1, rl2, pe_stats, hdr, out,
-                               progress);
+        map_paired_ended<conv>(show_progress, allow_ambig, abismal_index, rl1,
+                               rl2, pe_stats, hdr, out, progress);
     });
   for (auto &thread : threads)
     thread.join();
@@ -2271,8 +2261,8 @@ file_exists(const std::string &filename) {
 static int
 abismal_make_sam_header(const ChromLookup &cl, const int argc, char *argv[],
                         bamxx::bam_header &hdr) {
-  assert(cl.names.size() > 2);  // two entries exist for the padding
-  assert(cl.starts.size() == cl.names.size() + 1);
+  assert(std::size(cl.names) > 2);  // two entries exist for the padding
+  assert(std::size(cl.starts) == std::size(cl.names) + 1);
   const std::vector<std::string> names(std::begin(cl.names) + 1,
                                        std::end(cl.names) - 1);
   std::vector<std::size_t> sizes(names.size());
@@ -2298,8 +2288,8 @@ abismal_make_sam_header(const ChromLookup &cl, const int argc, char *argv[],
 
   // how the program was run
   std::ostringstream the_command;
-  copy(argv, argv + argc,
-       std::ostream_iterator<const char *>(the_command, " "));
+  std::copy(argv, argv + argc,
+            std::ostream_iterator<const char *>(the_command, " "));
   out << "CL:\"" << the_command.str() << "\"" << '\n';
 
   hdr.h = sam_hdr_init();
@@ -2321,7 +2311,6 @@ abismal(int argc, char *argv[]) {
     bool pbat_mode = false;
     bool random_pbat = false;
     bool write_bam_fmt = false;
-    bool strict_sam = false;
 
     std::uint32_t max_candidates = 0;
     std::string index_file = "";
@@ -2358,9 +2347,6 @@ abismal(int argc, char *argv[]) {
                       false, GA_conversion);
     opt_parse.add_opt("threads", 't', "number of threads", false,
                       abismal_concurrency::n_threads);
-    opt_parse.add_opt("sam-orientation", 'S',
-                      "reverse complement negative strand mappers", false,
-                      strict_sam);
     opt_parse.add_opt("verbose", 'v', "print more run info", false, verbose);
     std::vector<std::string> leftover_args;
     opt_parse.parse(argc, argv, leftover_args);
@@ -2491,31 +2477,28 @@ abismal(int argc, char *argv[]) {
 
     if (reads_file2.empty()) {
       if (GA_conversion || pbat_mode)
-        run_single_ended<a_rich, false>(show_progress, allow_ambig, strict_sam,
-                                        reads_file, abismal_index, se_stats,
-                                        hdr, out);
+        run_single_ended<a_rich, false>(show_progress, allow_ambig, reads_file,
+                                        abismal_index, se_stats, hdr, out);
       else if (random_pbat)
-        run_single_ended<t_rich, true>(show_progress, allow_ambig, strict_sam,
-                                       reads_file, abismal_index, se_stats, hdr,
-                                       out);
+        run_single_ended<t_rich, true>(show_progress, allow_ambig, reads_file,
+                                       abismal_index, se_stats, hdr, out);
       else
-        run_single_ended<t_rich, false>(show_progress, allow_ambig, strict_sam,
-                                        reads_file, abismal_index, se_stats,
-                                        hdr, out);
+        run_single_ended<t_rich, false>(show_progress, allow_ambig, reads_file,
+                                        abismal_index, se_stats, hdr, out);
     }
     else {
       if (pbat_mode)
-        run_paired_ended<a_rich, false>(show_progress, allow_ambig, strict_sam,
-                                        reads_file, reads_file2, abismal_index,
-                                        pe_stats, hdr, out);
+        run_paired_ended<a_rich, false>(show_progress, allow_ambig, reads_file,
+                                        reads_file2, abismal_index, pe_stats,
+                                        hdr, out);
       else if (random_pbat)
-        run_paired_ended<t_rich, true>(show_progress, allow_ambig, strict_sam,
-                                       reads_file, reads_file2, abismal_index,
-                                       pe_stats, hdr, out);
+        run_paired_ended<t_rich, true>(show_progress, allow_ambig, reads_file,
+                                       reads_file2, abismal_index, pe_stats,
+                                       hdr, out);
       else
-        run_paired_ended<t_rich, false>(show_progress, allow_ambig, strict_sam,
-                                        reads_file, reads_file2, abismal_index,
-                                        pe_stats, hdr, out);
+        run_paired_ended<t_rich, false>(show_progress, allow_ambig, reads_file,
+                                        reads_file2, abismal_index, pe_stats,
+                                        hdr, out);
     }
 
     if (!stats_outfile.empty()) {
