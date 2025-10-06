@@ -17,8 +17,20 @@
 
 #include "abismal.hpp"
 
+// ADS: specific to general headers, so those outside project control don't
+// bring in names.
+#include "AbismalAlign.hpp"
+#include "AbismalIndex.hpp"
+#include "OptionParser.hpp"
+#include "bamxx.hpp"
+#include "bisulfite_utils.hpp"
+#include "dna_four_bit_bisulfite.hpp"
+#include "popcnt.hpp"
+#include "sam_record.hpp"
+#include "smithlab_os.hpp"
+#include "smithlab_utils.hpp"
+
 #include <config.h>
-#include <unistd.h>
 
 #include <atomic>
 #include <chrono>
@@ -32,16 +44,7 @@
 #include <thread>
 #include <vector>
 
-#include "AbismalAlign.hpp"
-#include "AbismalIndex.hpp"
-#include "OptionParser.hpp"
-#include "bamxx.hpp"
-#include "bisulfite_utils.hpp"
-#include "dna_four_bit_bisulfite.hpp"
-#include "popcnt.hpp"
-#include "sam_record.hpp"
-#include "smithlab_os.hpp"
-#include "smithlab_utils.hpp"
+#include <unistd.h>
 
 using abismal_clock = std::chrono::steady_clock;
 using abismal_timepoint = std::chrono::time_point<abismal_clock>;
@@ -922,13 +925,15 @@ struct se_map_stats {
   }
 
   [[nodiscard]] std::string
-  tostring(const std::size_t n_tabs = 0) const {
+  tostring(const std::string &label, const std::size_t n_tabs = 1) const {
     static constexpr auto tab = "    ";
     constexpr auto pct = [](const double x) { return x * 100.0; };
     std::string t;
     for (std::size_t i = 0; i < n_tabs; ++i)
       t += tab;
     std::ostringstream oss;
+    oss << t << label << '\n';
+    t += tab;
     // clang-format off
     oss << t << "total_reads: " << total_reads << '\n'
         << t << "mapped:\n"
@@ -980,10 +985,10 @@ struct pe_map_stats {
   [[nodiscard]] std::string
   tostring(const bool allow_ambig) const {
     std::ostringstream oss;
-    oss << "pairs:\n" << both_stats.tostring(1);
+    oss << both_stats.tostring("pairs");
     if (!allow_ambig) {
-      oss << "mate1:\n" << end1_stats.tostring(1);
-      oss << "mate2:\n" << end2_stats.tostring(1);
+      oss << end1_stats.tostring("mate1");
+      oss << end2_stats.tostring("mate2");
     }
     return oss.str();
   }
@@ -1108,8 +1113,8 @@ find_candidates(const std::uint32_t max_candidates,
     low = the_bit ? first_1 : low;
   }
 
-  // some bit narrows it down to 0 candidates, roll back to when we
-  // had some candidates to work with.
+  // some bit narrows it down to 0 candidates, roll back to when we had some
+  // candidates to work with.
   if (low == high) {
     --p;
     low = prev_low;
@@ -1173,8 +1178,8 @@ find_candidates_three(const std::uint32_t max_candidates,
     }
   }
 
-  // some bit narrows it down to 0 candidates, roll back to when we
-  // had some candidates to work with.
+  // some bit narrows it down to 0 candidates, roll back to when we had some
+  // candidates to work with.
   if (low == high) {
     --p;
     low = prev_low;
@@ -1270,9 +1275,9 @@ process_seeds(const std::uint32_t max_candidates,
 
   const std::uint32_t lim_two = readlen - seed::key_weight + 1;
 
-  // GS: this is to avoid chasing down uninformative two-letter
-  // seeds when there is a sufficiently high number of three
-  // letter seeds that is lower than the number of two-letter hits
+  // GS: this is to avoid chasing down uninformative two-letter seeds when
+  // there is a sufficiently high number of three letter seeds that is lower
+  // than the number of two-letter hits
   static const std::uint32_t MIN_FOLD_SIZE = 10;
   for (i = 0; i < lim_two && !res.sure_ambig; ++i, ++read_idx) {
     s_idx = index_st + *(counter_st + k);
@@ -1309,12 +1314,11 @@ prep_read(const std::string &r, Read &pread) {
                       : (encode_base_t_rich[static_cast<unsigned char>(r[i])]));
 }
 
-/* GS: this function simply converts the vector<uint8_t> pread
- * to a vector<uint64_t> by putting 16 bases in each element of
- * the packed read. If the read length does not divide 16, we add
- * 1111s to the remaining positions so it divides 16. The remaining
- * bases match all bases in the reference genome
- * */
+/* GS: this function simply converts the vector<uint8_t> pread to a
+ * vector<uint64_t> by putting 16 bases in each element of the packed read. If
+ * the read length does not divide 16, we add 1111s to the remaining positions
+ * so it divides 16. The remaining bases match all bases in the reference
+ * genome */
 static void
 pack_read(const Read &pread, PackedRead &packed_pread) {
   static const element_t base_match_any = static_cast<element_t>(0xF);
@@ -1339,8 +1343,8 @@ pack_read(const Read &pread, PackedRead &packed_pread) {
   if (pread_ind == sz)
     return;
 
-  // now put only the remaining bases in the last pos. The rest
-  // should match any base in the reference
+  // now put only the remaining bases in the last pos. The rest should match
+  // any base in the reference
   *it = 0;
   std::size_t j = 0;
   while (pread_ind < sz)
@@ -1568,8 +1572,7 @@ map_single_ended_rand(const bool show_progress, const bool allow_ambig,
   bests.resize(ReadLoader::batch_size);
   mr.resize(ReadLoader::batch_size);
 
-  // GS: pre-allocated variables used once per read
-  // and not used for reporting
+  // GS: pre-allocated variables used once per read and not used for reporting
   Read pread_t, pread_t_rc, pread_a, pread_a_rc;
   PackedRead packed_pread;
   se_candidates res;
@@ -2504,11 +2507,10 @@ abismal(int argc, char *argv[]) {
     if (!stats_outfile.empty()) {
       std::ofstream stats_of(stats_outfile);
       if (stats_of)
-        stats_of << (reads_file2.empty() ? se_stats.tostring()
+        stats_of << (reads_file2.empty() ? se_stats.tostring("mate1")
                                          : pe_stats.tostring(allow_ambig));
       else
-        std::cerr << "failed to open stats output file: " << stats_outfile
-                  << '\n';
+        std::cerr << "failed to open stats out file: " << stats_outfile << '\n';
     }
   }
   catch (const std::exception &e) {
