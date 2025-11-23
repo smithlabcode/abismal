@@ -21,7 +21,6 @@
 #include "OptionParser.hpp"
 #include "cigar_utils.hpp"
 #include "sam_record.hpp"
-#include "smithlab_os.hpp"
 #include "smithlab_utils.hpp"
 
 #include <algorithm>
@@ -39,6 +38,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <utility>  // IWYU pragma: keep
 #include <vector>
 
 #include <unistd.h>  // getpid()
@@ -306,7 +306,7 @@ struct FragSampler {
                       require_valid);
 
     uint32_t offset = 0;
-    uint32_t chrom_idx = 0;
+    std::int32_t chrom_idx = 0;
     cl.get_chrom_idx_and_offset(the_info.start_pos, chrom_idx, offset);
     the_info.chrom = cl.names[chrom_idx];
     the_info.start_pos = offset;
@@ -384,7 +384,7 @@ struct FragMutator {
     }
     the_info.cigar.resize(2 * std::size(cigar));
     compress_cigar(std::cbegin(cigar), std::cend(cigar), the_info.cigar);
-    swap(seq, the_info.seq);
+    std::swap(seq, the_info.seq);
   }
   char
   sample_mutation() const {
