@@ -18,21 +18,19 @@
 #ifndef ABISMAL_INDEX_HPP
 #define ABISMAL_INDEX_HPP
 
+#include "dna_four_bit.hpp"
+
 #include <algorithm>
-#include <cassert>
-#include <climits>
 #include <cmath>
 #include <cstdint>
-#include <deque>
-#include <filesystem>
+#include <cstdio>
 #include <fstream>
+#include <iterator>  // IWYU pragma: keep
+#include <limits>
 #include <string>
 #include <thread>
-#include <unordered_set>
+#include <utility>
 #include <vector>
-
-#include "dna_four_bit.hpp"
-#include "smithlab_utils.hpp"
 
 using element_t = std::size_t;
 using Genome = std::vector<element_t>;

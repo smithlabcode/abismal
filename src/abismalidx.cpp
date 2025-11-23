@@ -18,21 +18,19 @@
 #include "abismalidx.hpp"
 
 #include "AbismalIndex.hpp"
+
 #include "OptionParser.hpp"
-#include "dna_four_bit.hpp"
 #include "smithlab_os.hpp"
-#include "smithlab_utils.hpp"
 
 #include <config.h>
 
-#include <algorithm>
 #include <chrono>
+#include <cstdlib>
+#include <exception>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 int
