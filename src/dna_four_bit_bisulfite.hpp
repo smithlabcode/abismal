@@ -17,7 +17,9 @@
 
 #ifndef DNA_FOUR_BIT_BISULFITE_HPP
 #define DNA_FOUR_BIT_BISULFITE_HPP
-#include <cstdint>  // for the int8_t and friends
+
+#include <array>
+#include <cstdint>
 
 // clang-format off
 /* encoding of ASCII characters into T-rich bases, used
@@ -26,15 +28,15 @@
  * C: 0010 = 2
  * G: 0100 = 4
  * T: 1010 = 10 */
-static const uint8_t encode_base_t_rich[256] = {
+constexpr std::array<std::uint8_t, 256> encode_base_t_rich = {
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //0
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //17
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //33
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //49
   0, 1, 0, 2, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, //@,A-O
-  0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //P-Z
+  0, 0, 0, 0, 10,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //P-Z
   0, 1, 0, 2, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, //`,a-o
-  0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //p-z
+  0, 0, 0, 0, 10,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //p-z
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -50,7 +52,7 @@ static const uint8_t encode_base_t_rich[256] = {
  * C: 0010 = 2
  * G: 0100 = 4
  * T: 1000 = 8 */
-static const uint8_t encode_base_a_rich[256] = {
+constexpr std::array<std::uint8_t, 256> encode_base_a_rich = {
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //0
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //17
   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //33
