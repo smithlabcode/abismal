@@ -13,13 +13,19 @@
  * more details.
  */
 
+#include "abismal.hpp"
+#include "abismalidx.hpp"
+#include "simreads.hpp"
+
 #include <config.h>
 
 #include <algorithm>
+#include <cstdlib>
+#include <exception>
 #include <functional>
 #include <iomanip>
 #include <iostream>
-#include <sstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -45,25 +51,14 @@ operator<<(std::ostream &out, const abismal_command &cmd) -> std::ostream & {
              << cmd.description;
 }
 
-// ADS: not sure of best way to acquire these below beyond simply
-// declaring them here
-int
-abismal(int argc, char *argv[]);
-
-int
-abismalidx(int argc, char *argv[]);
-
-int
-simreads(int argc, char *argv[]);
-
 void
 print_help(const std::vector<abismal_command> &commands) {
   std::cout << "Program: " << PROGRAM_NAME << "\n"
             << "Version: " << VERSION << "\n"
             << "Usage: " << PROGRAM_NAME << " <command> [options]\n"
-            << "Commands:" << std::endl;
+            << "Commands:\n";
   for (const auto &c : commands)
-    std::cout << c << std::endl;
+    std::cout << c << '\n';
 }
 
 int
@@ -87,10 +82,10 @@ main(int argc, char *argv[]) {
       std::find_if(std::cbegin(commands), std::cend(commands), has_tag);
     if (the_cmd != std::cend(commands))
       return (*the_cmd)(argc, argv);
-    std::cerr << "ERROR: invalid command " << argv[1] << std::endl;
+    std::cerr << "ERROR: invalid command " << argv[1] << '\n';
   }
   catch (const std::exception &e) {
-    std::cerr << e.what() << std::endl;
+    std::cerr << e.what() << '\n';
     return EXIT_FAILURE;
   }
   return EXIT_SUCCESS;

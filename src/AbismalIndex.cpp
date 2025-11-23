@@ -16,19 +16,20 @@
  */
 
 #include "AbismalIndex.hpp"
+#include "dna_four_bit.hpp"
 
 #include "bamxx.hpp"
-#include "dna_four_bit.hpp"
-#include "smithlab_os.hpp"
-#include "smithlab_utils.hpp"
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <chrono>
-#include <deque>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <numeric>
+#include <sstream>
 #include <stdexcept>
 #include <thread>
 #include <utility>

@@ -16,20 +16,27 @@
  */
 
 #include "simreads.hpp"
+
 #include "AbismalIndex.hpp"
+#include "OptionParser.hpp"
 #include "cigar_utils.hpp"
 #include "sam_record.hpp"
-
-#include "OptionParser.hpp"
 #include "smithlab_os.hpp"
 #include "smithlab_utils.hpp"
 
 #include <algorithm>
-#include <cstdint>  // for the int8_t and friends
+#include <cassert>
+#include <cctype>
+#include <cstdint>
+#include <cstdlib>
+#include <ctime>
+#include <exception>
 #include <fstream>
-#include <functional>
 #include <iostream>
+#include <iterator>
+#include <limits>
 #include <random>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>

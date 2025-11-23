@@ -16,33 +16,51 @@
  */
 
 #include "abismal.hpp"
-
 #include "AbismalAlign.hpp"
 #include "AbismalIndex.hpp"
-#include "OptionParser.hpp"
-#include "bamxx.hpp"
-#include "bisulfite_utils.hpp"
-#include "dna_four_bit_bisulfite.hpp"
 #include "popcnt.hpp"
+
+#include "OptionParser.hpp"
+#include "bisulfite_utils.hpp"
+#include "dna_four_bit.hpp"
+#include "dna_four_bit_bisulfite.hpp"
 #include "sam_record.hpp"
 #include "smithlab_os.hpp"
 #include "smithlab_utils.hpp"
 
-#include <config.h>
+#include "bamxx.hpp"
 
+#include <config.h>
+#include <htslib/sam.h>
+
+#include <algorithm>
 #include <atomic>
+#include <cassert>
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <ctime>
+#include <exception>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
+#include <iterator>
+#include <limits>
 #include <mutex>
 #include <numeric>
+#include <queue>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include <unistd.h>
+
+#ifdef __SSE__
+#include <xmmintrin.h>
+#endif
 
 using abismal_clock = std::chrono::steady_clock;
 using abismal_timepoint = std::chrono::time_point<abismal_clock>;
