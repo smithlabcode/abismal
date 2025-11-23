@@ -454,7 +454,7 @@ cigar_rseq_ops(const bam_cigar_t &cig) {
 static inline bool
 chrom_and_posn(const ChromLookup &cl, const bam_cigar_t &cig,
                const std::uint32_t p, std::uint32_t &r_p, std::uint32_t &r_e,
-               std::uint32_t &r_chr) {
+               std::int32_t &r_chr) {
   const std::uint32_t ref_ops = cigar_rseq_ops(cig);
   if (!cl.get_chrom_idx_and_offset(p, ref_ops, r_chr, r_p))
     return false;
@@ -481,12 +481,14 @@ format_se(const bool allow_ambig, const se_element &res, const ChromLookup &cl,
   if (!allow_ambig && ambig)
     return map_ambig;
 
-  std::uint32_t ref_s = 0, ref_e = 0, chrom_idx = 0;
+  std::uint32_t ref_s{};
+  std::uint32_t ref_e{};
+  std::int32_t chrom_idx{};
   if (!valid || !chrom_and_posn(cl, cigar, res.pos, ref_s, ref_e, chrom_idx))
     return map_unmapped;
 
   // ADS: we might be doing format_se for an end in paried reads
-  std::uint16_t flag = 0;
+  std::uint16_t flag{};
   if (res.rc()) {
     flag |= BAM_FREVERSE;
     revcomp_inplace(read);
@@ -503,7 +505,7 @@ format_se(const bool allow_ambig, const se_element &res, const ChromLookup &cl,
     std::size(read_name),  // size_t l_qname,
     read_name.data(),      // const char *qname,
     flag,                  // uint16_t flag,
-    static_cast<std::int32_t>(chrom_idx) - 1, // int32_t tid (-1 for padding)
+    chrom_idx - 1,         // int32_t tid (-1 for padding)
     ref_s,                 // hts_pos_t pos,
     mapq_max_val,          // uint8_t mapq,
     std::size(cigar),      // size_t n_cigar,
@@ -523,8 +525,10 @@ format_se(const bool allow_ambig, const se_element &res, const ChromLookup &cl,
   if (ret < 0)
     throw std::runtime_error("bam_aux_update_int");
 
+  // cppcheck-suppress-begin cstyleCast
   ret = bam_aux_append(sr.b, "CV", 'A', 1,
-                       (uint8_t *)(res.elem_is_a_rich() ? "A" : "T"));
+                       (std::uint8_t *)(res.elem_is_a_rich() ? "A" : "T"));
+  // cppcheck-suppress-end cstyleCast
   if (ret < 0)
     throw std::runtime_error("bam_aux_append");
 
@@ -651,8 +655,15 @@ format_pe(
   if (!allow_ambig && ambig)
     return map_ambig;
 
-  std::uint32_t r_s1 = 0, r_e1 = 0, chr1 = 0;  // positions in chroms (0-based)
-  std::uint32_t r_s2 = 0, r_e2 = 0, chr2 = 0;
+  // positions in chroms (0-based)
+  std::int32_t chr1{};
+  std::uint32_t r_s1{};
+  std::uint32_t r_e1{};
+
+  std::int32_t chr2{};
+  std::uint32_t r_s2{};
+  std::uint32_t r_e2{};
+
   // PE chromosomes differ or couldn't be found, treat read as unmapped
   if (!chrom_and_posn(cl, cig1, p.r1.pos, r_s1, r_e1, chr1) ||
       !chrom_and_posn(cl, cig2, p.r2.pos, r_s2, r_e2, chr2) || chr1 != chr2)
@@ -1831,19 +1842,18 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
   }
 
   if (best_pos1 != 0) {  // a new better alignment was found
-
-    s1 = (swap_ends) ? (best.r2) : (best.r1);
-    s2 = (swap_ends) ? (best.r1) : (best.r2);
+    s1 = swap_ends ? best.r2 : best.r1;
+    s2 = swap_ends ? best.r1 : best.r2;
 
     // re-aligns pos 1 with traceback
-    std::uint32_t len1 = 0;
+    std::uint32_t len1{};
     aln.align<true>(s1.diffs, max_diffs1, pread1, best_pos1);
     aln.build_cigar_len_and_pos(s1.diffs, max_diffs1, cigar1, len1, best_pos1);
     s1.pos = best_pos1;
     s1.diffs = simple_aln::edit_distance(best_scr1, len1, cigar1);
 
     // re-aligns pos 2 with traceback
-    std::uint32_t len2 = 0;
+    std::uint32_t len2{};
     aln.align<true>(s2.diffs, max_diffs2, pread2, best_pos2);
     aln.build_cigar_len_and_pos(s2.diffs, max_diffs2, cigar2, len2, best_pos2);
     s2.pos = best_pos2;
@@ -1853,8 +1863,8 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
     const std::uint32_t frag_end = best_pos2 + len2;
     if (frag_end >= best_pos1 + pe_element::min_dist &&
         frag_end <= best_pos1 + pe_element::max_dist) {
-      best.r1 = (swap_ends) ? (s2) : (s1);
-      best.r2 = (swap_ends) ? (s1) : (s2);
+      best.r1 = swap_ends ? s2 : s1;
+      best.r2 = swap_ends ? s1 : s2;
     }
     else
       best.reset();
