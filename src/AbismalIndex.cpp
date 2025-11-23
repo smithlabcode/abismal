@@ -34,6 +34,8 @@
 #include <thread>
 #include <utility>
 
+// NOLINTBEGIN
+
 using abismal_clock = std::chrono::steady_clock;
 using std::chrono::time_point;
 
@@ -110,7 +112,7 @@ mask_non_target(
   std::vector<std::uint8_t> &genome) {
   const auto target_end = std::cend(targets);
   auto target_itr = std::cbegin(targets);
-  for (std::size_t i = 0; i < genome.size(); ++i) {
+  for (std::size_t i = 0; i < std::size(genome); ++i) {
     if (target_itr == target_end || i < target_itr->first)
       genome[i] = 'N';
     else
@@ -159,7 +161,7 @@ static inline void
 replace_included_n(
   const std::vector<std::pair<std::size_t, std::size_t>> &exclude, G &genome) {
   std::size_t j = 0;
-  for (std::size_t i = 0; i < genome.size(); ++i) {
+  for (std::size_t i = 0; i < std::size(genome); ++i) {
     if (genome[i] == 'N' && i < exclude[j].first)
       genome[i] = random_base();
     if (exclude[j].second <= i)
@@ -208,7 +210,7 @@ AbismalIndex::create_index(const std::string &targets_file,
   std::vector<std::uint8_t> orig_genome;
   load_genome(genome_file, orig_genome, cl);
   if (VERBOSE)
-    std::clog << delta_seconds(s_time) << std::endl;
+    std::clog << delta_seconds(s_time) << '\n';
 
   s_time = abismal_clock::now();
   if (VERBOSE)
@@ -216,7 +218,7 @@ AbismalIndex::create_index(const std::string &targets_file,
   std::vector<g_interval> orig_targets = load_target_regions(targets_file);
   orig_targets = sort_by_chrom(cl.names, orig_targets);
   if (VERBOSE)
-    std::clog << delta_seconds(s_time) << std::endl;
+    std::clog << delta_seconds(s_time) << '\n';
 
   s_time = abismal_clock::now();
   if (VERBOSE)
@@ -240,7 +242,7 @@ AbismalIndex::create_index(const std::string &targets_file,
 
   replace_included_n(exclude, orig_genome);
   if (VERBOSE)
-    std::clog << delta_seconds(s_time) << std::endl;
+    std::clog << delta_seconds(s_time) << '\n';
 
   s_time = abismal_clock::now();
 
@@ -251,7 +253,7 @@ AbismalIndex::create_index(const std::string &targets_file,
                       std::begin(genome));
   std::vector<std::uint8_t>().swap(orig_genome);
   if (VERBOSE)
-    std::clog << delta_seconds(s_time) << std::endl;
+    std::clog << delta_seconds(s_time) << '\n';
 
   exclude_itr = get_exclude_itrs(genome, exclude);
 
@@ -277,7 +279,7 @@ AbismalIndex::create_index(const std::string &genome_file) {
   load_genome(genome_file, orig_genome, cl);
   if (VERBOSE)
     std::clog << "[" << cl.names.size() << " targets]" << delta_seconds(s_time)
-              << std::endl;
+              << '\n';
 
   s_time = abismal_clock::now();
   if (VERBOSE)
@@ -293,7 +295,7 @@ AbismalIndex::create_index(const std::string &genome_file) {
 
   replace_included_n(exclude, orig_genome);
   if (VERBOSE)
-    std::clog << delta_seconds(s_time) << std::endl;
+    std::clog << delta_seconds(s_time) << '\n';
 
   s_time = abismal_clock::now();
 
@@ -304,7 +306,7 @@ AbismalIndex::create_index(const std::string &genome_file) {
                       std::begin(genome));
   std::vector<std::uint8_t>().swap(orig_genome);
   if (VERBOSE)
-    std::clog << delta_seconds(s_time) << std::endl;
+    std::clog << delta_seconds(s_time) << '\n';
 
   exclude_itr = get_exclude_itrs(genome, exclude);
 
@@ -424,7 +426,7 @@ AbismalIndex::initialize_bucket_sizes() {
   bucket_ct.join();
   bucket_ga.join();
   if (VERBOSE)
-    std::clog << delta_seconds(s_time) << std::endl;
+    std::clog << delta_seconds(s_time) << '\n';
 }
 
 static inline auto
@@ -531,7 +533,7 @@ AbismalIndex::select_two_letter_positions() {
   for (auto &thread : threads)
     thread.join();
   if (VERBOSE)
-    std::clog << delta_seconds(s_time) << std::endl;
+    std::clog << delta_seconds(s_time) << '\n';
 }
 
 void
@@ -557,9 +559,9 @@ AbismalIndex::hash_genome() {
   index_t.resize(index_size_three, 0);
   index_a.resize(index_size_three, 0);
   if (VERBOSE)
-    std::clog << delta_seconds(s_time) << std::endl
+    std::clog << delta_seconds(s_time) << '\n'
               << "[index sizes: two-letter=" << index_size << " "
-              << "three-letter=" << index_size_three << "]" << std::endl;
+              << "three-letter=" << index_size_three << "]\n";
   s_time = abismal_clock::now();
 
   if (VERBOSE)
@@ -628,7 +630,7 @@ AbismalIndex::hash_genome() {
   ltr_counter_a.join();
 
   if (VERBOSE)
-    std::clog << delta_seconds(s_time) << std::endl;
+    std::clog << delta_seconds(s_time) << '\n';
 }
 
 struct dp_sol {
@@ -843,7 +845,7 @@ AbismalIndex::compress_dp() {
 
   max_candidates = 100u;  // GS: this is a heuristic
   if (VERBOSE)
-    std::clog << delta_seconds(s_time) << std::endl;
+    std::clog << delta_seconds(s_time) << '\n';
 }
 
 struct BucketLess {
@@ -917,7 +919,7 @@ AbismalIndex::sort_buckets() {
     for (auto &thread : threads)
       thread.join();
     if (VERBOSE)
-      std::clog << delta_seconds(s_time) << std::endl;
+      std::clog << delta_seconds(s_time) << '\n';
   }
   {
     const auto s_time = abismal_clock::now();
@@ -940,7 +942,7 @@ AbismalIndex::sort_buckets() {
     for (auto &thread : threads)
       thread.join();
     if (VERBOSE)
-      std::clog << delta_seconds(s_time) << std::endl;
+      std::clog << delta_seconds(s_time) << '\n';
   }
   {
     const auto s_time = abismal_clock::now();
@@ -963,7 +965,7 @@ AbismalIndex::sort_buckets() {
     for (auto &thread : threads)
       thread.join();
     if (VERBOSE)
-      std::clog << delta_seconds(s_time) << std::endl;
+      std::clog << delta_seconds(s_time) << '\n';
   }
 }
 
@@ -1073,7 +1075,7 @@ void
 AbismalIndex::read(const std::string &index_file) {
   static const std::string error_msg("failed loading index file");
 
-  FILE *in = fopen(index_file.c_str(), "rb");
+  FILE *in = fopen(index_file.data(), "rb");
   if (!in)
     throw std::runtime_error("cannot open input file " + index_file);
 
@@ -1341,3 +1343,5 @@ load_genome(const std::string &genome_file, std::vector<std::uint8_t> &genome,
             ChromLookup &cl) {
   load_genome_impl(genome_file, genome, cl);
 }
+
+// NOLINTEND
