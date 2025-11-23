@@ -20,7 +20,6 @@
 #include "AbismalIndex.hpp"
 
 #include "OptionParser.hpp"
-#include "smithlab_os.hpp"
 
 #include <config.h>
 
@@ -34,10 +33,8 @@
 #include <vector>
 
 int
-abismalidx(int argc, char *argv[]) {
-
+abismalidx(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
   try {
-
     const std::string version_str =
       std::string{"(v"} + VERSION + std::string{")"};
     const std::string description = "build abismal index " + version_str;
@@ -47,8 +44,9 @@ abismalidx(int argc, char *argv[]) {
     std::size_t n_threads = 1;
 
     /****************** COMMAND LINE OPTIONS ********************/
-    OptionParser opt_parse(strip_path(argv[0]), description,
-                           "<genome-fasta> <abismal-index-file>", 2);
+    OptionParser opt_parse(argv[0],  // NOLINT(*-pointer-arithmetic)
+                           description, "<genome-fasta> <abismal-index-file>",
+                           2);
     opt_parse.set_show_defaults();
     opt_parse.add_opt("targets", 'A', "target regions", false,
                       target_regions_file);
@@ -58,20 +56,20 @@ abismalidx(int argc, char *argv[]) {
     std::vector<std::string> leftover_args;
     opt_parse.parse(argc, argv, leftover_args);
     if (argc == 1 || opt_parse.help_requested()) {
-      std::cerr << opt_parse.help_message() << std::endl;
-      std::cerr << opt_parse.about_message() << std::endl;
+      std::cerr << opt_parse.help_message() << '\n';
+      std::cerr << opt_parse.about_message() << '\n';
       return EXIT_SUCCESS;
     }
     if (opt_parse.about_requested()) {
-      std::cerr << opt_parse.about_message() << std::endl;
+      std::cerr << opt_parse.about_message() << '\n';
       return EXIT_SUCCESS;
     }
     if (opt_parse.option_missing()) {
-      std::cerr << opt_parse.option_missing_message() << std::endl;
+      std::cerr << opt_parse.option_missing_message() << '\n';
       return EXIT_SUCCESS;
     }
     if (leftover_args.size() != 2) {
-      std::cerr << opt_parse.help_message() << std::endl;
+      std::cerr << opt_parse.help_message() << '\n';
       return EXIT_SUCCESS;
     }
     const std::string genome_file = leftover_args.front();
@@ -110,7 +108,7 @@ abismalidx(int argc, char *argv[]) {
     /****************** END BUILDING INDEX *************/
   }
   catch (const std::exception &e) {
-    std::cerr << e.what() << std::endl;
+    std::cerr << e.what() << '\n';
     return EXIT_FAILURE;
   }
   return EXIT_SUCCESS;

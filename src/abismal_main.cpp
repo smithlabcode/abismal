@@ -29,7 +29,7 @@
 #include <string>
 #include <vector>
 
-static const std::string PROGRAM_NAME = "abismal";
+static constexpr auto program_name = "abismal";
 
 struct abismal_command {
   std::string tag;
@@ -37,7 +37,7 @@ struct abismal_command {
   std::function<int(int, char **)> fun;
 
   auto
-  operator()(const int argc, char *argv[]) const -> int {
+  operator()(const int argc, char *argv[]) const -> int {  // NOLINT(*-c-arrays)
     return fun(argc - 1, argv + 1);
   }
 };
@@ -53,16 +53,16 @@ operator<<(std::ostream &out, const abismal_command &cmd) -> std::ostream & {
 
 void
 print_help(const std::vector<abismal_command> &commands) {
-  std::cout << "Program: " << PROGRAM_NAME << "\n"
+  std::cout << "Program: " << program_name << "\n"
             << "Version: " << VERSION << "\n"
-            << "Usage: " << PROGRAM_NAME << " <command> [options]\n"
+            << "Usage: " << program_name << " <command> [options]\n"
             << "Commands:\n";
   for (const auto &c : commands)
     std::cout << c << '\n';
 }
 
 int
-main(int argc, char *argv[]) {
+main(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
   try {
     // clang-format off
     std::vector<abismal_command> commands = {
@@ -76,13 +76,15 @@ main(int argc, char *argv[]) {
       return EXIT_SUCCESS;
     }
     const auto has_tag = [&](const abismal_command &a) {
-      return a.tag == argv[1];
+      return a.tag == argv[1];  // NOLINT(*-pointer-arithmetic,*-c-arrays)
     };
     const auto the_cmd =
       std::find_if(std::cbegin(commands), std::cend(commands), has_tag);
     if (the_cmd != std::cend(commands))
       return (*the_cmd)(argc, argv);
-    std::cerr << "ERROR: invalid command " << argv[1] << '\n';
+    std::cerr << "ERROR: invalid command "
+              << argv[1]  // NOLINT(*-pointer-arithmetic,*-c-arrays)
+              << '\n';
   }
   catch (const std::exception &e) {
     std::cerr << e.what() << '\n';

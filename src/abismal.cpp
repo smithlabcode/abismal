@@ -34,6 +34,7 @@
 #include <htslib/sam.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cassert>
 #include <chrono>
@@ -62,6 +63,8 @@
 #include <xmmintrin.h>
 #endif
 
+// NOLINTBEGIN(*-avoid-magic-numbers,*-narrowing-conversions)
+
 using abismal_clock = std::chrono::steady_clock;
 using abismal_timepoint = std::chrono::time_point<abismal_clock>;
 
@@ -77,17 +80,22 @@ typedef std::vector<element_t> PackedRead;  // 4-bit encoding of reads
 
 namespace abismal_concurrency {
 static constexpr std::uint32_t max_n_threads = 1024;
+// NOLINTBEGIN(*-avoid-non-const-global-variables)
 static std::uint32_t n_threads = 1;
 static std::mutex read_mutex;
 static std::mutex write_mutex;
 static std::mutex report_mutex;
+// NOLINTEND(*-avoid-non-const-global-variables)
 static bool
 invalid_n_threads() {
   return n_threads == 0 || n_threads > max_n_threads;
 }
 }  // namespace abismal_concurrency
 
-enum conversion_type { t_rich = false, a_rich = true };
+enum conversion_type : std::uint8_t {
+  t_rich = false,
+  a_rich = true,
+};
 
 static void
 log_msg(const std::string &s) {
@@ -110,7 +118,7 @@ get_strand_code(const char strand, const conversion_type conv) {
 }
 
 struct ReadLoader {
-  ReadLoader(const std::string &fn) : cur_line{0}, filename{fn}, in{fn, "r"} {}
+  explicit ReadLoader(const std::string &fn) : filename{fn}, in{fn, "r"} {}
 
   bool
   good() const {
@@ -189,8 +197,12 @@ const std::uint32_t ReadLoader::min_read_length =
 static inline void
 update_max_read_length(std::size_t &max_length,
                        const std::vector<std::string> &reads) {
-  for (const auto &i : reads)
-    max_length = std::max(max_length, std::size(i));
+  max_length = std::accumulate(std::cbegin(reads), std::cend(reads), 0ul,
+                               [](const std::size_t x, const auto &r) {
+                                 return std::max(x, std::size(r));
+                               });
+  // for (const auto &i : reads)
+  //   max_length = std::max(max_length, std::size(i));
 }
 
 struct se_element {   // size = 8
@@ -266,12 +278,14 @@ struct se_element {   // size = 8
   static const score_t MAX_DIFFS;
 };
 
-double se_element::valid_frac = 0.1;
+static constexpr auto valid_frac_default = 0.1;
+double se_element::valid_frac = valid_frac_default;
 const score_t se_element::MAX_DIFFS = std::numeric_limits<score_t>::max() - 1;
 
 // a liberal number of mismatches accepted to
 // align a read downstream
-const double se_element::invalid_hit_frac = 0.4;
+static constexpr auto invalid_hit_frac_default = 0.4;
+const double se_element::invalid_hit_frac = invalid_hit_frac_default;
 
 static inline score_t
 valid_diffs_cutoff(const std::uint32_t readlen, const double cutoff) {
@@ -288,8 +302,8 @@ valid_len(const std::uint32_t aln_len, const std::uint32_t readlen) {
 }
 
 static inline bool
-valid(const se_element &s, const std::uint32_t aln_len,
-      const std::uint32_t readlen, const double cutoff) {
+check_valid(const se_element &s, const std::uint32_t aln_len,
+            const std::uint32_t readlen, const double cutoff) {
   return valid_len(aln_len, readlen) &&
          s.diffs <= valid_diffs_cutoff(readlen, cutoff);
 }
@@ -390,10 +404,11 @@ struct se_candidates {
 
   void
   reset(const std::uint32_t readlen) {
+    constexpr auto good_frac_denom = 10u;
     best.reset(readlen);
     v.front().reset(readlen);
     cutoff = v.front().diffs;
-    good_cutoff = readlen / 10u;
+    good_cutoff = static_cast<score_t>(readlen / good_frac_denom);
 
     sure_ambig = false;
     sz = 1;
@@ -410,11 +425,11 @@ struct se_candidates {
     sz = std::unique(std::begin(v), std::begin(v) + sz) - std::cbegin(v);
   }
 
-  bool sure_ambig;
-  score_t good_cutoff;
-  score_t cutoff;
-  std::uint32_t sz;
-  se_element best;
+  bool sure_ambig{};
+  score_t good_cutoff{};
+  score_t cutoff{};
+  std::uint32_t sz{};
+  se_element best{};
   std::vector<se_element> v;
 
   static const std::uint32_t max_size;
@@ -447,13 +462,20 @@ chrom_and_posn(const ChromLookup &cl, const bam_cigar_t &cig,
   return true;
 }
 
-enum map_type { map_unmapped, map_unique, map_ambig };
+enum map_type : std::uint8_t {
+  map_unmapped,
+  map_unique,
+  map_ambig,
+};
 
 static map_type
 format_se(const bool allow_ambig, const se_element &res, const ChromLookup &cl,
           // ADS: 'read' should not be used after a call to 'format_se'
           std::string &read, const std::string &read_name,
           const bam_cigar_t &cigar, bam_rec &sr) {
+  static constexpr auto mapq_max_val = 255u;
+  static constexpr auto aux_len = 16u;
+
   const bool ambig = res.ambig();
   const bool valid = !res.empty();
   if (!allow_ambig && ambig)
@@ -476,22 +498,24 @@ format_se(const bool allow_ambig, const se_element &res, const ChromLookup &cl,
   // flag |= BAM_FREAD1;  // ADS: this might be wrong...
 
   sr.b = bam_init1();
+  // clang-format off
   int ret = bam_set1(sr.b,
-                     std::size(read_name),  // size_t l_qname,
-                     read_name.data(),      // const char *qname,
-                     flag,                  // uint16_t flag,
-                     chrom_idx - 1,         // int32_t tid (-1 for padding)
-                     ref_s,                 // hts_pos_t pos,
-                     255,                   // uint8_t mapq,
-                     std::size(cigar),      // size_t n_cigar,
-                     cigar.data(),          // const uint32_t *cigar,
-                     -1,                    // int32_t mtid,
-                     -1,                    //  hts_pos_t mpos,
-                     0,                     // hts_pos_t isize,
-                     std::size(read),       // size_t l_seq,
-                     read.data(),           // const char *seq,
-                     nullptr,               // const char *qual,
-                     16);                   // size_t l_aux);
+    std::size(read_name),  // size_t l_qname,
+    read_name.data(),      // const char *qname,
+    flag,                  // uint16_t flag,
+    static_cast<std::int32_t>(chrom_idx) - 1, // int32_t tid (-1 for padding)
+    ref_s,                 // hts_pos_t pos,
+    mapq_max_val,          // uint8_t mapq,
+    std::size(cigar),      // size_t n_cigar,
+    cigar.data(),          // const uint32_t *cigar,
+    -1,                    // int32_t mtid,
+    -1,                    //  hts_pos_t mpos,
+    0,                     // hts_pos_t isize,
+    std::size(read),       // size_t l_seq,
+    read.data(),           // const char *seq,
+    nullptr,               // const char *qual,
+    aux_len);              // size_t l_aux);
+  // clang-format on
   if (ret < 0)
     throw std::runtime_error("failed to format bam");
 
@@ -508,11 +532,11 @@ format_se(const bool allow_ambig, const se_element &res, const ChromLookup &cl,
 }
 
 struct pe_element {
-  pe_element() : aln_score(0), r1(se_element()), r2(se_element()) {}
+  pe_element() : r1{se_element()}, r2{se_element()} {}
 
   score_t
   diffs() const {
-    return r1.diffs + r2.diffs;
+    return static_cast<score_t>(r1.diffs + r2.diffs);
   }
 
   void
@@ -570,8 +594,8 @@ struct pe_element {
     return ambig() && (aln_score == max_aln_score);
   }
 
-  score_t aln_score;
-  score_t max_aln_score;
+  score_t aln_score{};
+  score_t max_aln_score{};
   se_element r1;
   se_element r2;
 
@@ -613,7 +637,12 @@ format_pe(
   std::string &read1, std::string &read2, const std::string &name1,
   const std::string &name2, const bam_cigar_t &cig1, const bam_cigar_t &cig2,
   bam_rec &sr1, bam_rec &sr2) {
-  static const uint8_t cv[2] = {'T', 'A'};
+  static constexpr auto mapq_max_val = 255u;
+  static constexpr auto aux_len = 16u;
+  static const std::array<uint8_t, 2> cv = {
+    'T',
+    'A',
+  };
 
   if (p.empty())
     return map_unmapped;
@@ -659,22 +688,24 @@ format_pe(
   flag2 |= BAM_FREAD2;
 
   sr1.b = bam_init1();
+  // clang-format off
   int ret = bam_set1(sr1.b,
-                     name1.size(),  // size_t l_qname,
-                     name1.data(),  // const char *qname,
-                     flag1,         // uint16_t flag,
-                     chr1 - 1,      // (-1 for padding) int32_t tid
-                     r_s1,          // hts_pos_t pos,
-                     255,           // uint8_t mapq,
-                     cig1.size(),   // size_t n_cigar,
-                     cig1.data(),   // const uint32_t *cigar,
-                     chr2 - 1,      // (-1 for padding) int32_t mtid,
-                     r_s2,          //  hts_pos_t mpos,
-                     isize,         // hts_pos_t isize,
-                     read1.size(),  // size_t l_seq,
-                     read1.data(),  // const char *seq,
-                     nullptr,       // const char *qual,
-                     16);           // size_t l_aux);
+    name1.size(),  // size_t l_qname,
+    name1.data(),  // const char *qname,
+    flag1,         // uint16_t flag,
+    chr1 - 1,      // (-1 for padding) int32_t tid
+    r_s1,          // hts_pos_t pos,
+    mapq_max_val,  // uint8_t mapq,
+    cig1.size(),   // size_t n_cigar,
+    cig1.data(),   // const uint32_t *cigar,
+    chr2 - 1,      // (-1 for padding) int32_t mtid,
+    r_s2,          //  hts_pos_t mpos,
+    isize,         // hts_pos_t isize,
+    read1.size(),  // size_t l_seq,
+    read1.data(),  // const char *seq,
+    nullptr,       // const char *qual,
+    aux_len);           // size_t l_aux);
+  // clang-format on
   if (ret < 0)
     throw std::runtime_error("error formatting bam");
 
@@ -682,27 +713,29 @@ format_pe(
   if (ret < 0)
     throw std::runtime_error("error adding aux field");
 
-  ret = bam_aux_append(sr1.b, "CV", 'A', 1, cv + p.r1.elem_is_a_rich());
+  ret = bam_aux_append(sr1.b, "CV", 'A', 1, cv.data() + p.r1.elem_is_a_rich());
   if (ret < 0)
     throw std::runtime_error("error adding aux field");
 
   sr2.b = bam_init1();
+  // clang-format off
   ret = bam_set1(sr2.b,
-                 name2.size(),  // size_t l_qname,
-                 name2.data(),  // const char *qname,
-                 flag2,         // uint16_t flag,
-                 chr2 - 1,      // (-1 for padding) int32_t tid
-                 r_s2,          // hts_pos_t pos,
-                 255,           // uint8_t mapq,
-                 cig2.size(),   // size_t n_cigar,
-                 cig2.data(),   // const uint32_t *cigar,
-                 chr1 - 1,      // (-1 for padding) int32_t mtid,
-                 r_s1,          //  hts_pos_t mpos,
-                 -isize,        // hts_pos_t isize,
-                 read2.size(),  // size_t l_seq,
-                 read2.data(),  // const char *seq,
-                 nullptr,       // const char *qual,
-                 16);           // size_t l_aux);
+    name2.size(),  // size_t l_qname,
+    name2.data(),  // const char *qname,
+    flag2,         // uint16_t flag,
+    chr2 - 1,      // (-1 for padding) int32_t tid
+    r_s2,          // hts_pos_t pos,
+    mapq_max_val,  // uint8_t mapq,
+    cig2.size(),   // size_t n_cigar,
+    cig2.data(),   // const uint32_t *cigar,
+    chr1 - 1,      // (-1 for padding) int32_t mtid,
+    r_s1,          //  hts_pos_t mpos,
+    -isize,        // hts_pos_t isize,
+    read2.size(),  // size_t l_seq,
+    read2.data(),  // const char *seq,
+    nullptr,       // const char *qual,
+    aux_len);      // size_t l_aux);
+  // clang-format on
   if (ret < 0)
     throw std::runtime_error("failed to format bam");
 
@@ -710,7 +743,7 @@ format_pe(
   if (ret < 0)
     throw std::runtime_error("error adding aux field");
 
-  ret = bam_aux_append(sr2.b, "CV", 'A', 1, cv + p.r2.elem_is_a_rich());
+  ret = bam_aux_append(sr2.b, "CV", 'A', 1, cv.data() + p.r2.elem_is_a_rich());
   if (ret < 0)
     throw std::runtime_error("error adding aux field");
 
@@ -794,11 +827,11 @@ struct pe_candidates {
     sz = std::unique(std::begin(v), std::begin(v) + sz) - std::cbegin(v);
   }
 
-  bool sure_ambig;
-  score_t cutoff;
-  score_t good_cutoff;
-  std::uint32_t sz;
-  std::uint32_t capacity;
+  bool sure_ambig{};
+  score_t cutoff{};
+  score_t good_cutoff{};
+  std::uint32_t sz{};
+  std::uint32_t capacity{};
   std::vector<se_element> v;
 
   static const std::uint32_t max_size_small = 32u;
@@ -1096,14 +1129,14 @@ check_hits(const std::uint32_t offset, const PackedRead::const_iterator read_st,
 }
 
 struct compare_bases {
-  compare_bases(const genome_iterator g_) : g(g_) {}
-
+  explicit compare_bases(const genome_iterator g) : g{g} {}
   bool
   operator()(const std::uint32_t mid, const two_letter_t chr) const {
+    // cppcheck-suppress-begin comparisonOfFuncReturningBoolError
     return get_bit(*(g + mid)) < chr;
+    // cppcheck-suppress-end comparisonOfFuncReturningBoolError
   }
-
-  const genome_iterator g;
+  const genome_iterator g;  // NOLINT(*-avoid-const-or-ref-data-members)
 };
 
 template <const std::uint32_t start_length>
@@ -1147,14 +1180,12 @@ get_three_letter_num_fast(const uint8_t nt) {
 }
 
 template <const three_conv_type the_conv> struct compare_bases_three {
-  compare_bases_three(const genome_iterator g_) : g(g_) {}
-
+  explicit compare_bases_three(const genome_iterator g) : g{g} {}
   bool
   operator()(const std::uint32_t mid, const three_letter_t chr) const {
     return get_three_letter_num_fast<the_conv>(*(g + mid)) < chr;
   }
-
-  const genome_iterator g;
+  const genome_iterator g;  // NOLINT(*-avoid-const-or-ref-data-members)
 };
 
 template <const std::uint32_t start_length, const three_conv_type the_conv>
@@ -1237,10 +1268,10 @@ process_seeds(const std::uint32_t max_candidates,
   std::vector<std::uint32_t>::const_iterator s_idx_three;
   std::vector<std::uint32_t>::const_iterator e_idx_three;
 
-  std::uint32_t d_two = 0;
-  std::uint32_t d_three = 0;
-  std::uint32_t l_two = 0;
-  std::uint32_t l_three = 0;
+  std::uint32_t d_two{};
+  std::uint32_t d_three{};
+  std::uint32_t l_two{};
+  std::uint32_t l_three{};
 
   get_1bit_hash(read_idx, k);
   get_base_3_hash<the_conv>(read_idx, k_three);
@@ -1324,10 +1355,11 @@ template <const bool convert_a_to_g>
 static void
 prep_read(const std::string &r, Read &pread) {
   pread.resize(r.size());
+  // NOLINTBEGIN(*-pro-bounds-constant-array-index)
   for (std::size_t i = 0; i != r.size(); ++i)
-    pread[i] =
-      (convert_a_to_g ? (encode_base_a_rich[static_cast<unsigned char>(r[i])])
-                      : (encode_base_t_rich[static_cast<unsigned char>(r[i])]));
+    pread[i] = (convert_a_to_g ? (encode_base_a_rich[r[i]])
+                               : (encode_base_t_rich[r[i]]));
+  // NOLINTEND(*-pro-bounds-constant-array-index)
 }
 
 /* GS: this function simply converts the vector<uint8_t> pread to a
@@ -1392,7 +1424,6 @@ align_se_candidates(const Read &pread_t, const Read &pread_t_rc,
   }
 
   score_t best_scr = 0;
-  std::uint32_t cand_pos = 0;
   std::uint32_t best_pos = 0;
 
   res.prepare_for_alignments();
@@ -1403,7 +1434,7 @@ align_se_candidates(const Read &pread_t, const Read &pread_t_rc,
     ;
   for (; it != lim; ++it) {
     if (valid_hit(*it, readlen)) {
-      cand_pos = it->pos;
+      std::uint32_t cand_pos = it->pos;
       const score_t cand_scr = aln.align<false>(
         it->diffs, max_diffs,
         ((it->rc()) ? ((it->elem_is_a_rich()) ? (pread_t_rc) : (pread_a_rc))
@@ -1435,7 +1466,7 @@ align_se_candidates(const Read &pread_t, const Read &pread_t_rc,
     best.diffs = simple_aln::edit_distance(best_scr, len, cigar);
 
     // do not report and count it as unmapped if not valid
-    if (!valid(best, len, readlen, cutoff))
+    if (!check_valid(best, len, readlen, cutoff))
       best.reset();
   }
   else
@@ -1458,7 +1489,7 @@ template <const conversion_type conv>
 static void
 map_single_ended(const bool show_progress, const bool allow_ambig,
                  const AbismalIndex &abismal_index, ReadLoader &rl,
-                 se_map_stats &se_stats, bamxx::bam_header &hdr,
+                 se_map_stats &se_stats, const bamxx::bam_header &hdr,
                  bamxx::bam_out &out, ProgressBar &progress) {
   const auto counter_st(std::cbegin(abismal_index.counter));
   const auto counter_t_st(std::cbegin(abismal_index.counter_t));
@@ -1491,9 +1522,8 @@ map_single_ended(const bool show_progress, const bool allow_ambig,
   se_candidates res;
   AbismalAlignSimple aln(genome_st);
 
-  std::size_t the_byte = 0;
-
   while (rl) {
+    std::size_t the_byte{};
     {
       const std::lock_guard<std::mutex> lock(abismal_concurrency::read_mutex);
       rl.load_reads(names, reads);
@@ -1562,7 +1592,7 @@ map_single_ended(const bool show_progress, const bool allow_ambig,
 static void
 map_single_ended_rand(const bool show_progress, const bool allow_ambig,
                       const AbismalIndex &abismal_index, ReadLoader &rl,
-                      se_map_stats &se_stats, bamxx::bam_header &hdr,
+                      se_map_stats &se_stats, const bamxx::bam_header &hdr,
                       bamxx::bam_out &out, ProgressBar &progress) {
   const auto counter_st(std::cbegin(abismal_index.counter));
   const auto counter_t_st(std::cbegin(abismal_index.counter_t));
@@ -1594,9 +1624,8 @@ map_single_ended_rand(const bool show_progress, const bool allow_ambig,
   se_candidates res;
   AbismalAlignSimple aln(genome_st);
 
-  std::size_t the_byte = 0;
-
   while (rl) {
+    std::size_t the_byte{};
     {
       const std::lock_guard<std::mutex> lock(abismal_concurrency::read_mutex);
       rl.load_reads(names, reads);
@@ -1684,7 +1713,7 @@ static void
 run_single_ended(const bool show_progress, const bool allow_ambig,
                  const std::string &reads_file,
                  const AbismalIndex &abismal_index, se_map_stats &se_stats,
-                 bamxx::bam_header &hdr, bamxx::bam_out &out) {
+                 const bamxx::bam_header &hdr, bamxx::bam_out &out) {
   ReadLoader rl(reads_file);
   ProgressBar progress(get_filesize(reads_file), "mapping reads");
 
@@ -1692,7 +1721,7 @@ run_single_ended(const bool show_progress, const bool allow_ambig,
 
   std::vector<std::thread> threads;
   for (auto i = 0u; i < abismal_concurrency::n_threads; ++i)
-    threads.emplace_back([&] {
+    threads.emplace_back([&] {  // NOLINT(*-inefficient-vector-operation)
       if (random_pbat)
         map_single_ended_rand(show_progress, allow_ambig, abismal_index, rl,
                               se_stats, hdr, out, progress);
@@ -1745,7 +1774,6 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
     valid_diffs_cutoff(readlen2, se_element::valid_frac);
 
   score_t scr1 = 0;
-  score_t scr2 = 0;
   score_t best_scr1 = 0;
   score_t best_scr2 = 0;
   std::uint32_t best_pos1 = 0;
@@ -1763,7 +1791,7 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
 
   for (; j2 != j2_end && !best.sure_ambig(); ++j2) {
     s2 = *j2;
-    scr2 = 0;
+    score_t scr2 = 0;
 
     // rewind to first concordant position. Needed in case of
     // many-to-many concordance between candidates
@@ -1897,7 +1925,7 @@ static void
 map_paired_ended(const bool show_progress, const bool allow_ambig,
                  const AbismalIndex &abismal_index, ReadLoader &rl1,
                  ReadLoader &rl2, pe_map_stats &pe_stats,
-                 bamxx::bam_header &hdr, bamxx::bam_out &out,
+                 const bamxx::bam_header &hdr, bamxx::bam_out &out,
                  ProgressBar &progress) {
   const auto counter_st(std::begin(abismal_index.counter));
   const auto counter_t_st(std::begin(abismal_index.counter_t));
@@ -1953,9 +1981,8 @@ map_paired_ended(const bool show_progress, const bool allow_ambig,
   se_candidates res_se1;
   se_candidates res_se2;
 
-  std::size_t the_byte = 0;
-
   while (rl1 && rl2) {
+    std::size_t the_byte{};
     {
       const std::lock_guard<std::mutex> lock(abismal_concurrency::read_mutex);
       rl1.load_reads(names1, reads1);
@@ -2064,7 +2091,7 @@ static void
 map_paired_ended_rand(const bool show_progress, const bool allow_ambig,
                       const AbismalIndex &abismal_index, ReadLoader &rl1,
                       ReadLoader &rl2, pe_map_stats &pe_stats,
-                      bamxx::bam_header &hdr, bamxx::bam_out &out,
+                      const bamxx::bam_header &hdr, bamxx::bam_out &out,
                       ProgressBar &progress) {
   const auto counter_st(std::begin(abismal_index.counter));
   const auto counter_t_st(std::begin(abismal_index.counter_t));
@@ -2116,10 +2143,8 @@ map_paired_ended_rand(const bool show_progress, const bool allow_ambig,
   se_candidates res_se1;
   se_candidates res_se2;
 
-  std::size_t the_byte = 0;
-
   while (rl1 && rl2) {
-
+    std::size_t the_byte{};
     {
       const std::lock_guard<std::mutex> lock(abismal_concurrency::read_mutex);
       rl1.load_reads(names1, reads1);
@@ -2242,7 +2267,7 @@ static void
 run_paired_ended(const bool show_progress, const bool allow_ambig,
                  const std::string &reads_file1, const std::string &reads_file2,
                  const AbismalIndex &abismal_index, pe_map_stats &pe_stats,
-                 bamxx::bam_header &hdr, bamxx::bam_out &out) {
+                 const bamxx::bam_header &hdr, bamxx::bam_out &out) {
   ReadLoader rl1(reads_file1);
   ReadLoader rl2(reads_file2);
   ProgressBar progress(get_filesize(reads_file1), "mapping reads");
@@ -2251,7 +2276,7 @@ run_paired_ended(const bool show_progress, const bool allow_ambig,
 
   std::vector<std::thread> threads;
   for (auto i = 0u; i < abismal_concurrency::n_threads; ++i)
-    threads.emplace_back([&] {
+    threads.emplace_back([&] {  // NOLINT(*-inefficient-vector-operation)
       if (random_pbat)
         map_paired_ended_rand(show_progress, allow_ambig, abismal_index, rl1,
                               rl2, pe_stats, hdr, out, progress);
@@ -2278,7 +2303,8 @@ file_exists(const std::string &filename) {
 }
 
 static int
-abismal_make_sam_header(const ChromLookup &cl, const int argc, char *argv[],
+abismal_make_sam_header(const ChromLookup &cl, const int argc,
+                        char *argv[],  // NOLINT(*-c-arrays)
                         bamxx::bam_header &hdr) {
   assert(std::size(cl.names) > 2);  // two entries exist for the padding
   assert(std::size(cl.starts) == std::size(cl.names) + 1);
@@ -2316,9 +2342,8 @@ abismal_make_sam_header(const ChromLookup &cl, const int argc, char *argv[],
 }
 
 int
-abismal(int argc, char *argv[]) {
+abismal(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
   try {
-
     const std::string version_str =
       std::string("(v") + VERSION + std::string(")");
     const std::string description =
@@ -2338,8 +2363,8 @@ abismal(int argc, char *argv[]) {
     std::string stats_outfile = "";
 
     /****************** COMMAND LINE OPTIONS ********************/
-    OptionParser opt_parse(strip_path(argv[0]), description,
-                           "<reads-fq1> [<reads-fq2>]");
+    OptionParser opt_parse(argv[0],  // NOLINT(*-pointer-arithmetic)
+                           description, "<reads-fq1> [<reads-fq2>]");
     opt_parse.set_show_defaults();
     opt_parse.add_opt("index", 'i', "index file", false, index_file);
     opt_parse.add_opt("genome", 'g', "genome file (FASTA)", false, genome_file);
@@ -2535,3 +2560,5 @@ abismal(int argc, char *argv[]) {
   }
   return EXIT_SUCCESS;
 }
+
+// NOLINTEND(*-avoid-magic-numbers,*-narrowing-conversions)

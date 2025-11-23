@@ -51,14 +51,13 @@ namespace simreads_random {
 // the same seed, the results could be different. This meant testing
 // didn't work.
 
-std::random_device rd;
-std::mt19937 e;
-bool initialized = false;
-std::uniform_real_distribution<double> dr;
-std::uniform_int_distribution<std::uint64_t> di;
+std::mt19937 e;                                   // NOLINT
+bool initialized = false;                         // NOLINT
+std::uniform_real_distribution<double> dr;        // NOLINT
+std::uniform_int_distribution<std::uint64_t> di;  // NOLINT
 
 void
-initialize([[maybe_unused]] const std::size_t the_seed) {
+initialize(const std::size_t the_seed) {
   e = std::mt19937(the_seed);
   initialized = true;
 }
@@ -122,7 +121,7 @@ struct FragInfo {
     assert(!name.empty());
     std::string read(seq);
     revcomp_inplace(read);
-    read = read.substr(0, read_length);
+    read = read.substr(0, read_length);  // cppcheck-suppress uselessCallsSubstr
     for (std::size_t i = 0; i < read_length - std::size(read); ++i)
       read += random_base();
     return fasta_format ? format_fasta_record(name + ".2", read)
@@ -140,9 +139,10 @@ struct FragInfo {
       const std::size_t rseq_ops =
         cigar_rseq_ops(cigar) + cigar_rseq_ops(cigar2);
       cigar = cigar + std::to_string(orig_ref_len - rseq_ops) + "N" + cigar2;
-      seq = seq.substr(0, read_length) +
-            std::string(orig_ref_len - rseq_ops, 'N') +
-            seq.substr(std::size(seq) - read_length, read_length);
+      seq =
+        seq.substr(0, read_length) +  // cppcheck-suppress uselessCallsSubstr
+        std::string(orig_ref_len - rseq_ops, 'N') +
+        seq.substr(std::size(seq) - read_length, read_length);
     }
   }
   void
@@ -152,7 +152,8 @@ struct FragInfo {
   }
   void
   bisulfite_conversion(const bool random_pbat, const double bs_conv) {
-    if (pbat || (random_pbat && simreads_random::rand_double() < 0.5)) {
+    constexpr auto coin_flip = 0.5;
+    if (pbat || (random_pbat && simreads_random::rand_double() < coin_flip)) {
       for (auto it(begin(seq)); it != end(seq); ++it) {
         if (*it == 'G' && (simreads_random::rand_double() < bs_conv))
           *it = 'A';
@@ -186,13 +187,14 @@ struct FragInfo {
   static std::size_t read_length;
 };
 
+static constexpr auto read_length_default = 100;
 bool FragInfo::pbat = false;
 bool FragInfo::fasta_format = false;
 std::size_t FragInfo::frag_count = 0;
-std::size_t FragInfo::read_length = 100;
+std::size_t FragInfo::read_length = read_length_default;
 
 static std::ostream &
-operator<<(std::ostream &out, FragInfo &the_info) {
+operator<<(std::ostream &out, const FragInfo &the_info) {
   const bool rc = the_info.rc();
   std::uint16_t flags_read = 0;
   std::uint16_t flags_mate = 0;
@@ -211,7 +213,10 @@ operator<<(std::ostream &out, FragInfo &the_info) {
 
   const std::size_t read_pos = the_info.start_pos + 1;
   const std::size_t mate_pos = the_info.end_pos - FragInfo::read_length + 1;
-  const int tlen = rc ? -std::size(the_info.seq) : std::size(the_info.seq);
+
+  const int tlen = rc ? -static_cast<int>(std::size(the_info.seq))
+                      : static_cast<int>(std::size(the_info.seq));
+
   std::string cigar1 = the_info.cigar;
   std::string cigar2 = the_info.cigar;
 
@@ -260,17 +265,22 @@ operator<<(std::ostream &out, FragInfo &the_info) {
 // extract the position of the fragment checking all bases are valid
 static void
 sim_frag_position(const std::string &genome, const std::size_t frag_len,
-                  std::string &the_frag, std::size_t &the_position,
+                  std::string &the_frag, std::size_t &the_posn,
                   const bool require_valid) {
-  static auto is_invalid = [](const char c) { return !valid_base(c); };
+  static auto is_valid = [](const char c) { return valid_base(c); };
+
+  const auto g_beg = std::cbegin(genome);
 
   const std::size_t lim = std::size(genome) - frag_len + 1;
-  do {
-    the_position = simreads_random::rand() % lim;
-    the_frag = std::string(std::cbegin(genome) + the_position,
-                           std::cbegin(genome) + the_position + frag_len);
-  } while (require_valid && find_if(std::cbegin(the_frag), std::cend(the_frag),
-                                    is_invalid) != std::cend(the_frag));
+  the_posn = simreads_random::rand() % lim;
+  // NOLINTBEGIN(*-narrowing-conversions)
+  the_frag = std::string(g_beg + the_posn, g_beg + the_posn + frag_len);
+  while (require_valid &&
+         std::all_of(std::cbegin(the_frag), std::cend(the_frag), is_valid)) {
+    the_posn = simreads_random::rand() % lim;
+    the_frag = std::string(g_beg + the_posn, g_beg + the_posn + frag_len);
+  }
+  // NOLINTEND(*-narrowing-conversions)
 }
 
 // simulate from a uniform distribution in a range
@@ -284,7 +294,7 @@ sim_frag_length(const std::size_t min_length, const std::size_t max_length) {
 }
 
 struct FragSampler {
-  FragSampler(const std::string &g, const ChromLookup c, const char sc,
+  FragSampler(const std::string &g, const ChromLookup &c, const char sc,
               const std::size_t milen, const std::size_t malen,
               const bool require_valid) :
     genome(g), cl(c), strand_code(sc), min_length(milen), max_length(malen),
@@ -321,7 +331,7 @@ struct FragSampler {
       std::abort();
     }
   }
-  const std::string &genome;
+  const std::string &genome;  // NOLINT(*-avoid-const-*-data-members)
   ChromLookup cl;
   char strand_code{};
   std::size_t min_length{};
@@ -394,9 +404,9 @@ struct FragMutator {
   std::string
   tostring() const {
     std::ostringstream oss;
-    oss << "mutation_rate=" << mutation_rate << std::endl
-        << "substitution_rate=" << substitution_rate << std::endl
-        << "insertion_rate=" << insertion_rate << std::endl
+    oss << "mutation_rate=" << mutation_rate << '\n'
+        << "substitution_rate=" << substitution_rate << '\n'
+        << "insertion_rate=" << insertion_rate << '\n'
         << "deletion_rate=" << deletion_rate;
     return oss.str();
   }
@@ -412,7 +422,7 @@ extract_change_type_vals(const std::string &change_type_vals,
                          double &deletion_rate) {
   if (!change_type_vals.empty()) {
     std::istringstream iss(change_type_vals);
-    char x;
+    char x{};
     iss >> substitution_rate;
     iss >> x;
     iss >> insertion_rate;
@@ -422,10 +432,11 @@ extract_change_type_vals(const std::string &change_type_vals,
 }
 
 int
-simreads(int argc, char *argv[]) {
-
+simreads(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
+  static constexpr auto n_reads_default = 100;
+  static constexpr auto min_frag_len_default = 100;
+  static constexpr auto max_frag_len_defeault = 250;
   try {
-    std::string chrom_file;
     std::string output_prefix;
     std::string locations_file;
 
@@ -435,9 +446,9 @@ simreads(int argc, char *argv[]) {
     bool random_pbat = false;
     bool require_valid = false;
 
-    std::size_t n_reads = 100;
-    std::size_t min_frag_len = 100;
-    std::size_t max_frag_len = 250;
+    std::size_t n_reads{n_reads_default};
+    std::size_t min_frag_len{min_frag_len_default};
+    std::size_t max_frag_len{max_frag_len_defeault};
 
     char strand_arg = 'b';
 
@@ -454,7 +465,7 @@ simreads(int argc, char *argv[]) {
     std::size_t max_mutations = num_lim<std::size_t>::max();
 
     /****************** COMMAND LINE OPTIONS ********************/
-    OptionParser opt_parse(strip_path(argv[0]),
+    OptionParser opt_parse(argv[0],  // NOLINT(*-pointer-arithmetic)
                            "simulate reads for "
                            "testing walt2",
                            "<reference-genome-fasta>", 1);
@@ -490,19 +501,19 @@ simreads(int argc, char *argv[]) {
     std::vector<std::string> leftover_args;
     opt_parse.parse(argc, argv, leftover_args);
     if (argc == 1 || opt_parse.help_requested()) {
-      std::cerr << opt_parse.help_message() << std::endl;
+      std::cerr << opt_parse.help_message() << '\n';
       return EXIT_SUCCESS;
     }
     if (opt_parse.about_requested()) {
-      std::cerr << opt_parse.about_message() << std::endl;
+      std::cerr << opt_parse.about_message() << '\n';
       return EXIT_SUCCESS;
     }
     if (opt_parse.option_missing()) {
-      std::cerr << opt_parse.option_missing_message() << std::endl;
+      std::cerr << opt_parse.option_missing_message() << '\n';
       return EXIT_SUCCESS;
     }
     if (std::size(leftover_args) != 1) {
-      std::cerr << opt_parse.help_message() << std::endl;
+      std::cerr << opt_parse.help_message() << '\n';
       return EXIT_SUCCESS;
     }
     const std::string genome_file(leftover_args.front());
@@ -515,11 +526,11 @@ simreads(int argc, char *argv[]) {
       rng_seed = time(0) + getpid();
 
     if (VERBOSE)
-      std::cerr << "rng seed: " << rng_seed << std::endl;
+      std::cerr << "rng seed: " << rng_seed << '\n';
     simreads_random::initialize(rng_seed);
 
     if (VERBOSE)
-      std::cerr << "[loading genome]" << std::endl;
+      std::cerr << "[loading genome]\n";
     std::ifstream in(genome_file);
     if (!in)
       throw std::runtime_error("bad genome file: " + genome_file);
@@ -533,7 +544,7 @@ simreads(int argc, char *argv[]) {
     if (!locations_file.empty()) {
       if (VERBOSE)
         std::cerr << "[opening frag locations file: " << locations_file << "]"
-                  << std::endl;
+                  << '\n';
       loc_out.open(locations_file);
       if (!loc_out)
         throw std::runtime_error("bad locations output file: " +
@@ -544,11 +555,9 @@ simreads(int argc, char *argv[]) {
       output_prefix + (FragInfo::fasta_format ? "_1.fa" : "_1.fq");
     if (VERBOSE) {
       if (FragInfo::fasta_format)
-        std::cerr << "[opening read1 fastq: " << read1_outfile << "]"
-                  << std::endl;
+        std::cerr << "[opening read1 fastq: " << read1_outfile << "]\n";
       else
-        std::cerr << "[opening read1 fasta: " << read1_outfile << "]"
-                  << std::endl;
+        std::cerr << "[opening read1 fasta: " << read1_outfile << "]\n";
     }
     std::ofstream read1_out(read1_outfile);
     if (!read1_out)
@@ -560,11 +569,9 @@ simreads(int argc, char *argv[]) {
         output_prefix + (FragInfo::fasta_format ? "_2.fa" : "_2.fq");
       if (VERBOSE) {
         if (FragInfo::fasta_format)
-          std::cerr << "[opening read2 fastq: " << read2_outfile << "]"
-                    << std::endl;
+          std::cerr << "[opening read2 fastq: " << read2_outfile << "]\n";
         else
-          std::cerr << "[opening read2 fasta: " << read2_outfile << "]"
-                    << std::endl;
+          std::cerr << "[opening read2 fasta: " << read2_outfile << "]\n";
       }
       read2_out.open(read2_outfile);
       if (!read2_out)
@@ -574,15 +581,13 @@ simreads(int argc, char *argv[]) {
     FragSampler frag_samp(genome, cl, strand_arg, min_frag_len, max_frag_len,
                           require_valid);
     if (VERBOSE)
-      std::cerr << "[constructed fragment sampler]" << std::endl;
+      std::cerr << "[constructed fragment sampler]\n";
 
     FragMutator frag_mut(mutation_rate, substitution_rate, insertion_rate,
                          deletion_rate);
     if (VERBOSE)
-      std::cerr << "[constructed mutator]" << std::endl;
-
-    if (VERBOSE)
-      std::cerr << "[simulating frags]" << std::endl;
+      std::cerr << "[constructed mutator]\n"
+                << "[simulating frags]\n";
 
     for (std::size_t i = 0; i < n_reads; ++i) {
       FragInfo info;
@@ -599,7 +604,7 @@ simreads(int argc, char *argv[]) {
     }
   }
   catch (const std::exception &e) {
-    std::cerr << e.what() << std::endl;
+    std::cerr << e.what() << '\n';
     return EXIT_FAILURE;
   }
   return EXIT_SUCCESS;
