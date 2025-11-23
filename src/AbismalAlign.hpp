@@ -39,18 +39,22 @@ typedef std::vector<std::uint32_t> bam_cigar_t;
 static inline score_t
 count_deletions(const bam_cigar_t &cigar) {
   score_t ans = 0;
+  // cppcheck-suppress-begin useStlAlgorithm
   for (const auto &x : cigar)
     if (abismal_bam_cigar_op(x) == ABISMAL_BAM_CDEL)
       ans += abismal_bam_cigar_oplen(x);
+  // cppcheck-suppress-end useStlAlgorithm
   return ans;
 }
 
 static inline score_t
 count_insertions(const bam_cigar_t &cigar) {
   score_t ans = 0;
+  // cppcheck-suppress-begin useStlAlgorithm
   for (const auto &x : cigar)
     if (abismal_bam_cigar_op(x) == ABISMAL_BAM_CINS)
       ans += abismal_bam_cigar_oplen(x);
+  // cppcheck-suppress-end useStlAlgorithm
   return ans;
 }
 
