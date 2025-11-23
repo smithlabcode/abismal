@@ -101,11 +101,11 @@ struct ChromLookup {
   std::vector<std::uint32_t> starts;
 
   void
-  get_chrom_idx_and_offset(const std::uint32_t pos, std::uint32_t &chrom_idx,
+  get_chrom_idx_and_offset(const std::uint32_t pos, std::int32_t &chrom_idx,
                            std::uint32_t &offset) const;
   bool
   get_chrom_idx_and_offset(const std::uint32_t pos, const std::uint32_t readlen,
-                           std::uint32_t &chrom_idx,
+                           std::int32_t &chrom_idx,
                            std::uint32_t &offset) const;
 
   std::uint32_t
@@ -231,7 +231,8 @@ struct AbismalIndex {
   void
   read(const std::string &index_file);
 
-  static const std::string internal_identifier;
+  static constexpr auto internal_identifier = "AbismalIndex";
+  static constexpr auto internal_identifier_size = 12;
   AbismalIndex() {}
 };
 
