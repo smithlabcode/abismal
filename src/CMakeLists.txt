@@ -15,8 +15,12 @@
 
 find_package(HTSLIB REQUIRED)
 
-add_subdirectory(bamxx)
-add_subdirectory(smithlab_cpp)
+if(NOT TARGET smithlab_cpp)
+  add_subdirectory(bamxx)
+endif()
+if(NOT TARGET smithlab_cpp)
+  add_subdirectory(smithlab_cpp)
+endif()
 
 add_library(abismal_objs OBJECT
   abismal.cpp
