@@ -40,6 +40,18 @@ configure_file(data/config.h.in config.h)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
+add_compile_options(
+  -Wall
+  -Wextra
+  -Wpedantic
+  -Werror
+  -Wfatal-errors
+)
+
+if(NOT PROJECT_IS_TOP_LEVEL)
+  set(STATIC_ANALYSIS OFF)
+endif()
+
 if(STATIC_ANALYSIS)
   include(cmake/static_analysis.cmake)
 endif()
