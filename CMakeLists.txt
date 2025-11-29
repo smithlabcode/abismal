@@ -49,7 +49,8 @@ add_compile_options(
 )
 
 if(NOT PROJECT_IS_TOP_LEVEL)
-  set(STATIC_ANALYSIS OFF)
+  set(STATIC_ANALYSIS off)
+  set(LIBRARY_ONLY on)
 endif()
 
 if(STATIC_ANALYSIS)
