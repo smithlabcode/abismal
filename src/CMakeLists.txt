@@ -14,6 +14,7 @@
 # this program. If not, see <https://www.gnu.org/licenses/>.
 
 find_package(HTSLIB REQUIRED)
+find_package(Threads REQUIRED)
 
 if(NOT TARGET bamxx)
   add_subdirectory(bamxx)
@@ -32,6 +33,7 @@ target_link_libraries(abismal_objs PUBLIC
   bamxx
   smithlab_cpp
   HTSLIB::HTSLIB
+  Threads::Threads
 )
 # ADS: CMAKE_BINARY_DIR for config.h
 target_include_directories(abismal_objs PUBLIC
