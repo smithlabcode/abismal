@@ -15,7 +15,7 @@
 
 find_package(HTSLIB REQUIRED)
 
-if(NOT TARGET smithlab_cpp)
+if(NOT TARGET bamxx)
   add_subdirectory(bamxx)
 endif()
 if(NOT TARGET smithlab_cpp)
@@ -28,16 +28,18 @@ add_library(abismal_objs OBJECT
   AbismalIndex.cpp
   simreads.cpp
 )
-target_link_libraries(abismal_objs PUBLIC bamxx smithlab_cpp)
-target_include_directories(abismal_objs PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-# ADS: below, for config.h
-target_include_directories(abismal_objs PUBLIC ${CMAKE_BINARY_DIR})
-
-add_executable(abismal abismal_main.cpp)
-# ADS: below, for config.h
-target_include_directories(abismal PUBLIC ${CMAKE_BINARY_DIR})
-target_link_libraries(abismal PUBLIC
-  abismal_objs
+target_link_libraries(abismal_objs PUBLIC
+  bamxx
   smithlab_cpp
   HTSLIB::HTSLIB
 )
+# ADS: CMAKE_BINARY_DIR for config.h
+target_include_directories(abismal_objs PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_BINARY_DIR}
+)
+
+if(NOT LIBRARY_ONLY)
+  add_executable(abismal abismal_main.cpp)
+  target_link_libraries(abismal PRIVATE abismal_objs)
+endif()
