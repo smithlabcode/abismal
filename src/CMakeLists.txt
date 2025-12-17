@@ -13,14 +13,20 @@
 # You should have received a copy of the GNU General Public License along with
 # this program. If not, see <https://www.gnu.org/licenses/>.
 
+if(USE_LIBDEFLATE)
+  find_package(LIBDEFLATE REQUIRED)
+endif()
+
 find_package(HTSLIB REQUIRED)
 find_package(Threads REQUIRED)
+find_package(ZLIB REQUIRED)
+
+if(NOT TARGET smithlab_cpp)
+  add_subdirectory(smithlab_cpp)
+endif()
 
 if(NOT TARGET bamxx)
   add_subdirectory(bamxx)
-endif()
-if(NOT TARGET smithlab_cpp)
-  add_subdirectory(smithlab_cpp)
 endif()
 
 add_library(abismal_objs OBJECT
@@ -33,8 +39,14 @@ target_link_libraries(abismal_objs PUBLIC
   bamxx
   smithlab_cpp
   HTSLIB::HTSLIB
+  ZLIB::ZLIB
   Threads::Threads
 )
+if(USE_LIBDEFLATE)
+  target_link_libraries(abismal_objs PUBLIC
+    LIBDEFLATE::LIBDEFLATE
+  )
+endif()
 # ADS: CMAKE_BINARY_DIR for config.h
 target_include_directories(abismal_objs PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}
