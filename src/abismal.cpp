@@ -22,7 +22,6 @@
 #include "dna_four_bit.hpp"
 #include "dna_four_bit_bisulfite.hpp"
 #include "popcnt.hpp"
-#include "sam_flags.hpp"
 
 #include "OptionParser.hpp"
 
