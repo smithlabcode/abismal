@@ -34,7 +34,7 @@
 #include <thread>
 #include <utility>
 
-// NOLINTBEGIN
+// NOLINTBEGIN(*-unix.Stream,*cert-err33-c,*-avoid-const-or-ref-data-members,*-avoid-magic-numbers,*-narrowing-conversions,*-owning-memory,*-constant-array-index,*-pro-type-reinterpret-cast)
 
 using abismal_clock = std::chrono::steady_clock;
 using std::chrono::time_point;
@@ -1366,4 +1366,4 @@ load_genome(const std::string &genome_file, std::vector<std::uint8_t> &genome,
   load_genome_impl(genome_file, genome, cl);
 }
 
-// NOLINTEND
+// NOLINTEND(*-unix.Stream,*cert-err33-c,*-avoid-const-or-ref-data-members,*-avoid-magic-numbers,*-narrowing-conversions,*-owning-memory,*-constant-array-index,*-pro-type-reinterpret-cast)
