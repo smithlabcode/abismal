@@ -638,20 +638,20 @@ valid_pair(const pe_element &best, const std::uint32_t readlen1,
            static_cast<score_t>(se_element::valid_frac * (aln_len1 + aln_len2));
 }
 
-/* The results passed into format_pe should be on opposite strands
- * already, as those are the only valid pairings. They also should
- * have opposite "richness" for the same reason.
+/* The results passed into format_pe should be on opposite strands already, as
+ * those are the only valid pairings. They also should have opposite
+ * "richness" for the same reason.
  *
- * On output, each read sequence is exactly as it appears in the input
- * FASTQ files. The strand is opposite for each end, and the richness
- * as well. Positions are incremented, since the SAM format is
- * 1-based. CIGAR strings are written just as they were constructed:
- * always starting with the first position on the reference,
- * regardless of the strand indicated among the flags.
+ * On output, each read sequence is exactly as it appears in the input FASTQ
+ * files. The strand is opposite for each end, and the richness as
+ * well. Positions are incremented, since the SAM format is 1-based. CIGAR
+ * strings are written just as they were constructed: always starting with the
+ * first position on the reference, regardless of the strand indicated among
+ * the flags.
  *
- * Among optional tags, we include "CV" as conversion, and it is
- * Alphanumeric with value 'A' or 'T' to show whether the C->T
- * conversion was used or the G->A (for PBAT or 2nd end of PE reads).
+ * Among optional tags, we include "CV" as conversion, and it is Alphanumeric
+ * with value 'A' or 'T' to show whether the C->T conversion was used or the
+ * G->A (for PBAT or 2nd end of PE reads).
  */
 static map_type
 format_pe(
@@ -758,8 +758,8 @@ format_pe(
     std::size(r2.cig),   // size_t n_cigar,
     r2.cig.data(),       // const uint32_t *cigar,
     chr1 - 1,            // (-1 for padding) int32_t mtid,
-    r_s1,                //  hts_pos_t mpos,
-    isize,              // hts_pos_t isize,
+    r_s1,                // hts_pos_t mpos,
+    -isize,              // hts_pos_t isize,
     std::size(r2.read),  // size_t l_seq,
     r2.read.data(),      // const char *seq,
     nullptr,             // const char *qual,
