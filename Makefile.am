@@ -51,6 +51,7 @@ libabismal_a_SOURCES = \
 	src/simreads.cpp
 
 libabismal_a_SOURCES += \
+	src/common.hpp \
 	src/abismal.hpp \
 	src/abismalidx.hpp \
 	src/simreads.hpp \
