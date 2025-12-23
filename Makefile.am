@@ -60,7 +60,8 @@ libabismal_a_SOURCES += \
 	src/dna_four_bit_bisulfite.hpp \
 	src/popcnt.hpp \
 	src/abismal_cigar_utils.hpp \
-	src/bamxx/bamxx.hpp
+	src/bamxx/bamxx.hpp \
+	src/nlohmann/json.hpp
 
 LDADD = libabismal.a src/smithlab_cpp/libsmithlab_cpp.a
 
