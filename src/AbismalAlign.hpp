@@ -4,15 +4,15 @@
  *
  * This file is part of ABISMAL.
  *
- * ABISMAL is free software: you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * ABISMAL is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU General Public License as published by the Free
+ * Software Foundation, either version 3 of the License, or (at your option)
+ * any later version.
  *
- * ABISMAL is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
+ * ABISMAL is distributed in the hope that it will be useful, but WITHOUT ANY
+ * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+ * details.
  */
 
 #ifndef ABISMAL_ALIGN_HPP
@@ -22,70 +22,60 @@
 #include <array>
 #include <cstdint>
 #include <iterator>
+#include <numeric>
 #include <string>
 #include <vector>
 
 #include "abismal_cigar_utils.hpp"
-#include "dna_four_bit.hpp"
+#include "dna_four_bit_bisulfite.hpp"
 
-// AbismalAlign class has a templated function for the comparison
-// operation between letters in a sequence. This function currently
-// returns a boolean value, so only computes longest common
-// subsequence.
-typedef int16_t score_t;
+// AbismalAlign class has a templated function for the comparison operation
+// between letters in a sequence. This function currently returns a boolean
+// value, so only computes longest common subsequence.
+typedef std::int16_t score_t;
 typedef genome_four_bit_itr genome_iterator;
 typedef std::vector<std::uint32_t> bam_cigar_t;
 
-static inline score_t
-count_deletions(const bam_cigar_t &cigar) {
-  score_t ans = 0;
-  // cppcheck-suppress-begin useStlAlgorithm
-  for (const auto &x : cigar)
-    if (abismal_bam_cigar_op(x) == ABISMAL_BAM_CDEL)
-      ans += abismal_bam_cigar_oplen(x);
-  // cppcheck-suppress-end useStlAlgorithm
-  return ans;
+template <std::int8_t op>
+[[nodiscard]] static inline score_t
+count_total_ops(const bam_cigar_t &cigar) {
+  static constexpr auto acc = [&](const score_t t, const auto x) {
+    return t + (abismal_bam_cigar_op(x) == op ? abismal_bam_cigar_oplen(x) : 0);
+  };
+  return std::accumulate(std::cbegin(cigar), std::cend(cigar), 0, acc);
 }
 
-static inline score_t
-count_insertions(const bam_cigar_t &cigar) {
-  score_t ans = 0;
-  // cppcheck-suppress-begin useStlAlgorithm
-  for (const auto &x : cigar)
-    if (abismal_bam_cigar_op(x) == ABISMAL_BAM_CINS)
-      ans += abismal_bam_cigar_oplen(x);
-  // cppcheck-suppress-end useStlAlgorithm
-  return ans;
-}
-
-// A specific namespace for simple match/mismatch scoring system and a
-// 1 -1 -1 scoring scheme for edit distance.
+// A specific namespace for simple match/mismatch scoring system and a 2 -3 -4
+// scoring scheme for edit distance.
 namespace simple_aln {
 static const score_t match = 2;
 static const score_t mismatch = -3;
 static const score_t indel = -4;
-static const std::array<score_t, 2> score_lookup = {match, mismatch};
+static constexpr auto score_lookup = std::array{
+  match,
+  mismatch,
+};
 
-inline score_t
+[[nodiscard]] inline score_t
 default_score(const std::uint32_t len, const score_t diffs) {
   return match * (len - diffs) + mismatch * diffs;
 }
 
-inline score_t
+[[nodiscard]] inline score_t
 mismatch_score(const std::uint8_t q_base, const std::uint8_t t_base) {
   return score_lookup[(q_base & t_base) == 0];
 }
 
 // edit distance as a function of aln_score and len
-inline score_t
+[[nodiscard]] inline score_t
 edit_distance(const score_t scr, const std::uint32_t len,
               const bam_cigar_t &cigar) {
   if (scr == 0)
     return len;
-  const score_t ins = count_insertions(cigar);
-  const score_t del = count_deletions(cigar);
+  const score_t ins = count_total_ops<ABISMAL_BAM_CINS>(cigar);
+  const score_t del = count_total_ops<ABISMAL_BAM_CDEL>(cigar);
 
-  // A = S - (indel_pen) = match*M + mismatch*m
+  // A = S - (indel_penalty) = match*M + mismatch*m
   // B = len - ins = M + m
   // m = (match*(len - ins) - A)/(match - mismatch)
   const score_t A = scr - indel * (ins + del);
@@ -94,22 +84,22 @@ edit_distance(const score_t scr, const std::uint32_t len,
   return mism + ins + del;
 }
 
-inline score_t
+[[nodiscard]] inline score_t
 best_single_score(const std::uint32_t readlen) {
   return match * readlen;
 }
 
-inline score_t
+[[nodiscard]] inline score_t
 best_pair_score(const std::uint32_t readlen1, const std::uint32_t readlen2) {
   return best_single_score(readlen1) + best_single_score(readlen2);
 }
 }  // namespace simple_aln
 
-template <score_t (*scr_fun)(const std::uint8_t, const std::uint8_t),
-          score_t indel_pen = -1>
+template <score_t (*score_function)(const std::uint8_t, const std::uint8_t),
+          score_t indel_penalty = -1>
 struct AbismalAlign {
   explicit AbismalAlign(const genome_iterator &target_start) :
-    target(target_start), bw(2 * max_off_diag + 1) {}
+    target{target_start}, bw{2 * max_off_diag + 1} {}
 
   template <const bool do_traceback>
   score_t
@@ -125,27 +115,26 @@ struct AbismalAlign {
   reset(const std::uint32_t max_read_length);
 
   std::vector<score_t> table;
-  std::vector<int8_t> traceback;
+  std::vector<std::int8_t> traceback;
   const genome_iterator target;
   const std::size_t bw{};
 
-  // these are kept because they are needed in both
-  // align and build_cigar
+  // these are kept because they are needed in both align and build_cigar
   std::uint16_t q_sz_max{};
   std::uint16_t q_sz{};
 
-  static const std::size_t max_off_diag = 30;
+  static constexpr std::size_t max_off_diag{30};
 };
 
-template <score_t (*scr_fun)(const std::uint8_t, const std::uint8_t),
-          score_t indel_pen>
+template <score_t (*score_function)(const std::uint8_t, const std::uint8_t),
+          score_t indel_penalty>
 void
-AbismalAlign<scr_fun, indel_pen>::reset(
+AbismalAlign<score_function, indel_penalty>::reset(
   const std::uint32_t max_read_length) {  // uses cigar
   q_sz_max = max_read_length;
 
-  // size of alignment matrix and traceback matrix is maximum query
-  // length times the width of the band around the diagonal
+  // size of alignment matrix and traceback matrix is maximum query length
+  // times the width of the band around the diagonal
   const std::size_t n_cells = (q_sz_max + bw) * bw;
   table.resize(n_cells);
   traceback.resize(n_cells, -1);  // ADS: -1 no meaning for traceback
@@ -157,22 +146,22 @@ static const std::uint8_t above_symbol = ABISMAL_BAM_CDEL;            // D
 static const std::uint8_t diag_symbol = ABISMAL_BAM_CMATCH;           // M
 static const std::uint8_t soft_clip_symbol = ABISMAL_BAM_CSOFT_CLIP;  // S
 
-static inline bool  // consumes reference
+[[nodiscard]] static inline bool  // consumes reference
 is_deletion(const std::uint8_t c) {
   return c == above_symbol;
 }
 
-static inline bool  // does not consume reference
+[[nodiscard]] static inline bool  // does not consume reference
 is_insertion(const std::uint8_t c) {
   return c == left_symbol;
 }
 
 static inline void
 get_traceback(const std::size_t n_col, const std::vector<score_t> &table,
-              const std::vector<int8_t> &traceback,
+              const std::vector<std::int8_t> &traceback,
               std::vector<std::uint32_t> &cigar, std::size_t &the_row,
               std::size_t &the_col) {
-  int8_t prev_arrow = traceback[the_row * n_col + the_col];
+  std::int8_t prev_arrow = traceback[the_row * n_col + the_col];
   bool is_del = is_deletion(prev_arrow);
   bool is_ins = is_insertion(prev_arrow);
   the_row -= !is_ins;
@@ -180,7 +169,7 @@ get_traceback(const std::size_t n_col, const std::vector<score_t> &table,
   the_col += is_del;  // ADS: straight up IS diagonal!
   std::uint32_t n = 1;
   while (table[the_row * n_col + the_col] > 0) {
-    const int8_t arrow = traceback[the_row * n_col + the_col];
+    const std::int8_t arrow = traceback[the_row * n_col + the_col];
     is_del = is_deletion(arrow);
     is_ins = is_insertion(arrow);
     the_row -= !is_ins;
@@ -208,7 +197,7 @@ min16(const T a, const T b) {
   return ((a < b) ? a : b);
 }
 
-static score_t
+[[nodiscard]] static inline score_t
 get_best_score(const std::vector<score_t> &table, const std::size_t n_cells,
                const std::size_t n_col, std::size_t &best_i,
                std::size_t &best_j) {
@@ -220,53 +209,57 @@ get_best_score(const std::vector<score_t> &table, const std::size_t n_cells,
   return *best_cell_itr;
 }
 
-// ADS: it seems like with some versions of GCC, the optimization from
-// `-O3`, which seems to include loop vectorizations, breaks the
-// function below and the other overload named `from_diag`
-// below. Using the __attribute__ helps with GCC, and it should be
-// ignored if not supported.
+[[nodiscard]] static inline score_t
+get_best_score(const std::vector<score_t> &table, const std::size_t n_cells) {
+  return *std::max_element(std::cbegin(table), std::cbegin(table) + n_cells);
+}
 
-template <score_t (*scr_fun)(const std::uint8_t, const std::uint8_t), class T,
-          class QueryConstItr>
+// ADS: it seems like with some versions of GCC, the optimization from `-O3`,
+// which seems to include loop vectorizations, breaks the function below and
+// the other overload named `from_diag` below. Using the __attribute__ helps
+// with GCC, and it should be ignored if not supported.
+
+template <score_t (*score_function)(const std::uint8_t, const std::uint8_t),
+          class T, class QueryConstItr>
 __attribute__((optimize("no-tree-loop-vectorize"))) void
 from_diag(T next_row, const T next_row_end, T cur_row, QueryConstItr query_seq,
           std::uint8_t ref_base) {
   while (next_row != next_row_end) {
-    const score_t score = scr_fun(*query_seq++, ref_base) + *cur_row++;
+    const score_t score = score_function(*query_seq++, ref_base) + *cur_row++;
     max16(*next_row++, score);
   }
 }
 
-template <score_t indel_pen, class T>
+template <score_t indel_penalty, class T>
 void
 from_above(T above_itr, const T above_end, T target) {
   while (above_itr != above_end) {
-    const score_t score = *above_itr++ + indel_pen;
+    const score_t score = *above_itr++ + indel_penalty;
     max16(*target++, score);
   }
 }
 
-// ADS: from_left is the same function as from_above, but uses
-// different order on arguments, so rewritten to be more intuitive.
-template <score_t indel_pen, class T>
+// ADS: from_left is the same function as from_above, but uses different order
+// on arguments, so rewritten to be more intuitive.
+template <score_t indel_penalty, class T>
 void
 from_left(T left_itr, T target, const T target_end) {
   while (target != target_end) {
-    const score_t score = *left_itr++ + indel_pen;
+    const score_t score = *left_itr++ + indel_penalty;
     max16(*target++, score);
   }
 }
 
 /********* SAME FUNCTIONS AS ABOVE BUT WITH TRACEBACK ********/
-template <score_t (*scr_fun)(const std::uint8_t, const std::uint8_t), class T,
-          class QueryConstItr, class U>
+template <score_t (*score_function)(const std::uint8_t, const std::uint8_t),
+          class T, class QueryConstItr, class U>
 __attribute__((optimize("no-tree-loop-vectorize"))) void
 from_diag(T next_row, const T next_row_end, T cur_row, QueryConstItr query_seq,
           std::uint8_t ref_base, U traceback) {
   while (next_row != next_row_end) {
-    const score_t score = scr_fun(*query_seq, ref_base) + *cur_row;
+    const score_t score = score_function(*query_seq, ref_base) + *cur_row;
     max16(*next_row, score);
-    *traceback = (*next_row == score) ? (diag_symbol) : (*traceback);
+    *traceback = (*next_row == score) ? diag_symbol : *traceback;
     ++traceback;
     ++next_row;
     ++query_seq;
@@ -274,26 +267,26 @@ from_diag(T next_row, const T next_row_end, T cur_row, QueryConstItr query_seq,
   }
 }
 
-template <score_t indel_pen, class T, class U>
+template <score_t indel_penalty, class T, class U>
 void
 from_above(T above_itr, const T above_end, T target, U traceback) {
   while (above_itr != above_end) {
-    const score_t score = *above_itr + indel_pen;
+    const score_t score = *above_itr + indel_penalty;
     max16(*target, score);
-    *traceback = (*target == score) ? (above_symbol) : (*traceback);
+    *traceback = (*target == score) ? above_symbol : *traceback;
     ++traceback;
     ++above_itr;
     ++target;
   }
 }
 
-template <score_t indel_pen, class T, class U>
+template <score_t indel_penalty, class T, class U>
 void
 from_left(T left_itr, T target, const T target_end, U traceback) {
   while (target != target_end) {
-    const score_t score = *left_itr + indel_pen;
+    const score_t score = *left_itr + indel_penalty;
     max16(*target, score);
-    *traceback = (*target == score) ? (left_symbol) : (*traceback);
+    *traceback = (*target == score) ? left_symbol : *traceback;
     ++traceback;
     ++left_itr;
     ++target;
@@ -311,14 +304,13 @@ make_default_cigar(const std::uint32_t len, bam_cigar_t &cigar) {
   cigar = {(len << ABISMAL_BAM_CIGAR_SHIFT)};
 }
 
-template <score_t (*scr_fun)(const std::uint8_t, const std::uint8_t),
-          score_t indel_pen>
+template <score_t (*score_function)(const std::uint8_t, const std::uint8_t),
+          score_t indel_penalty>
 template <const bool do_traceback>
 score_t
-AbismalAlign<scr_fun, indel_pen>::align(const score_t diffs,
-                                        const score_t max_diffs,
-                                        const std::vector<std::uint8_t> &qseq,
-                                        const std::uint32_t t_pos) {
+AbismalAlign<score_function, indel_penalty>::align(
+  const score_t diffs, const score_t max_diffs,
+  const std::vector<std::uint8_t> &qseq, const std::uint32_t t_pos) {
   q_sz = qseq.size();
   // edge case: diffs = 0 so alignment is "trivial"
   if (diffs == 0)
@@ -329,12 +321,12 @@ AbismalAlign<scr_fun, indel_pen>::align(const score_t diffs,
     min16(bw, static_cast<std::size_t>(2 * min16(diffs, max_diffs) + 1));
   const std::size_t n_cells = (q_sz + bandwidth) * bandwidth;
 
-  std::fill(std::begin(table), std::begin(table) + n_cells, 0);
+  std::fill_n(std::begin(table), n_cells, 0);
   if (do_traceback)
-    std::fill(std::begin(traceback), std::begin(traceback) + n_cells, -1);
+    std::fill_n(std::begin(traceback), n_cells, -1);
 
-  // GS: non-negative because of padding. The mapper
-  // must ensure t_pos is large enough when calling the function
+  // GS: non-negative because of padding. The mapper must ensure t_pos is
+  // large enough when calling the function
   const std::size_t t_beg = t_pos - ((bandwidth - 1) / 2);
   const std::size_t t_shift = q_sz + bandwidth;
 
@@ -347,6 +339,10 @@ AbismalAlign<scr_fun, indel_pen>::align(const score_t diffs,
   auto prev(std::begin(table));
   auto cur(prev);
 
+  const auto sub_noneg = [](const auto i, const auto bw) {
+    return i > bw ? i - bw : 0;
+  };
+
   for (std::size_t i = 1; i < t_shift; ++i) {
     const std::size_t left = (i < bandwidth ? bandwidth - i : 0);
     const std::size_t right = min16(bandwidth, t_shift - i);
@@ -354,33 +350,33 @@ AbismalAlign<scr_fun, indel_pen>::align(const score_t diffs,
     cur += bandwidth;  // next row in aln matrix
     if (do_traceback) {
       tb_cur += bandwidth;  // next row in traceback
-      from_diag<scr_fun>(cur + left, cur + right, prev + left,
-                         q_itr + (i > bandwidth ? i - bandwidth : 0), *t_itr,
-                         tb_cur + left);
-      from_above<indel_pen>(prev + left + 1, prev + right, cur + left,
-                            tb_cur + left);
-      from_left<indel_pen>(cur + left, cur + left + 1, cur + right,
-                           tb_cur + left + 1);
+      from_diag<score_function>(cur + left, cur + right, prev + left,
+                                q_itr + sub_noneg(i, bandwidth), *t_itr,
+                                tb_cur + left);
+      from_above<indel_penalty>(prev + left + 1, prev + right, cur + left,
+                                tb_cur + left);
+      from_left<indel_penalty>(cur + left, cur + left + 1, cur + right,
+                               tb_cur + left + 1);
     }
     else {
-      from_diag<scr_fun>(cur + left, cur + right, prev + left,
-                         q_itr + (i > bandwidth ? i - bandwidth : 0), *t_itr);
-      from_above<indel_pen>(prev + left + 1, prev + right, cur + left);
-      from_left<indel_pen>(cur + left, cur + left + 1, cur + right);
+      from_diag<score_function>(cur + left, cur + right, prev + left,
+                                q_itr + sub_noneg(i, bandwidth), *t_itr);
+      from_above<indel_penalty>(prev + left + 1, prev + right, cur + left);
+      from_left<indel_penalty>(cur + left, cur + left + 1, cur + right);
     }
     ++t_itr;
     prev += bandwidth;  // update previous row
   }
 
   // locate the end of the alignment as max score
-  std::size_t the_row = 0, the_col = 0;
-  return get_best_score(table, n_cells, bandwidth, the_row, the_col);
+  return get_best_score(table, n_cells);
 }
 
-template <score_t (*scr_fun)(const std::uint8_t, const std::uint8_t),
-          score_t indel_pen>
+template <score_t (*score_function)(const std::uint8_t, const std::uint8_t),
+          score_t indel_penalty>
 void
-AbismalAlign<scr_fun, indel_pen>::build_cigar_len_and_pos(  // uses cigar
+AbismalAlign<score_function,
+             indel_penalty>::build_cigar_len_and_pos(  // uses cigar
   const score_t diffs, const score_t max_diffs, bam_cigar_t &cigar,
   std::uint32_t &len, std::uint32_t &t_pos) {
   // locate the end of the alignment as max score
@@ -390,8 +386,8 @@ AbismalAlign<scr_fun, indel_pen>::build_cigar_len_and_pos(  // uses cigar
   std::size_t the_row = 0, the_col = 0;
   const score_t r = get_best_score(table, n_cells, bandwidth, the_row, the_col);
 
-  // GS: unlikely, but possible, case where the score = 0, which
-  // degenerates CIGAR string below
+  // GS: unlikely, but possible, case where the score = 0, which degenerates
+  // CIGAR string below
   if (r == 0 || diffs == 0) {
     make_default_cigar(q_sz, cigar);
     len = q_sz;
