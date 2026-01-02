@@ -18,7 +18,7 @@
 #ifndef ABISMAL_INDEX_HPP
 #define ABISMAL_INDEX_HPP
 
-#include "dna_four_bit.hpp"
+#include "dna_four_bit_bisulfite.hpp"
 
 #include <algorithm>
 #include <cmath>
