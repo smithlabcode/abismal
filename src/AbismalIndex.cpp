@@ -16,7 +16,7 @@
  */
 
 #include "AbismalIndex.hpp"
-#include "dna_four_bit.hpp"
+#include "dna_four_bit_bisulfite.hpp"
 
 #include "bamxx.hpp"
 
@@ -38,8 +38,6 @@
 
 using abismal_clock = std::chrono::steady_clock;
 using std::chrono::time_point;
-
-template <typename T> using num_lim = std::numeric_limits<T>;
 
 bool AbismalIndex::VERBOSE = false;
 std::size_t AbismalIndex::n_threads_global = 1;
@@ -640,7 +638,8 @@ AbismalIndex::hash_genome() {
 }
 
 struct dp_sol {
-  static const std::uint64_t sentinel = num_lim<std::uint64_t>::max();
+  static const std::uint64_t sentinel =
+    std::numeric_limits<std::uint64_t>::max();
   std::uint64_t cost{sentinel};
   std::uint64_t prev{sentinel};
 };
@@ -824,8 +823,8 @@ AbismalIndex::compress_dp() {
         }
 
         // get solution for start of traceback
-        std::uint64_t opt_ans = num_lim<std::uint64_t>::max();
-        std::uint64_t last = num_lim<std::uint64_t>::max();
+        std::uint64_t opt_ans = std::numeric_limits<std::uint64_t>::max();
+        std::uint64_t last = std::numeric_limits<std::uint64_t>::max();
         for (i = current_block_size - 1;
              i >= current_block_size - seed::window_size; --i) {
           const auto cand_cost = opt[i].cost;
@@ -1290,9 +1289,9 @@ ChromLookup::get_chrom_idx_and_offset(const std::uint32_t pos,
 std::uint32_t
 ChromLookup::get_pos(const std::string &chrom,
                      const std::uint32_t offset) const {
-  const auto itr = find(std::cbegin(names), std::cend(names), chrom);
+  const auto itr = std::find(std::cbegin(names), std::cend(names), chrom);
   return itr == std::cend(names)
-           ? num_lim<std::uint32_t>::max()
+           ? std::numeric_limits<std::uint32_t>::max()
            : starts[std::distance(std::cbegin(names), itr)] + offset;
 }
 
