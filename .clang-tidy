@@ -11,8 +11,8 @@ ImplementationFileExtensions:
   - cc
   - cpp
   - cxx
-HeaderFilterRegex: ''
-ExcludeHeaderFilterRegex: ''
+HeaderFilterRegex: '.'
+ExcludeHeaderFilterRegex: 'json.hpp|bamxx.hpp|popcnt.hpp|OptionParser.hpp|config.h|.*smithlab_cpp.*'
 FormatStyle: none
 CheckOptions:
   cert-dcl16-c.NewSuffixes: 'L;LL;LU;LLU'
