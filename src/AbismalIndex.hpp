@@ -15,13 +15,12 @@
  * details.
  */
 
-#ifndef ABISMAL_INDEX_HPP
-#define ABISMAL_INDEX_HPP
+#ifndef SRC_ABISMAL_INDEX_HPP_
+#define SRC_ABISMAL_INDEX_HPP_
 
 #include "dna_four_bit_bisulfite.hpp"
 
 #include <algorithm>
-#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
@@ -35,60 +34,63 @@
 using element_t = std::size_t;
 using Genome = std::vector<element_t>;
 using two_letter_t = bool;
-using three_letter_t = uint8_t;
+using three_letter_t = std::uint8_t;
 
 struct random_base_generator {
-  // ADS: other RNG behaves differently across systems (e.g. macos vs
-  // ubuntu) and caused problems for comparing results when testing
+  // ADS: other RNG behaves differently across systems (e.g. macos vs ubuntu)
+  // and caused problems for comparing results when testing
+
   static random_base_generator &
-  init() {
+  init() noexcept {
     static random_base_generator r;
     return r;
   }
-  random_base_generator(const random_base_generator &) = delete;
-  random_base_generator(random_base_generator &&) = delete;
-  char
+  constexpr char
   operator()() {
     constexpr auto m = 0x7fffffffu;  // 2^31
     constexpr auto a = 1103515245u;
     constexpr auto c = 12345u;
     x = (a * x + c) & m;
-    // low order bits empicially confirmed to suck
-    return "ACGT"[x & 3];  // do this: (x >> 15);
+    // low order bits empicially confirmed to suck (do this: (x >> 15);)
+    return "ACGT"[x & 3];  // NOLINT(*-constant-array-index)
   }
 
 private:
-  random_base_generator() {}
+  random_base_generator() noexcept {}
   std::uint32_t x{1};
 };
 
+// NOLINTNEXTLINE(*-avoid-non-const-global-variables)
 static random_base_generator &random_base = random_base_generator::init();
 
 namespace seed {
 // number of positions in the hashed portion of the seed
-static const std::uint32_t key_weight = 25u;
-static const std::uint32_t key_weight_three = 16u;
+static constexpr std::uint32_t key_weight = 25u;
+static constexpr std::uint32_t key_weight_three = 16u;
 
-// window in which we select the best k-mer. The longer it is,
-// the longer the minimum read length that guarantees an exact
-// match will be mapped
+// window in which we select the best k-mer. The longer it is, the longer the
+// minimum read length that guarantees an exact match will be mapped
 #ifdef ENABLE_SHORT
-static const std::uint32_t window_size = 12u;
+static constexpr std::uint32_t window_size = 12u;
 #else
-static const std::uint32_t window_size = 20u;
+static constexpr std::uint32_t window_size = 20u;
 #endif
 
 // number of positions to sort within buckets
-static const std::uint32_t n_sorting_positions = 256u;
+static constexpr std::uint32_t n_sorting_positions = 256u;
 
-static const std::size_t hash_mask = (1ull << seed::key_weight) - 1;
-static const std::size_t hash_mask_three = pow(3, key_weight_three);
+static constexpr std::size_t hash_mask = (1ull << seed::key_weight) - 1;
 
-// the purpose of padding the left and right ends of the
-// concatenated genome is so that later we can avoid having to check
-// the (unlikely) case that a read maps partly off either end of the
-// genome.
-static const std::size_t padding_size = std::numeric_limits<int16_t>::max();
+[[nodiscard]] static constexpr std::size_t
+ipow(const std::size_t b, const std::size_t e) {
+  return e == 0 ? 1 : (e & 1 ? b : 1) * ipow(b * b, e >> 1);
+}
+static constexpr std::size_t hash_mask_three = ipow(3, key_weight_three);
+
+// the purpose of padding the left and right ends of the concatenated genome
+// is so that later we can avoid having to check the (unlikely) case that a
+// read maps partly off either end of the genome.
+static constexpr std::size_t padding_size = std::numeric_limits<int16_t>::max();
 
 void
 read(FILE *in);
@@ -103,6 +105,7 @@ struct ChromLookup {
   void
   get_chrom_idx_and_offset(const std::uint32_t pos, std::int32_t &chrom_idx,
                            std::uint32_t &offset) const;
+
   bool
   get_chrom_idx_and_offset(const std::uint32_t pos, const std::uint32_t readlen,
                            std::int32_t &chrom_idx,
@@ -110,6 +113,7 @@ struct ChromLookup {
 
   std::uint32_t
   get_pos(const std::string &chrom, const std::uint32_t offset) const;
+
   std::uint32_t
   get_genome_size() const {
     return starts.back();
@@ -117,15 +121,19 @@ struct ChromLookup {
 
   FILE *
   read(FILE *in);
+
   std::istream &
   read(std::istream &in);
+
   void
   read(const std::string &infile);
 
   FILE *
   write(FILE *out) const;
+
   std::ostream &
   write(std::ostream &out) const;
+
   void
   write(const std::string &outfile) const;
 
@@ -144,21 +152,21 @@ load_genome(const std::string &genome_file, std::string &genome,
 std::ostream &
 operator<<(std::ostream &out, const ChromLookup &cl);
 
-enum three_conv_type { c_to_t, g_to_a };
+enum three_conv_type : std::uint8_t {
+  c_to_t,
+  g_to_a,
+};
 struct AbismalIndex {
-
   static bool VERBOSE;
-
-  static const std::uint32_t max_n_count = 256ul;
   static std::size_t n_threads_global;
 
-  std::uint32_t max_candidates{100u};
+  std::uint32_t max_candidates{default_max_candidates};
 
   std::size_t counter_size{};        // number of kmers indexed
-  std::size_t counter_size_three{};  // number of kmers indexed
+  std::size_t counter_size_three{};  // (3 letters)
 
   std::size_t index_size{};        // number of genome positions indexed
-  std::size_t index_size_three{};  // number of genome positions indexed
+  std::size_t index_size_three{};  // (3 letters)
 
   std::vector<std::uint32_t> index;    // genome positions for each k-mer
   std::vector<std::uint32_t> index_t;  // genome positions for each k-mer
@@ -170,7 +178,7 @@ struct AbismalIndex {
 
   // a vector indicating whether each position goes into two-
   // or three-letter encoding
-  std::vector<bool> is_two_let;
+  std::vector<bool> is_two_letter;
   std::vector<bool> keep;
   std::vector<std::pair<std::size_t, std::size_t>> exclude{};
   std::vector<std::pair<genome_four_bit_itr, genome_four_bit_itr>>
@@ -187,6 +195,7 @@ struct AbismalIndex {
 
   void
   create_index(const std::string &genome_file);
+
   void
   create_index(const std::string &target_filename,
                const std::string &genome_file);
@@ -195,9 +204,11 @@ struct AbismalIndex {
   template <const bool use_mask>
   void
   initialize_bucket_sizes();
+
   template <const bool use_mask>
   void
   get_bucket_sizes_two();
+
   template <const three_conv_type the_conv, const bool use_mask>
   void
   get_bucket_sizes_three();
@@ -233,31 +244,36 @@ struct AbismalIndex {
 
   static constexpr auto internal_identifier = "AbismalIndex";
   static constexpr auto internal_identifier_size = 12;
+  static constexpr auto default_max_candidates{100u};
+  static constexpr auto max_n_count = 256ul;
+
   AbismalIndex() {}
 };
 
 // A/T nucleotide to 1-bit value (0100 | 0001 = 5) is for A or G.
-inline two_letter_t
+constexpr two_letter_t
 get_bit(const std::uint8_t nt) {
-  return (nt & 5) == 0;
+  return (nt & 5) == 0;  // NOLINT(*-avoid-magic-numbers)
 }
 
 template <const three_conv_type the_conv>
-inline three_letter_t
+constexpr three_letter_t
 get_three_letter_num(const std::uint8_t nt) {
   // the_conv = c_to_t: C=T=0, A=1, G=2
   // the_conv = g_to_a: A=G=0, C=1, T=2
+  // NOLINTBEGIN(*-avoid-magic-numbers)
   return the_conv == c_to_t ? (((nt & 4) != 0) << 1) | ((nt & 1) != 0)
                             : (((nt & 8) != 0) << 1) | ((nt & 2) != 0);
+  // NOLINTEND(*-avoid-magic-numbers)
 }
 
-inline void
+constexpr void
 shift_hash_key(const std::uint8_t c, std::uint32_t &hash_key) {
   hash_key = ((hash_key << 1) | get_bit(c)) & seed::hash_mask;
 }
 
 template <const three_conv_type the_conv>
-inline void
+constexpr void
 shift_three_key(const std::uint8_t c, std::uint32_t &hash_key) {
   hash_key =
     (hash_key * 3 + get_three_letter_num<the_conv>(c)) % seed::hash_mask_three;
@@ -287,4 +303,4 @@ get_base_3_hash(T r, std::uint32_t &k) {
   }
 }
 
-#endif  // ABISMAL_INDEX_HPP
+#endif  // SRC_ABISMAL_INDEX_HPP_
