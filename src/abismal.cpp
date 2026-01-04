@@ -233,8 +233,8 @@ struct se_element {  // size = 8
 
   se_element() : diffs{MAX_DIFFS} {}
 
-  se_element(const score_t d, const flags_t f, const std::uint32_t p) :
-    diffs(d), flags(f), pos(p) {}
+  se_element(const score_t diffs, const flags_t flags,
+             const std::uint32_t pos) : diffs{diffs}, flags{flags}, pos{pos} {}
 
   bool
   operator==(const se_element &rhs) const {
@@ -330,7 +330,7 @@ max16(const T x, const T y) {
 }
 
 struct se_candidates {
-  se_candidates() : sz{1}, best{}, v{std::vector<se_element>(max_size)} {}
+  se_candidates() : sz{1}, v{std::vector<se_element>(max_size)} {}
 
   inline bool
   full() const {
@@ -427,10 +427,10 @@ struct se_candidates {
   // in SE reads, we sort to exclude duplicates
   void
   prepare_for_alignments() {
-    std::sort(std::begin(v),
-              std::begin(v) + sz,  // no sort_heap here as heapify used "diffs"
+    // no sort_heap here as heapify used "diffs"
+    std::sort(std::begin(v), std::begin(v) + sz,
               [](const se_element &a, const se_element &b) {
-                return (a.pos < b.pos) || (a.pos == b.pos && a.flags < b.flags);
+                return a.pos < b.pos || (a.pos == b.pos && a.flags < b.flags);
               });
     sz = std::distance(std::begin(v),
                        std::unique(std::begin(v), std::begin(v) + sz));
@@ -441,12 +441,10 @@ struct se_candidates {
   score_t cutoff{};
   std::uint32_t sz{};
   se_element best{};
-  std::vector<se_element> v;
+  std::vector<se_element> v{};
 
-  static const std::uint32_t max_size;
+  static constexpr std::uint32_t max_size{50u};
 };
-
-const std::uint32_t se_candidates::max_size = 50u;
 
 [[nodiscard]] static inline bool
 cigar_eats_ref(const std::uint32_t c) {
