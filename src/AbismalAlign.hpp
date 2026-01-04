@@ -15,8 +15,8 @@
  * details.
  */
 
-#ifndef ABISMAL_ALIGN_HPP
-#define ABISMAL_ALIGN_HPP
+#ifndef SRC_ABISMAL_ALIGN_HPP_
+#define SRC_ABISMAL_ALIGN_HPP_
 
 #include <algorithm>
 #include <array>
@@ -48,21 +48,23 @@ count_total_ops(const bam_cigar_t &cigar) {
 // A specific namespace for simple match/mismatch scoring system and a 2 -3 -4
 // scoring scheme for edit distance.
 namespace simple_aln {
-static const score_t match = 2;
-static const score_t mismatch = -3;
-static const score_t indel = -4;
+static constexpr score_t match = 2;
+static constexpr score_t mismatch = -3;
+static constexpr score_t indel = -4;
 static constexpr auto score_lookup = std::array{
   match,
   mismatch,
 };
 
-[[nodiscard]] inline score_t
+[[nodiscard]] constexpr score_t
 default_score(const std::uint32_t len, const score_t diffs) {
-  return match * (len - diffs) + mismatch * diffs;
+  return static_cast<score_t>(match * static_cast<score_t>(len - diffs) +
+                              mismatch * static_cast<score_t>(diffs));
 }
 
 [[nodiscard]] inline score_t
 mismatch_score(const std::uint8_t q_base, const std::uint8_t t_base) {
+  // NOLINTNEXTLINE(*-constant-array-index)
   return score_lookup[(q_base & t_base) == 0];
 }
 
@@ -71,27 +73,29 @@ mismatch_score(const std::uint8_t q_base, const std::uint8_t t_base) {
 edit_distance(const score_t scr, const std::uint32_t len,
               const bam_cigar_t &cigar) {
   if (scr == 0)
-    return len;
+    return static_cast<score_t>(len);
   const score_t ins = count_total_ops<ABISMAL_BAM_CINS>(cigar);
   const score_t del = count_total_ops<ABISMAL_BAM_CDEL>(cigar);
 
   // A = S - (indel_penalty) = match*M + mismatch*m
   // B = len - ins = M + m
   // m = (match*(len - ins) - A)/(match - mismatch)
-  const score_t A = scr - indel * (ins + del);
-  const score_t mism = (match * (len - ins) - A) / (match - mismatch);
+  const score_t A = static_cast<score_t>(scr - indel * (ins + del));
+  const score_t mism =
+    static_cast<score_t>((match * (len - ins) - A) / (match - mismatch));
 
-  return mism + ins + del;
+  return static_cast<score_t>(mism + ins + del);
 }
 
 [[nodiscard]] inline score_t
 best_single_score(const std::uint32_t readlen) {
-  return match * readlen;
+  return static_cast<score_t>(match * readlen);
 }
 
 [[nodiscard]] inline score_t
 best_pair_score(const std::uint32_t readlen1, const std::uint32_t readlen2) {
-  return best_single_score(readlen1) + best_single_score(readlen2);
+  return static_cast<score_t>(best_single_score(readlen1) +
+                              best_single_score(readlen2));
 }
 }  // namespace simple_aln
 
@@ -116,8 +120,8 @@ struct AbismalAlign {
 
   std::vector<score_t> table;
   std::vector<std::int8_t> traceback;
-  const genome_iterator target;
-  const std::size_t bw{};
+  const genome_iterator target;  // NOLINT(*-avoid-const-or-ref-data-members)
+  const std::size_t bw;          // NOLINT(*-avoid-const-or-ref-data-members)
 
   // these are kept because they are needed in both align and build_cigar
   std::uint16_t q_sz_max{};
@@ -201,9 +205,11 @@ min16(const T a, const T b) {
 get_best_score(const std::vector<score_t> &table, const std::size_t n_cells,
                const std::size_t n_col, std::size_t &best_i,
                std::size_t &best_j) {
-  auto best_cell_itr =
+  const auto best_cell_itr =
+    // NOLINTNEXTLINE(*-narrowing-conversions)
     std::max_element(std::begin(table), std::begin(table) + n_cells);
-  const std::size_t best_cell = std::distance(std::begin(table), best_cell_itr);
+  const std::size_t best_cell =
+    std::distance(std::cbegin(table), best_cell_itr);
   best_i = best_cell / n_col;
   best_j = best_cell % n_col;
   return *best_cell_itr;
@@ -211,6 +217,7 @@ get_best_score(const std::vector<score_t> &table, const std::size_t n_cells,
 
 [[nodiscard]] static inline score_t
 get_best_score(const std::vector<score_t> &table, const std::size_t n_cells) {
+  // NOLINTNEXTLINE(*-narrowing-conversions)
   return *std::max_element(std::cbegin(table), std::cbegin(table) + n_cells);
 }
 
@@ -221,6 +228,7 @@ get_best_score(const std::vector<score_t> &table, const std::size_t n_cells) {
 
 template <score_t (*score_function)(const std::uint8_t, const std::uint8_t),
           class T, class QueryConstItr>
+// NOLINTNEXTLINE(*-unknown-attributes)
 __attribute__((optimize("no-tree-loop-vectorize"))) void
 from_diag(T next_row, const T next_row_end, T cur_row, QueryConstItr query_seq,
           std::uint8_t ref_base) {
@@ -253,6 +261,7 @@ from_left(T left_itr, T target, const T target_end) {
 /********* SAME FUNCTIONS AS ABOVE BUT WITH TRACEBACK ********/
 template <score_t (*score_function)(const std::uint8_t, const std::uint8_t),
           class T, class QueryConstItr, class U>
+// NOLINTNEXTLINE(*-unknown-attributes)
 __attribute__((optimize("no-tree-loop-vectorize"))) void
 from_diag(T next_row, const T next_row_end, T cur_row, QueryConstItr query_seq,
           std::uint8_t ref_base, U traceback) {
@@ -426,4 +435,4 @@ AbismalAlign<score_function,
   t_pos = t_beg + the_row;
 }
 
-#endif
+#endif  // SRC_ABISMAL_ALIGN_HPP_
