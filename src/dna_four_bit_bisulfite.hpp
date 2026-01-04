@@ -23,9 +23,37 @@
 #include <utility>
 #include <vector>
 
-enum base_in_byte {
-  left,
-  right,
+/* encoding of ASCII characters into T-rich bases, used
+ * in encoding reads.
+ * A: 0001 = 1
+ * C: 0010 = 2
+ * G: 0100 = 4
+ * T: 1010 = 10 */
+constexpr auto encode_base_t_rich = std::array{
+  0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // 0
+  0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // 17
+  0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // 33
+  0, 0, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // 49
+  0, 1, 0, 2, 0,  0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0,  //@,A-O
+  0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // P-Z
+  0, 1, 0, 2, 0,  0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0,  //`,a-o
+  0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // p-z
+};
+
+/* encoding of ASCII characters into A-rich bases
+ * A: 0101 = 5
+ * C: 0010 = 2
+ * G: 0100 = 4
+ * T: 1000 = 8 */
+constexpr auto encode_base_a_rich = std::array{
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // 0
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // 17
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // 33
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // 49
+  0, 5, 0, 2, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0,  //@,A-O
+  0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // P-Z
+  0, 5, 0, 2, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0,  //`,a-o
+  0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // p-z
 };
 
 // clang-format off
@@ -48,27 +76,33 @@ constexpr auto dna_four_bit_decoding = std::array{
   'N'  // = 1111 = 15 = {T,G,C,A} = aNything
 };
 
+enum base_in_byte : std::uint8_t {
+  left,
+  right,
+};
+
+static constexpr auto nibble_mask = 15;
+static constexpr auto nibble_per_word = 16;
+
 template <typename uint_type>
-constexpr uint_type
-get_nibble(const uint_type x, const std::size_t offset) {
-  return (x >> (4 * offset)) & 15ul;
+constexpr auto
+get_nibble(const uint_type x, const std::size_t offset) -> uint_type {
+  return (x >> (4 * offset)) & nibble_mask;
 }
 
 template <typename uint_type>
-constexpr char
-decode_dna_four_bit(const uint_type x, const std::size_t offset) {
+constexpr auto
+decode_dna_four_bit(const uint_type x, const std::size_t offset) -> char {
   return dna_four_bit_decoding[get_nibble(x, offset)];
 }
 
 template <class InputItr, class OutputIt>
-OutputIt
-decode_dna_four_bit(InputItr first, InputItr last, OutputIt d_first) {
+auto
+decode_dna_four_bit(InputItr first, InputItr last, OutputIt d_first) -> OutputIt {
   // ADS: assume destination has enough space
-  while (first != last) {
-    for (std::size_t offset = 0; offset < 16; ++offset)
+  for (; first != last; ++first)
+    for (std::size_t offset = 0; offset < nibble_per_word; ++offset)
       *d_first++ = decode_dna_four_bit(*first, offset);
-    ++first;
-  }
   // if original sequence length is odd and encoding not padded at the front,
   // then the final element in dest will be 'Z'
   return d_first;
@@ -79,17 +113,16 @@ void
 decode_dna_four_bit(const InCtr &source, OutCtr &dest) {
   // expand out the bytes as pairs (do this backwards in case source == dest)
   const std::size_t source_size = std::size(source);
-  dest.resize(16 * source_size);
+  dest.resize(nibble_per_word * source_size);
   std::size_t i = source_size;
   std::size_t j = std::size(dest);
   while (i > 0) {
     dest[--j] = source[--i];
     dest[--j] = source[i];
   }
-  for (i = 0; i < std::size(dest); i += 16) {
-    for (std::size_t offset = 0; offset < 16; ++offset)
+  for (i = 0; i < std::size(dest); i += nibble_per_word)
+    for (std::size_t offset = 0; offset < nibble_per_word; ++offset)
       dest[i + offset] = decode_dna_four_bit(dest[i], offset);
-  }
 }
 
 /* Sorted by letter
@@ -121,7 +154,6 @@ decode_dna_four_bit(const InCtr &source, OutCtr &dest) {
   Z = 0000 =  0 = {}        = Zero
 */
 constexpr auto dna_four_bit_encoding = std::array{
-  /*first*/                                               /*last*/
   /*  0*/ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* 15*/
   /* 16*/ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* 31*/
   /* 32*/ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* 47*/
@@ -136,21 +168,24 @@ constexpr auto dna_four_bit_encoding = std::array{
 // clang-format on
 
 template <typename uint_type>
-constexpr std::size_t
-encode_dna_four_bit(const uint_type x, const std::size_t offset) {
+constexpr auto
+encode_dna_four_bit(const uint_type x,
+                    const std::size_t offset) -> std::size_t {
+  // NOLINTBEGIN(*-constant-array-index)
   return (static_cast<std::size_t>(
            dna_four_bit_encoding[static_cast<unsigned>(x)]))
          << (4 * offset);
+  // NOLINTEND(*-constant-array-index)
 }
 
 template <class InputItr, class OutputIt>
-OutputIt
-encode_dna_four_bit(InputItr first, InputItr last, OutputIt d_first) {
-  while (first != last) {
+auto
+encode_dna_four_bit(InputItr first, InputItr last,
+                    OutputIt d_first) -> OutputIt {
+  for (; first != last; ++d_first) {
     *d_first = 0;
-    for (std::size_t i = 0; i < 16 && first != last; ++i)
+    for (std::size_t i = 0; i < nibble_per_word && first != last; ++i)
       *d_first |= encode_dna_four_bit(std::move(*first++), i);
-    ++d_first;
   }
   return d_first;
 }
@@ -158,124 +193,73 @@ encode_dna_four_bit(InputItr first, InputItr last, OutputIt d_first) {
 // GS: intended to be used as pointer to 4-bit encoding of DNA within a vector
 // of std::size_t values
 struct genome_four_bit_itr {
-  genome_four_bit_itr(const std::vector<std::size_t>::const_iterator itr,
-                      const int offset = 0) : itr{itr}, offset{offset} {}
+  explicit genome_four_bit_itr(
+    const std::vector<std::size_t>::const_iterator itr, const int offset = 0) :
+    itr{itr}, offset{offset} {}
 
-  std::size_t
-  operator*() const {
-    return (*itr >> (offset << 2)) & 15ul;
+  auto
+  operator*() const -> std::size_t {
+    return (*itr >> (offset << 2)) & nibble_mask;
   }
 
-  genome_four_bit_itr &
-  operator++() {
-    offset = (offset + 1) & 15ul;
+  auto
+  operator++() -> genome_four_bit_itr & {
+    offset = (offset + 1) & nibble_mask;
     itr += (offset == 0);
     return *this;
   }
 
-  genome_four_bit_itr
-  operator++(int) {
+  auto
+  operator++(int) -> genome_four_bit_itr {
     genome_four_bit_itr tmp(*this);
-    offset = (offset + 1) & 15ul;
+    offset = (offset + 1) & nibble_mask;
     itr += (offset == 0);
     return tmp;
   }
 
-  genome_four_bit_itr &
-  operator--() {
+  auto
+  operator--() -> genome_four_bit_itr & {
     itr -= (offset == 0);
-
-    offset = (offset - 1) & 15ul;
+    offset = (offset - 1) & nibble_mask;
     return *this;
   }
 
-  genome_four_bit_itr
-  operator--(int) {
+  auto
+  operator--(int) -> genome_four_bit_itr {
     genome_four_bit_itr tmp(*this);
     itr -= (offset == 0);
-    offset = (offset - 1) & 15ul;
+    offset = (offset - 1) & nibble_mask;
     return tmp;
   }
 
-  genome_four_bit_itr
-  operator+(const std::size_t step) const {
-    // whether the sum of offsets is >= 16
-    const bool shift_one_pos =
-      ((offset + (static_cast<int>(step) & 15)) & 16) >> 4;
-
-    const int new_offset = (offset + step) & 15;
-    return genome_four_bit_itr(itr + step / 16 + shift_one_pos, new_offset);
+  auto
+  operator+(const std::size_t step) const -> genome_four_bit_itr {
+    // check if the sum of offsets is >= 16
+    const bool high_nibble =
+      ((offset + (static_cast<int>(step) & nibble_mask)) & nibble_per_word) >>
+      4;
+    const int new_offset = (offset + static_cast<int>(step)) & nibble_mask;
+    return genome_four_bit_itr(
+      itr + static_cast<int>(step) / nibble_per_word + high_nibble, new_offset);
   }
 
-  bool
-  operator!=(const genome_four_bit_itr &rhs) const {
+  auto
+  operator!=(const genome_four_bit_itr &rhs) const -> bool {
     return itr != rhs.itr || offset != rhs.offset;
   }
 
-  bool
-  operator<(const genome_four_bit_itr &rhs) const {
+  auto
+  operator<(const genome_four_bit_itr &rhs) const -> bool {
     return itr < rhs.itr || (itr == rhs.itr && offset < rhs.offset);
   }
 
-  bool
-  operator<=(const genome_four_bit_itr &rhs) const {
+  auto
+  operator<=(const genome_four_bit_itr &rhs) const -> bool {
     return itr < rhs.itr || (itr == rhs.itr && offset <= rhs.offset);
   }
 
   std::vector<std::size_t>::const_iterator itr;
   int offset{};
 };
-
-// clang-format off
-/* encoding of ASCII characters into T-rich bases, used
- * in encoding reads.
- * A: 0001 = 1
- * C: 0010 = 2
- * G: 0100 = 4
- * T: 1010 = 10 */
-constexpr auto encode_base_t_rich = std::array{
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //0
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //17
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //33
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //49
-  0, 1, 0, 2, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, //@,A-O
-  0, 0, 0, 0, 10,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //P-Z
-  0, 1, 0, 2, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, //`,a-o
-  0, 0, 0, 0, 10,0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //p-z
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-};
-
-/* encoding of ASCII characters into A-rich bases
- * A: 0101 = 5
- * C: 0010 = 2
- * G: 0100 = 4
- * T: 1000 = 8 */
-constexpr auto encode_base_a_rich = std::array{
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //0
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //17
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //33
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //49
-  0, 5, 0, 2, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, //@,A-O
-  0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //P-Z
-  0, 5, 0, 2, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, //`,a-o
-  0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, //p-z
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-};
-
-// clang-format on
 
 #endif  // DNA_FOUR_BIT_BISULFITE_HPP
