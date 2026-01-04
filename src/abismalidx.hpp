@@ -19,6 +19,6 @@
 #define SRC_ABISMALIDX_HPP_
 
 int
-abismalidx(int argc, char *argv[]);
+abismalidx(int argc, char *argv[]);  // NOLINT(*-avoid-c-arrays)
 
 #endif  // SRC_ABISMALIDX_HPP_
