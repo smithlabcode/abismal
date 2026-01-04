@@ -11,7 +11,11 @@
  * more details.
  */
 
+#ifndef SRC_COMMON_HPP_
+#define SRC_COMMON_HPP_
+
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -41,24 +45,33 @@ revcomp(T &s) -> T {
 
 struct progress_bar {
   progress_bar(const std::size_t total,
-               const std::string message = "completion") :
+               const std::string &message = "completion") :
     total{total}, mid_tag{message} {
-    // the 3 below is for the default left_tag and right_tag printed width and
-    // the 5 is for the width of the percent (up to 100) plus two pipes ('|')
-    bar_width = max_bar_width - std::size(message) - 3 - 5;
+    // NOLINTNEXTLINE(*-prefer-member-initializer)
+    bar_width = max_bar_width - std::size(message) - tag_size - pcnt_and_pipes;
     bar = std::string(bar_width, ' ');
   }
 
   bool
   time_to_report(const std::size_t i) const {
-    return std::round((100.0 * std::min(i, total)) / total) > prev;
+    static constexpr auto one_hundred = 100.0;
+    // NOLINTBEGIN(*-narrowing-conversions)
+    return std::round((one_hundred * std::min(i, total)) /
+                      static_cast<double>(total)) > prev;
+    // NOLINTEND(*-narrowing-conversions)
   }
 
   void
   report(std::ostream &out, const std::size_t i) {
-    prev = std::round((100.0 * std::min(i, total)) / total);
+    static constexpr auto one_hundred = 100.0;
+    // NOLINTBEGIN(*-narrowing-conversions)
+    prev = std::round((one_hundred * std::min(i, total)) /
+                      static_cast<double>(total));
     const std::size_t x =
-      std::min(static_cast<std::size_t>(bar_width * (prev / 100.0)), bar_width);
+      std::min(static_cast<std::size_t>(
+                 bar_width * (static_cast<double>(prev) / one_hundred)),
+               bar_width);
+    // NOLINTEND(*-narrowing-conversions)
     std::fill_n(std::begin(bar), x, '=');
     out << left_tag << mid_tag << "|" << bar << "|" << std::setw(3) << prev
         << right_tag;
@@ -66,15 +79,18 @@ struct progress_bar {
       out << '\n';
   }
 
+  static constexpr auto pcnt_and_pipes = 5;
+  static constexpr auto tag_size = 3;
+  static constexpr auto left_tag = "\r[";
+  static constexpr auto right_tag = "%]";
+
   std::size_t total{};
   std::size_t prev{};
   std::size_t bar_width{};
-  std::string left_tag = "\r[";
   std::string mid_tag;
   std::string bar;
-  std::string right_tag = "%]";
 
-  static const std::size_t max_bar_width = 72;
+  static constexpr std::size_t max_bar_width{72};
 };
 
 // from 30 April 2020 SAM documentation
@@ -93,28 +109,34 @@ struct progress_bar {
 
 namespace samflags {
 // ADS: names of flags adjusted to how we typically interpret
-static const std::uint16_t read_paired = 0x1;
-static const std::uint16_t read_pair_mapped = 0x2;
-static const std::uint16_t read_unmapped = 0x4;
-static const std::uint16_t mate_unmapped = 0x8;
-static const std::uint16_t read_rc = 0x10;
-static const std::uint16_t mate_rc = 0x20;
-static const std::uint16_t template_first = 0x40;
-static const std::uint16_t template_last = 0x80;
-static const std::uint16_t secondary_aln = 0x100;
-static const std::uint16_t below_quality = 0x200;
-static const std::uint16_t pcr_duplicate = 0x400;
-static const std::uint16_t supplementary_aln = 0x800;
+static constexpr std::uint16_t read_paired = 0x1;
+static constexpr std::uint16_t read_pair_mapped = 0x2;
+static constexpr std::uint16_t read_unmapped = 0x4;
+static constexpr std::uint16_t mate_unmapped = 0x8;
+static constexpr std::uint16_t read_rc = 0x10;
+static constexpr std::uint16_t mate_rc = 0x20;
+static constexpr std::uint16_t template_first = 0x40;
+static constexpr std::uint16_t template_last = 0x80;
+static constexpr std::uint16_t secondary_aln = 0x100;
+static constexpr std::uint16_t below_quality = 0x200;
+static constexpr std::uint16_t pcr_duplicate = 0x400;
+static constexpr std::uint16_t supplementary_aln = 0x800;
+
 constexpr auto
 check(const std::uint16_t to_check, const std::uint16_t &f) -> bool {
   return to_check & f;
 }
+
 constexpr auto
 set(std::uint16_t &to_set, const std::uint16_t f) {
   to_set |= f;
 }
+
 constexpr auto
 unset(std::uint16_t &to_unset, const std::uint16_t f) {
   to_unset &= ~f;
 }
+
 }  // namespace samflags
+
+#endif  // SRC_COMMON_HPP_
