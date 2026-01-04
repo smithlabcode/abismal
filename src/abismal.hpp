@@ -19,6 +19,6 @@
 #define SRC_ABISMAL_HPP_
 
 int
-abismal(int argc, char *argv[]);
+abismal(int argc, char *argv[]);  // NOLINT(*-avoid-c-arrays)
 
 #endif  // SRC_ABISMAL_HPP_
