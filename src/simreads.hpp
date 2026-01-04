@@ -19,6 +19,6 @@
 #define SRC_SIMREADS_HPP_
 
 int
-simreads(int argc, char *argv[]);
+simreads(int argc, char *argv[]);  // NOLINT(*-avoid-c-arrays)
 
 #endif  // SRC_SIMREADS_HPP_
