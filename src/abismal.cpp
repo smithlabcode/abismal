@@ -13,7 +13,13 @@
  * WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
  * FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
  * details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
+static constexpr auto about = "map bisulfite converted reads";
+static constexpr auto description = "map bisulfite converted reads";
 
 #include "abismal.hpp"
 #include "AbismalAlign.hpp"
@@ -22,8 +28,7 @@
 #include "dna_four_bit_bisulfite.hpp"
 #include "popcnt.hpp"
 
-#include "OptionParser.hpp"
-
+#include "CLI11/CLI11.hpp"
 #include "nlohmann/json.hpp"
 
 #include "bamxx.hpp"
@@ -2295,11 +2300,6 @@ abismal_make_sam_header(const ChromLookup &cl, const int argc,
 int
 abismal(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
   try {
-    const std::string version_str =
-      std::string("(v") + VERSION + std::string(")");
-    const std::string description =
-      "map bisulfite converted reads " + version_str;
-
     bool verbose{};
     bool g_to_a_conversion{};
     bool allow_ambig{};
@@ -2313,86 +2313,73 @@ abismal(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
     std::string genome_file;
     std::string outfile;
     std::string stats_outfile;
+    std::string reads_file;
+    std::string reads_file2;
 
-    /****************** COMMAND LINE OPTIONS ********************/
-    OptionParser opt_parse(argv[0],  // NOLINT(*-pointer-arithmetic)
-                           description, "<reads-fq1> [<reads-fq2>]");
-    opt_parse.set_show_defaults();
-    opt_parse.add_opt("index", 'i', "index file", false, index_file);
-    opt_parse.add_opt("genome", 'g', "genome file (FASTA)", false, genome_file);
-    opt_parse.add_opt("outfile", 'o', "output file", true, outfile);
-    opt_parse.add_opt("bam", 'B', "output BAM format", false, write_bam_fmt);
-    opt_parse.add_opt("stats", 's', "map statistics file (YAML)", false,
-                      stats_outfile);
-    opt_parse.add_opt("max-candidates", 'c',
-                      "max candidates per seed (0: use default)", false,
-                      max_candidates);
-    opt_parse.add_opt("min-frag", 'l', "min fragment size (pe mode)", false,
-                      pe_element::min_dist);
-    opt_parse.add_opt("max-frag", 'L', "max fragment size (pe mode)", false,
-                      pe_element::max_dist);
-    opt_parse.add_opt("max-distance", 'm', "max fractional edit distance",
-                      false, se_element::valid_frac);
-    opt_parse.add_opt("ambig", 'a', "report a position for ambiguous mappers",
-                      false, allow_ambig);
-    opt_parse.add_opt("pbat", 'P', "input follows the PBAT protocol", false,
-                      pbat_mode);
-    opt_parse.add_opt("random-pbat", 'R', "input follows random PBAT protocol",
-                      false, random_pbat);
-    opt_parse.add_opt("a-rich", 'A', "indicates reads are a-rich (se mode)",
-                      false, g_to_a_conversion);
-    opt_parse.add_opt("threads", 't', "number of threads", false,
-                      abismal_concurrency::n_threads);
-    opt_parse.add_opt("json", 'j', "output stats as JSON", false,
-                      stats_as_json);
-    opt_parse.add_opt("verbose", 'v', "print more run info", false, verbose);
-    std::vector<std::string> leftover_args;
-    opt_parse.parse(argc, argv, leftover_args);
-    if (argc == 1 || opt_parse.help_requested()) {
-      std::cerr << opt_parse.help_message() << '\n'
-                << opt_parse.about_message() << '\n';
+    CLI::App app{about};
+    argv = app.ensure_utf8(argv);
+    app.usage("Usage: abismal map [OPTIONS] reads1 [reads2]");
+    if (argc >= 2)
+      app.footer(description);
+    app.get_formatter()->label("REQUIRED", "REQ");
+    app.get_formatter()->long_option_alignment_ratio(0);
+    // clang-format off
+    app.add_option("reads1", reads_file,
+                   "reads file in FASTQ format (gzip ok)")
+      ->option_text("FILE REQUIRED")
+      ->required()
+      ->check(CLI::ExistingFile);
+    app.add_option("reads2", reads_file2,
+                   "(paired-end) end2 reads in FASTQ format (gzip ok)")
+      ->option_text("FILE")
+      ->check(CLI::ExistingFile);
+    const auto index_opt =
+      app.add_option("-i,--index", index_file, "index file (excludes --genome)")
+      ->option_text("FILE")
+      ->check(CLI::ExistingFile);
+    app.add_option("-g,--genome", genome_file, "FASTA format genome file (excludes --index)")
+      ->option_text("FILE")
+      ->check(CLI::ExistingFile)
+      ->excludes(index_opt);
+    app.add_option("-o,--outfile", outfile, "output file")
+      ->option_text("FILE")
+      ->required();
+    app.add_option("-s,--stats", stats_outfile, "map statistics output file")
+      ->option_text("FILE");
+    app.add_option("-c,--max-candidates", max_candidates, "max candidates per seed (0: use default)");
+    app.add_option("-l,--min-frag", pe_element::min_dist, "min fragment size (pe mode)");
+    app.add_option("-L,--max-frag", pe_element::max_dist, "max fragment size (pe mode)");
+    app.add_option("-m,--max-distance", se_element::valid_frac, "max fractional edit distance")
+      ->option_text("FLOAT")
+      ->check(CLI::Range(0.0, 1.0));
+    app.add_option("-t,--threads", abismal_concurrency::n_threads, "number of threads")
+      ->option_text("UINT")
+      ->check(CLI::PositiveNumber);
+    app.add_flag("-B,--bam", write_bam_fmt, "output BAM format");
+    app.add_flag("-a,--ambig", allow_ambig, "report a position for ambiguous mappers");
+    app.add_flag("-P,--pbat", pbat_mode, "input follows the PBAT protocol");
+    app.add_flag("-R,--random-pbat", random_pbat, "input follows random PBAT protocol");
+    app.add_flag("-A,--a-rich", g_to_a_conversion, "indicates reads are a-rich (se mode)");
+    app.add_flag("-j,--json", stats_as_json, "output stats as JSON (default is YAML)");
+    app.add_flag("-v,--verbose", verbose, "print more run info");
+    app.set_help_flag("-h,--help", "print a detailed help message and exit");
+    // clang-format on
+    if (argc < 2) {
+      std::cout << app.help() << '\n';
       return EXIT_SUCCESS;
     }
-    if (opt_parse.about_requested()) {
-      std::cerr << opt_parse.about_message() << '\n';
-      return EXIT_SUCCESS;
-    }
-    if (opt_parse.option_missing()) {
-      std::cerr << "Missing required argument\n"
-                << opt_parse.option_missing_message() << '\n';
-      return EXIT_SUCCESS;
-    }
-    if (std::size(leftover_args) != 1 && std::size(leftover_args) != 2) {
-      std::cerr << opt_parse.help_message() << '\n'
-                << opt_parse.about_message() << '\n';
-      return EXIT_SUCCESS;
-    }
+    CLI11_PARSE(app, argc, argv);
+
     if (abismal_concurrency::invalid_n_threads()) {
       std::cerr << "Please choose a valid number of threads" << '\n';
       return EXIT_SUCCESS;
     }
+
     if (index_file.empty() == genome_file.empty()) {
       std::cerr << "Select one of index file (-i) or genome file (-g)\n";
       return EXIT_SUCCESS;
     }
-
-    const std::string reads_file = leftover_args.front();
-    std::string reads_file2;
-
-    if (!std::filesystem::exists(reads_file)) {
-      std::cerr << "cannot open read 1 FASTQ file: " << reads_file << '\n';
-      return EXIT_FAILURE;
-    }
-    bool paired_end{};
-    if (std::size(leftover_args) == 2) {
-      paired_end = true;
-      reads_file2 = leftover_args.back();
-      if (!std::filesystem::exists(reads_file2)) {
-        std::cerr << "cannot open read 2 FASTQ file: " << reads_file2 << '\n';
-        return EXIT_FAILURE;
-      }
-    }
-    /****************** END COMMAND LINE OPTIONS *****************/
+    const bool paired_end = !reads_file2.empty();
 
     // thread validation
     const auto n_cores = std::thread::hardware_concurrency();
@@ -2486,11 +2473,11 @@ abismal(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
       std::ofstream statout(stats_outfile);
       if (statout) {
         if (stats_as_json)
-          statout << (reads_file2.empty() ? nlohmann::json(run.se_stats)
-                                          : nlohmann::json(run.pe_stats));
+          statout << (paired_end ? to_string(nlohmann::json(run.pe_stats))
+                                 : to_string(nlohmann::json(run.se_stats)));
         else
-          statout << (reads_file2.empty() ? run.se_stats.tostring("read1")
-                                          : run.pe_stats.tostring(allow_ambig));
+          statout << (paired_end ? run.pe_stats.tostring(allow_ambig)
+                                 : run.se_stats.tostring("read1"));
       }
       else
         std::cerr << "failed to open stats out file: " << stats_outfile << '\n';
