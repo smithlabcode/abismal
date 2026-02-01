@@ -1,4 +1,4 @@
-/* Copyright (C) 2018-2025 Andrew D. Smith and Guilherme Sena
+/* Copyright (C) 2018-2026 Andrew D. Smith and Guilherme Sena
  *
  * Authors: Andrew D. Smith and Guilherme Sena
  *
@@ -53,6 +53,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <unistd.h>
@@ -88,10 +89,10 @@ using abismal_timepoint = std::chrono::time_point<abismal_clock>;
 using AbismalAlignSimple =
   AbismalAlign<simple_aln::mismatch_score, simple_aln::indel>;
 
-typedef std::uint16_t flags_t;  // every bit is a flag
-typedef std::int16_t score_t;   // aln score, edit distance, hamming distance
-typedef std::vector<std::uint8_t> Read;     // 4-bit encoding of reads
-typedef std::vector<element_t> PackedRead;  // 4-bit encoding of reads
+using flags_t = std::uint16_t;  // every bit is a flag
+using score_t = std::int16_t;   // aln score, edit distance, hamming distance
+using Read = std::vector<std::uint8_t>;     // 4-bit encoding of reads
+using PackedRead = std::vector<element_t>;  // 4-bit encoding of reads
 
 namespace abismal_concurrency {
 static constexpr std::uint32_t max_n_threads = 1024;
@@ -101,8 +102,8 @@ static std::mutex read_mutex;
 static std::mutex write_mutex;
 static std::mutex report_mutex;
 // NOLINTEND(*-avoid-non-const-global-variables)
-static bool
-invalid_n_threads() {
+static auto
+invalid_n_threads() -> bool {
   return n_threads == 0 || n_threads > max_n_threads;
 }
 }  // namespace abismal_concurrency
@@ -121,13 +122,13 @@ log_msg(const std::string &s) {
   std::cerr << "[" << time_fmt << "] " << s << '\n';
 }
 
-static constexpr conversion_type
-flip_conv(const conversion_type conv) {
+static constexpr auto
+flip_conv(const conversion_type conv) -> conversion_type {
   return conv == t_rich ? a_rich : t_rich;
 }
 
-static constexpr flags_t
-get_strand_code(const char strand, const conversion_type conv) {
+static constexpr auto
+get_strand_code(const char strand, const conversion_type conv) -> flags_t {
   return (strand == '-' ? samflags::read_rc : 0) |
          (conv == a_rich ? bsflags::read_is_a_rich : 0);
 }
@@ -138,10 +139,10 @@ struct read_holder {
   bam_cigar_t cig;
   bamxx::bam_rec rec;
   read_holder() = default;
-  read_holder(const std::string &name, const std::string &read) :
-    name{name}, read{read} {};
-  [[nodiscard]] std::size_t
-  size() const {
+  read_holder(std::string name, std::string read) :
+    name{std::move(name)}, read{std::move(read)} {};
+  [[nodiscard]] auto
+  size() const -> std::size_t {
     return std::size(read);
   }
 };
@@ -150,13 +151,13 @@ struct ReadLoader {
   explicit ReadLoader(const std::string &fn) : filename{fn}, in{fn, "r"} {}
   operator bool() const { return in; }
 
-  std::size_t
-  get_current_read() const {
+  [[nodiscard]] auto
+  get_current_read() const -> std::size_t {
     return cur_line / 4;
   }
 
-  std::size_t
-  get_current_byte() const {
+  [[nodiscard]] auto
+  get_current_byte() const -> std::size_t {
     return in.tellg();
   }
 
@@ -212,8 +213,8 @@ const std::uint32_t ReadLoader::min_read_length =
   seed::key_weight + seed::window_size - 1;
 
 // GS: used to allocate appropriate dimensions of banded alignment matrix
-[[nodiscard]] static inline std::uint32_t
-get_max_read_length(const std::vector<read_holder> &r) {
+[[nodiscard]] static inline auto
+get_max_read_length(const std::vector<read_holder> &r) -> std::uint32_t {
   constexpr auto acc = [](const auto x, const auto &y) {
     return std::max(x, std::size(y.read));
   };
@@ -236,34 +237,34 @@ struct se_element {  // size = 8
   se_element(const score_t diffs, const flags_t flags,
              const std::uint32_t pos) : diffs{diffs}, flags{flags}, pos{pos} {}
 
-  bool
-  operator==(const se_element &rhs) const {
+  auto
+  operator==(const se_element &rhs) const -> bool {
     return pos == rhs.pos && flags == rhs.flags;
   }
 
-  bool
-  operator!=(const se_element &rhs) const {
+  auto
+  operator!=(const se_element &rhs) const -> bool {
     return pos != rhs.pos || flags != rhs.flags;
   }
 
   // this is used to keep PE candidates sorted in the max heap
-  [[nodiscard]] bool
-  operator<(const se_element &rhs) const {
+  [[nodiscard]] auto
+  operator<(const se_element &rhs) const -> bool {
     return diffs < rhs.diffs;
   }
 
-  [[nodiscard]] bool
-  rc() const {
+  [[nodiscard]] auto
+  rc() const -> bool {
     return samflags::check(flags, samflags::read_rc);
   }
 
-  [[nodiscard]] bool
-  elem_is_a_rich() const {
+  [[nodiscard]] auto
+  elem_is_a_rich() const -> bool {
     return samflags::check(flags, bsflags::read_is_a_rich);
   }
 
-  [[nodiscard]] bool
-  ambig() const {
+  [[nodiscard]] auto
+  ambig() const -> bool {
     return samflags::check(flags, samflags::secondary_aln);
   }
 
@@ -272,13 +273,13 @@ struct se_element {  // size = 8
     samflags::set(flags, samflags::secondary_aln);
   }
 
-  [[nodiscard]] bool
-  empty() const {
+  [[nodiscard]] auto
+  empty() const -> bool {
     return pos == 0;
   }
 
-  [[nodiscard]] bool
-  sure_ambig() const {
+  [[nodiscard]] auto
+  sure_ambig() const -> bool {
     return ambig() && diffs == 0;
   }
 
@@ -297,13 +298,14 @@ struct se_element {  // size = 8
 
 double se_element::valid_frac = se_element::valid_frac_default;
 
-static inline score_t
-valid_diffs_cutoff(const std::uint32_t readlen, const double cutoff) {
+static inline auto
+valid_diffs_cutoff(const std::uint32_t readlen,
+                   const double cutoff) -> score_t {
   return static_cast<score_t>(cutoff * readlen);
 }
 
-static inline bool
-valid_len(const std::uint32_t aln_len, const std::uint32_t readlen) {
+static inline auto
+valid_len(const std::uint32_t aln_len, const std::uint32_t readlen) -> bool {
   static const double min_aln_frac = 1.0 - se_element::invalid_hit_frac;
 
   return aln_len >=
@@ -311,34 +313,34 @@ valid_len(const std::uint32_t aln_len, const std::uint32_t readlen) {
                   static_cast<std::uint32_t>(min_aln_frac * readlen));
 }
 
-static inline bool
+static inline auto
 check_valid(const se_element &s, const std::uint32_t aln_len,
-            const std::uint32_t readlen, const double cutoff) {
+            const std::uint32_t readlen, const double cutoff) -> bool {
   return valid_len(aln_len, readlen) &&
          s.diffs <= valid_diffs_cutoff(readlen, cutoff);
 }
 
-static inline bool
-valid_hit(const se_element s, const std::uint32_t readlen) {
+static inline auto
+valid_hit(const se_element s, const std::uint32_t readlen) -> bool {
   return s.diffs < static_cast<score_t>(se_element::invalid_hit_frac * readlen);
 }
 
 template <class T>
-static inline T
-max16(const T x, const T y) {
+static inline auto
+max16(const T x, const T y) -> T {
   return (x > y) ? x : y;
 }
 
 struct se_candidates {
   se_candidates() : sz{1}, v{std::vector<se_element>(max_size)} {}
 
-  inline bool
-  full() const {
+  [[nodiscard]] inline auto
+  full() const -> bool {
     return sz == max_size;
   };
 
-  inline bool
-  has_exact_match() const {
+  [[nodiscard]] inline auto
+  has_exact_match() const -> bool {
     return !best.empty();
   };
 
@@ -352,18 +354,18 @@ struct se_candidates {
       best.set_ambig();
   }
 
-  bool
-  enough_good_hits() const {
+  [[nodiscard]] auto
+  enough_good_hits() const -> bool {
     return full() && good_diff(cutoff);
   }
 
-  bool
-  good_diff(const score_t d) const {
+  [[nodiscard]] auto
+  good_diff(const score_t d) const -> bool {
     return (d <= good_cutoff);
   }
 
-  bool
-  should_do_sensitive() const {
+  [[nodiscard]] auto
+  should_do_sensitive() const -> bool {
     return (!full() || !good_diff(cutoff));
   }
 
@@ -446,23 +448,23 @@ struct se_candidates {
   static constexpr std::uint32_t max_size{50u};
 };
 
-[[nodiscard]] static inline bool
-cigar_eats_ref(const std::uint32_t c) {
+[[nodiscard]] static inline auto
+cigar_eats_ref(const std::uint32_t c) -> bool {
   return bam_cigar_type(bam_cigar_op(c)) & 2;
 }
 
-[[nodiscard]] static inline std::uint32_t
-cigar_rseq_ops(const bam_cigar_t &cig) {
+[[nodiscard]] static inline auto
+cigar_rseq_ops(const bam_cigar_t &cig) -> std::uint32_t {
   const auto acc = [](const std::uint32_t t, const std::uint32_t x) {
     return t + (cigar_eats_ref(x) ? bam_cigar_oplen(x) : 0);
   };
   return std::accumulate(std::cbegin(cig), std::cend(cig), 0u, acc);
 }
 
-[[nodiscard]] static inline bool
+[[nodiscard]] static inline auto
 chrom_and_posn(const ChromLookup &cl, const bam_cigar_t &cig,
                const std::uint32_t p, std::uint32_t &r_p, std::uint32_t &r_e,
-               std::int32_t &r_chr) {
+               std::int32_t &r_chr) -> bool {
   const std::uint32_t ref_ops = cigar_rseq_ops(cig);
   if (!cl.get_chrom_idx_and_offset(p, ref_ops, r_chr, r_p))
     return false;
@@ -476,9 +478,9 @@ enum map_type : std::uint8_t {
   map_ambig,
 };
 
-[[nodiscard]] static map_type
+[[nodiscard]] static auto
 format_se(const bool allow_ambig, const se_element &res, const ChromLookup &cl,
-          read_holder &r) {
+          read_holder &r) -> map_type {
   // ADS: 'read' should not be used after a call to 'format_se'
   static constexpr auto mapq_max_val = 255u;
   static constexpr auto aux_len = 16u;
@@ -510,18 +512,18 @@ format_se(const bool allow_ambig, const se_element &res, const ChromLookup &cl,
   // clang-format off
   int ret = bam_set1(r.rec.b,
     std::size(r.name),     // size_t l_qname,
-    r.name.data(),         // const char *qname,
+    std::data(r.name),     // const char *qname,
     flag,                  // uint16_t flag,
     chrom_idx - 1,         // int32_t tid (-1 for padding)
     ref_s,                 // hts_pos_t pos,
     mapq_max_val,          // std::uint8_t mapq,
     std::size(r.cig),      // size_t n_cigar,
-    r.cig.data(),          // const uint32_t *cigar,
+    std::data(r.cig),      // const uint32_t *cigar,
     -1,                    // int32_t mtid,
     -1,                    //  hts_pos_t mpos,
     0,                     // hts_pos_t isize,
     std::size(r.read),     // size_t l_seq,
-    r.read.data(),         // const char *seq,
+    std::data(r.read),     // const char *seq,
     nullptr,               // const char *qual,
     aux_len);              // size_t l_aux);
   // clang-format on
@@ -545,8 +547,8 @@ format_se(const bool allow_ambig, const se_element &res, const ChromLookup &cl,
 struct pe_element {
   pe_element() : r1{se_element()}, r2{se_element()} {}
 
-  score_t
-  diffs() const {
+  [[nodiscard]] auto
+  diffs() const -> score_t {
     return static_cast<score_t>(r1.diffs + r2.diffs);
   }
 
@@ -565,8 +567,9 @@ struct pe_element {
     r2.reset();
   }
 
-  bool
-  update(const score_t scr, const se_element &s1, const se_element &s2) {
+  auto
+  update(const score_t scr, const se_element &s1,
+         const se_element &s2) -> bool {
     const auto rd = r1.diffs + r2.diffs;
     const auto sd = s1.diffs + s2.diffs;
     if (scr > aln_score || (scr == aln_score && sd < rd)) {
@@ -584,23 +587,23 @@ struct pe_element {
   }
 
   // GS: used to decide whether ends should be mapped as SE independently
-  [[nodiscard]] inline bool
-  should_report(const bool allow_ambig) const {
+  [[nodiscard]] inline auto
+  should_report(const bool allow_ambig) const -> bool {
     return !empty() && (allow_ambig || !ambig());
   }
 
-  [[nodiscard]] inline bool
-  ambig() const {
+  [[nodiscard]] inline auto
+  ambig() const -> bool {
     return r1.ambig();
   }
 
-  [[nodiscard]] inline bool
-  empty() const {
+  [[nodiscard]] inline auto
+  empty() const -> bool {
     return r1.empty();
   }
 
-  [[nodiscard]] inline bool
-  sure_ambig() const {
+  [[nodiscard]] inline auto
+  sure_ambig() const -> bool {
     return ambig() && aln_score == max_aln_score;
   }
 
@@ -618,10 +621,10 @@ struct pe_element {
 std::uint32_t pe_element::min_dist = min_dist_default;
 std::uint32_t pe_element::max_dist = max_dist_default;
 
-static inline bool
+static inline auto
 valid_pair(const pe_element &best, const std::uint32_t readlen1,
            const std::uint32_t readlen2, const std::uint32_t aln_len1,
-           const std::uint32_t aln_len2) {
+           const std::uint32_t aln_len2) -> bool {
   return valid_len(aln_len1, readlen1) && valid_len(aln_len2, readlen2) &&
          best.diffs() <=
            static_cast<score_t>(se_element::valid_frac * (aln_len1 + aln_len2));
@@ -642,11 +645,11 @@ valid_pair(const pe_element &best, const std::uint32_t readlen1,
  * with value 'A' or 'T' to show whether the C->T conversion was used or the
  * G->A (for PBAT or 2nd end of PE reads).
  */
-static map_type
+static auto
 format_pe(
   const bool allow_ambig, const pe_element &p, const ChromLookup &cl,
   // ADS: 'read1' and 'read2' should not be used after a call to format_pe
-  read_holder &r1, read_holder &r2) {
+  read_holder &r1, read_holder &r2) -> map_type {
   static constexpr auto mapq_max_val = 255u;
   static constexpr auto aux_len = 16u;
   static const std::array<std::uint8_t, 2> cv = {
@@ -708,18 +711,18 @@ format_pe(
   // clang-format off
   int ret = bam_set1(r1.rec.b,
     std::size(r1.name),  // size_t l_qname,
-    r1.name.data(),      // const char *qname,
+    std::data(r1.name),  // const char *qname,
     flag1,               // uint16_t flag,
     chr1 - 1,            // (-1 for padding) int32_t tid
     r_s1,                // hts_pos_t pos,
     mapq_max_val,        // std::uint8_t mapq,
     std::size(r1.cig),   // size_t n_cigar,
-    r1.cig.data(),       // const uint32_t *cigar,
+    std::data(r1.cig),   // const uint32_t *cigar,
     chr2 - 1,            // (-1 for padding) int32_t mtid,
     r_s2,                //  hts_pos_t mpos,
     isize,               // hts_pos_t isize,
     std::size(r1),       // size_t l_seq,
-    r1.read.data(),      // const char *seq,
+    std::data(r1.read),  // const char *seq,
     nullptr,             // const char *qual,
     aux_len);            // size_t l_aux);
   // clang-format on
@@ -730,8 +733,8 @@ format_pe(
   if (ret < 0)
     throw std::runtime_error("error adding aux field");
 
-  ret =
-    bam_aux_append(r1.rec.b, "CV", 'A', 1, cv.data() + p.r1.elem_is_a_rich());
+  ret = bam_aux_append(r1.rec.b, "CV", 'A', 1,
+                       std::data(cv) + p.r1.elem_is_a_rich());
   if (ret < 0)
     throw std::runtime_error("error adding aux field");
 
@@ -739,18 +742,18 @@ format_pe(
   // clang-format off
   ret = bam_set1(r2.rec.b,
     std::size(r2.name),  // size_t l_qname,
-    r2.name.data(),      // const char *qname,
+    std::data(r2.name),  // const char *qname,
     flag2,               // uint16_t flag,
     chr2 - 1,            // (-1 for padding) int32_t tid
     r_s2,                // hts_pos_t pos,
     mapq_max_val,        // std::uint8_t mapq,
     std::size(r2.cig),   // size_t n_cigar,
-    r2.cig.data(),       // const uint32_t *cigar,
+    std::data(r2.cig),   // const uint32_t *cigar,
     chr1 - 1,            // (-1 for padding) int32_t mtid,
     r_s1,                // hts_pos_t mpos,
     -isize,              // hts_pos_t isize,
     std::size(r2.read),  // size_t l_seq,
-    r2.read.data(),      // const char *seq,
+    std::data(r2.read),  // const char *seq,
     nullptr,             // const char *qual,
     aux_len);            // size_t l_aux);
   // clang-format on
@@ -761,8 +764,8 @@ format_pe(
   if (ret < 0)
     throw std::runtime_error("error adding aux field");
 
-  ret =
-    bam_aux_append(r2.rec.b, "CV", 'A', 1, cv.data() + p.r2.elem_is_a_rich());
+  ret = bam_aux_append(r2.rec.b, "CV", 'A', 1,
+                       std::data(cv) + p.r2.elem_is_a_rich());
   if (ret < 0)
     throw std::runtime_error("error adding aux field");
 
@@ -793,28 +796,28 @@ struct pe_candidates {
     cutoff = v.front().diffs;
   }
 
-  inline bool
-  should_align() {
+  inline auto
+  should_align() -> bool {
     return (sz != max_size_large || cutoff != 0);
   }
 
-  inline bool
-  full() const {
+  [[nodiscard]] inline auto
+  full() const -> bool {
     return sz == capacity;
   }
 
-  inline bool
-  good_diff(const score_t d) const {
+  [[nodiscard]] inline auto
+  good_diff(const score_t d) const -> bool {
     return (d <= good_cutoff);
   }
 
-  inline bool
-  enough_good_hits() const {
+  [[nodiscard]] inline auto
+  enough_good_hits() const -> bool {
     return full() && good_diff(cutoff);
   }
 
-  inline bool
-  should_do_sensitive() const {
+  [[nodiscard]] inline auto
+  should_do_sensitive() const -> bool {
     return (capacity == max_size_small || !good_diff(cutoff));
   }
 
@@ -893,8 +896,8 @@ struct single_end_mapping_statistics {
 
   // reads_mapped_unique_fraction is the ratio of reads_mapped_unique over
   // total_reads.
-  [[nodiscard]] double
-  reads_mapped_unique_frac() const {
+  [[nodiscard]] auto
+  reads_mapped_unique_frac() const -> double {
     return total_reads > 0
              ? static_cast<double>(reads_mapped_unique) / total_reads
              : 0.0;
@@ -902,8 +905,8 @@ struct single_end_mapping_statistics {
 
   // reads_mapped_ambiguous_fraction is the ratio of reads_mapped_ambiguous
   // over total_reads.
-  [[nodiscard]] double
-  reads_mapped_ambiguous_frac() const {
+  [[nodiscard]] auto
+  reads_mapped_ambiguous_frac() const -> double {
     return total_reads > 0
              ? static_cast<double>(reads_mapped_ambiguous) / total_reads
              : 0.0;
@@ -911,15 +914,15 @@ struct single_end_mapping_statistics {
 
   // reads_mapped is the sum of reads_mapped_unique and
   // reads_mapped_ambiguous.
-  [[nodiscard]] std::uint32_t
-  reads_mapped() const {
+  [[nodiscard]] auto
+  reads_mapped() const -> std::uint32_t {
     return reads_mapped_unique + reads_mapped_ambiguous;
   }
 
   // reads_mapped_fraction is the ratio of reads_mapped over
   // total_reads.
-  [[nodiscard]] double
-  reads_mapped_frac() const {
+  [[nodiscard]] auto
+  reads_mapped_frac() const -> double {
     return total_reads > 0 ? static_cast<double>(reads_mapped()) / total_reads
                            : 0.0;
   }
@@ -927,30 +930,30 @@ struct single_end_mapping_statistics {
   // reads_unmapped is the number of reads that have no mapping location
   // in the reference genome with a score that meets the minimum
   // criteria.
-  [[nodiscard]] std::uint32_t
-  reads_unmapped() const {
+  [[nodiscard]] auto
+  reads_unmapped() const -> std::uint32_t {
     return total_reads - reads_mapped();
   }
 
   // reads_unmapped_fraction is the ratio of reads_unmapped over total_reads
-  [[nodiscard]] double
-  reads_unmapped_frac() const {
+  [[nodiscard]] auto
+  reads_unmapped_frac() const -> double {
     return total_reads > 0 ? static_cast<double>(reads_unmapped()) / total_reads
                            : 0.0;
   }
 
   // percent_skipped is the ratio of reads_skipped over total_reads,
   // multiplied by 100.
-  [[nodiscard]] double
-  reads_skipped_frac() const {
+  [[nodiscard]] auto
+  reads_skipped_frac() const -> double {
     return total_reads > 0 ? static_cast<double>(reads_skipped) / total_reads
                            : 0.0;
   }
 
   // edit_distance_mean is the ratio of edit_distance over
   // total_bases.
-  [[nodiscard]] double
-  edit_distance_mean() const {
+  [[nodiscard]] auto
+  edit_distance_mean() const -> double {
     return total_bases > 0 ? static_cast<double>(edit_distance) / total_bases
                            : 0.0;
   }
@@ -992,8 +995,9 @@ struct single_end_mapping_statistics {
       update_error_rate(s.diffs, r.cig);
   }
 
-  [[nodiscard]] std::string
-  tostring(const std::string &label, const std::size_t n_tabs = 0) const {
+  [[nodiscard]] auto
+  tostring(const std::string &label,
+           const std::size_t n_tabs = 0) const -> std::string {
     static constexpr auto tab = "    ";
     constexpr auto pct = [](const double x) { return x * 100.0; };
     std::string t;
@@ -1052,8 +1056,8 @@ struct paired_end_mapping_statistics {
     }
   }
 
-  [[nodiscard]] std::string
-  tostring(const bool allow_ambig) const {
+  [[nodiscard]] auto
+  tostring(const bool allow_ambig) const -> std::string {
     std::ostringstream oss;
     oss << read_pair_stats.tostring("pairs");
     if (!allow_ambig) {
@@ -1098,12 +1102,12 @@ select_output(
  * the directive and the number remains unchanged. This is a
  * workaround and there is probably a better way to do it.
  */
-static score_t
+static auto
 full_compare(const score_t cutoff, const PackedRead::const_iterator read_end,
              const std::uint32_t offset, PackedRead::const_iterator read_itr,
-             Genome::const_iterator genome_itr) {
+             Genome::const_iterator genome_itr) -> score_t {
   // max number of matches per element
-  static constexpr score_t max_matches = static_cast<score_t>(16);
+  static constexpr auto max_matches = static_cast<score_t>(16);
   static constexpr auto max_shift = 63;
   score_t d = 0;
   for (; d <= cutoff && read_itr != read_end;
@@ -1147,8 +1151,8 @@ check_hits(const std::uint32_t offset, const PackedRead::const_iterator read_st,
 
 struct compare_bases {
   explicit compare_bases(const genome_iterator g) : g{g} {}
-  bool
-  operator()(const std::uint32_t mid, const two_letter_t chr) const {
+  auto
+  operator()(const std::uint32_t mid, const two_letter_t chr) const -> bool {
     // cppcheck-suppress-begin comparisonOfFuncReturningBoolError
     return get_bit(*(g + mid)) < chr;
     // cppcheck-suppress-end comparisonOfFuncReturningBoolError
@@ -1157,12 +1161,12 @@ struct compare_bases {
 };
 
 template <const std::uint32_t start_length>
-static std::uint32_t
-find_candidates(const std::uint32_t max_candidates,
-                const Read::const_iterator read_start, const genome_iterator gi,
-                const std::uint32_t read_lim,
-                std::vector<std::uint32_t>::const_iterator &low,
-                std::vector<std::uint32_t>::const_iterator &high) {
+static auto
+find_candidates(
+  const std::uint32_t max_candidates, const Read::const_iterator read_start,
+  const genome_iterator gi, const std::uint32_t read_lim,
+  std::vector<std::uint32_t>::const_iterator &low,
+  std::vector<std::uint32_t>::const_iterator &high) -> std::uint32_t {
   std::uint32_t p = start_length;
   auto prev_low = low;
   auto prev_high = high;
@@ -1190,8 +1194,8 @@ find_candidates(const std::uint32_t max_candidates,
 }
 
 template <const three_conv_type the_conv>
-static inline three_letter_t
-get_three_letter_num_fast(const std::uint8_t nt) {
+static inline auto
+get_three_letter_num_fast(const std::uint8_t nt) -> three_letter_t {
   // NOLINTBEGIN(*-avoid-magic-numbers)
   return (the_conv == c_to_t) ? nt & 5 :  // C=T=0, A=1, G=4
            nt & 10;                       // A=G=0, C=2, T=8
@@ -1200,20 +1204,20 @@ get_three_letter_num_fast(const std::uint8_t nt) {
 
 template <const three_conv_type the_conv> struct compare_bases_three {
   explicit compare_bases_three(const genome_iterator g) : g{g} {}
-  bool
-  operator()(const std::uint32_t mid, const three_letter_t chr) const {
+  auto
+  operator()(const std::uint32_t mid, const three_letter_t chr) const -> bool {
     return get_three_letter_num_fast<the_conv>(*(g + mid)) < chr;
   }
   const genome_iterator g;  // NOLINT(*-avoid-const-or-ref-data-members)
 };
 
 template <const std::uint32_t start_length, const three_conv_type the_conv>
-static std::uint32_t
-find_candidates_three(const std::uint32_t max_candidates,
-                      const Read::const_iterator read_start,
-                      const genome_iterator gi, const std::uint32_t max_size,
-                      std::vector<std::uint32_t>::const_iterator &low,
-                      std::vector<std::uint32_t>::const_iterator &high) {
+static auto
+find_candidates_three(
+  const std::uint32_t max_candidates, const Read::const_iterator read_start,
+  const genome_iterator gi, const std::uint32_t max_size,
+  std::vector<std::uint32_t>::const_iterator &low,
+  std::vector<std::uint32_t>::const_iterator &high) -> std::uint32_t {
   std::uint32_t p = start_length;
   auto prev_low = low;
   auto prev_high = high;
@@ -1254,8 +1258,8 @@ find_candidates_three(const std::uint32_t max_candidates,
   return p;
 }
 
-static constexpr three_conv_type
-get_conv_type(const std::uint16_t strand_code) {
+static constexpr auto
+get_conv_type(const std::uint16_t strand_code) -> three_conv_type {
   return samflags::check(strand_code, bsflags::read_is_a_rich) ^
              samflags::check(strand_code, samflags::read_rc)
            ? g_to_a
@@ -1274,14 +1278,14 @@ process_seeds(const std::uint32_t max_candidates,
   static constexpr three_conv_type the_conv = get_conv_type(strand_code);
 
   const std::uint32_t readlen = std::size(read_seed);
-  const PackedRead::const_iterator pack_s_idx(std::cbegin(packed_read));
-  const PackedRead::const_iterator pack_e_idx(std::cend(packed_read));
+  const auto pack_s_idx(std::cbegin(packed_read));
+  const auto pack_e_idx(std::cend(packed_read));
 
   std::uint32_t k = 0u;
   std::uint32_t k_three = 0u;
   std::uint32_t i = 0u;
 
-  Read::const_iterator read_idx(std::cbegin(read_seed));
+  auto read_idx(std::cbegin(read_seed));
   std::vector<std::uint32_t>::const_iterator s_idx;
   std::vector<std::uint32_t>::const_iterator e_idx;
   std::vector<std::uint32_t>::const_iterator s_idx_three;
@@ -1388,14 +1392,14 @@ prep_read(const std::string &r, Read &pread) {
  * genome */
 static void
 pack_read(const Read &pread, PackedRead &packed_pread) {
-  static const element_t base_match_any = static_cast<element_t>(0xF);
+  static const auto base_match_any = static_cast<element_t>(0xF);
   static const std::size_t NUM_BASES_PER_ELEMENT = 16;
   const std::size_t sz = std::size(pread);
   const std::size_t num_complete_pos = sz / NUM_BASES_PER_ELEMENT;
 
   // divide by 16 and add an extra position if remainder not 0
   packed_pread.resize((sz + NUM_BASES_PER_ELEMENT - 1) / NUM_BASES_PER_ELEMENT);
-  PackedRead::iterator it(std::begin(packed_pread));
+  auto it(std::begin(packed_pread));
 
   // first add the complete positions (i.e. having all 16 bases)
   std::size_t pread_ind = 0;
@@ -1421,8 +1425,8 @@ pack_read(const Read &pread, PackedRead &packed_pread) {
     *it |= base_match_any << ((j++) << 2);
 }
 
-static inline bool
-same_pos(const std::uint32_t pos1, const std::uint32_t pos2) {
+static inline auto
+same_pos(const std::uint32_t pos1, const std::uint32_t pos2) -> bool {
   const std::uint32_t diff = (pos1 > pos2) ? (pos1 - pos2) : (pos2 - pos1);
   static const std::uint32_t MIN_DIFF_FOR_EQUAL = 3;
   return diff <= MIN_DIFF_FOR_EQUAL;
@@ -1433,7 +1437,7 @@ align_se_candidates(const Read &pread_t, const Read &pread_t_rc,
                     const Read &pread_a, const Read &pread_a_rc,
                     const double cutoff, se_candidates &res, se_element &best,
                     bam_cigar_t &cigar, AbismalAlignSimple &aln) {
-  const score_t readlen = static_cast<score_t>(std::size(pread_t));
+  const auto readlen = static_cast<score_t>(std::size(pread_t));
   const score_t max_diffs = valid_diffs_cutoff(readlen, cutoff);
   const score_t max_scr = simple_aln::best_single_score(readlen);
   if (res.has_exact_match()) {  // exact match, no need to align
@@ -1492,8 +1496,8 @@ align_se_candidates(const Read &pread_t, const Read &pread_t_rc,
     best.reset();
 }
 
-static inline bool
-valid_bam_rec(const bamxx::bam_rec &b) {
+static inline auto
+valid_bam_rec(const bamxx::bam_rec &b) -> bool {
   return b.b;
 }
 
@@ -1699,9 +1703,9 @@ map_single_ended_rand(const bool show_progress, const bool allow_ambig,
   }
 }
 
-static std::string
+static auto
 format_duration(const abismal_timepoint start_time,
-                const abismal_timepoint stop_time) {
+                const abismal_timepoint stop_time) -> std::string {
   const std::chrono::duration<double> elapsed_seconds{stop_time - start_time};
   std::ostringstream oss;
   oss << std::fixed << std::setprecision(2) << elapsed_seconds.count() << "s";
@@ -1721,11 +1725,11 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
           const Read &pread1, const Read &pread2, bam_cigar_t &cigar1,
           bam_cigar_t &cigar2, std::vector<score_t> &mem_scr1,
           AbismalAlignSimple &aln, pe_element &best) {
-  std::vector<se_element>::const_iterator j1(std::begin(res1.v));
-  std::vector<se_element>::const_iterator j2(std::begin(res2.v));
+  auto j1(std::begin(res1.v));
+  auto j2(std::begin(res2.v));
 
-  const std::vector<se_element>::const_iterator j1_end = j1 + res1.sz;
-  const std::vector<se_element>::const_iterator j2_end = j2 + res2.sz;
+  const auto j1_end = j1 + res1.sz;
+  const auto j2_end = j2 + res2.sz;
   const std::vector<se_element>::const_iterator j1_beg(j1);
 
   // remembers alignment info on end1 to avoid redoing work
@@ -1844,7 +1848,7 @@ select_maps(const Read &pread1, const Read &pread2, bam_cigar_t &cig1,
 
 template <const bool cmp, const bool swap_ends,
           const std::uint16_t strand_code1, const std::uint16_t strand_code2>
-static inline bool
+static inline auto
 map_fragments(const std::uint32_t max_candidates, read_holder &r1,
               read_holder &r2,
               const std::vector<std::uint32_t>::const_iterator counter_st,
@@ -1855,7 +1859,7 @@ map_fragments(const std::uint32_t max_candidates, read_holder &r1,
               PackedRead &packed_pread, AbismalAlignSimple &aln,
               pe_candidates &res1, pe_candidates &res2,
               std::vector<score_t> &mem_scr1, se_candidates &res_se1,
-              se_candidates &res_se2, pe_element &best) {
+              se_candidates &res_se2, pe_element &best) -> bool {
   res1.reset(std::size(r1));
   res2.reset(std::size(r2));
   if (r1.read.empty() && r2.read.empty())
@@ -2258,10 +2262,10 @@ struct runner {
   }
 };
 
-static int
+static auto
 abismal_make_sam_header(const ChromLookup &cl, const int argc,
                         char *argv[],  // NOLINT(*-c-arrays)
-                        bamxx::bam_header &hdr) {
+                        bamxx::bam_header &hdr) -> int {
   static constexpr auto SAM_VERSION = "1.0";
   assert(std::size(cl.names) > 2);  // two entries exist for the padding
   assert(std::size(cl.starts) == std::size(cl.names) + 1);
@@ -2285,7 +2289,7 @@ abismal_make_sam_header(const ChromLookup &cl, const int argc,
             std::ostream_iterator<const char *>(the_command, " "));
   out << "CL:\"" << the_command.str() << "\"" << '\n';
   hdr.h = sam_hdr_init();
-  return sam_hdr_add_lines(hdr.h, out.str().data(), std::size(out.str()));
+  return sam_hdr_add_lines(hdr.h, std::data(out.str()), std::size(out.str()));
 }
 
 int

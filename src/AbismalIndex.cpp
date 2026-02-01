@@ -24,15 +24,19 @@
 #include <array>
 #include <cassert>
 #include <chrono>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <numeric>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 // NOLINTBEGIN(*-unix.Stream,*-avoid-magic-numbers,*-narrowing-conversions)
 

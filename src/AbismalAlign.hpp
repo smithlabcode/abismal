@@ -32,13 +32,13 @@
 // AbismalAlign class has a templated function for the comparison operation
 // between letters in a sequence. This function currently returns a boolean
 // value, so only computes longest common subsequence.
-typedef std::int16_t score_t;
-typedef genome_four_bit_itr genome_iterator;
-typedef std::vector<std::uint32_t> bam_cigar_t;
+using score_t = std::int16_t;
+using genome_iterator = genome_four_bit_itr;
+using bam_cigar_t = std::vector<std::uint32_t>;
 
 template <std::int8_t op>
-[[nodiscard]] static inline score_t
-count_total_ops(const bam_cigar_t &cigar) {
+[[nodiscard]] static inline auto
+count_total_ops(const bam_cigar_t &cigar) -> score_t {
   static constexpr auto acc = [&](const score_t t, const auto x) {
     return t + (abismal_bam_cigar_op(x) == op ? abismal_bam_cigar_oplen(x) : 0);
   };
@@ -56,22 +56,23 @@ static constexpr auto score_lookup = std::array{
   mismatch,
 };
 
-[[nodiscard]] constexpr score_t
-default_score(const std::uint32_t len, const score_t diffs) {
+[[nodiscard]] constexpr auto
+default_score(const std::uint32_t len, const score_t diffs) -> score_t {
   return static_cast<score_t>(match * static_cast<score_t>(len - diffs) +
                               mismatch * static_cast<score_t>(diffs));
 }
 
-[[nodiscard]] inline score_t
-mismatch_score(const std::uint8_t q_base, const std::uint8_t t_base) {
+[[nodiscard]] inline auto
+mismatch_score(const std::uint8_t q_base,
+               const std::uint8_t t_base) -> score_t {
   // NOLINTNEXTLINE(*-constant-array-index)
   return score_lookup[(q_base & t_base) == 0];
 }
 
 // edit distance as a function of aln_score and len
-[[nodiscard]] inline score_t
+[[nodiscard]] inline auto
 edit_distance(const score_t scr, const std::uint32_t len,
-              const bam_cigar_t &cigar) {
+              const bam_cigar_t &cigar) -> score_t {
   if (scr == 0)
     return static_cast<score_t>(len);
   const score_t ins = count_total_ops<ABISMAL_BAM_CINS>(cigar);
@@ -80,20 +81,21 @@ edit_distance(const score_t scr, const std::uint32_t len,
   // A = S - (indel_penalty) = match*M + mismatch*m
   // B = len - ins = M + m
   // m = (match*(len - ins) - A)/(match - mismatch)
-  const score_t A = static_cast<score_t>(scr - indel * (ins + del));
-  const score_t mism =
+  const auto A = static_cast<score_t>(scr - indel * (ins + del));
+  const auto mism =
     static_cast<score_t>((match * (len - ins) - A) / (match - mismatch));
 
   return static_cast<score_t>(mism + ins + del);
 }
 
-[[nodiscard]] inline score_t
-best_single_score(const std::uint32_t readlen) {
+[[nodiscard]] inline auto
+best_single_score(const std::uint32_t readlen) -> score_t {
   return static_cast<score_t>(match * readlen);
 }
 
-[[nodiscard]] inline score_t
-best_pair_score(const std::uint32_t readlen1, const std::uint32_t readlen2) {
+[[nodiscard]] inline auto
+best_pair_score(const std::uint32_t readlen1,
+                const std::uint32_t readlen2) -> score_t {
   return static_cast<score_t>(best_single_score(readlen1) +
                               best_single_score(readlen2));
 }
@@ -106,9 +108,10 @@ struct AbismalAlign {
     target{target_start}, bw{2 * max_off_diag + 1} {}
 
   template <const bool do_traceback>
-  score_t
+  auto
   align(const score_t diffs, const score_t max_diffs,
-        const std::vector<std::uint8_t> &query, const std::uint32_t t_pos);
+        const std::vector<std::uint8_t> &query,
+        const std::uint32_t t_pos) -> score_t;
 
   void
   build_cigar_len_and_pos(const score_t diffs, const score_t max_diffs,
@@ -150,13 +153,13 @@ static const std::uint8_t above_symbol = ABISMAL_BAM_CDEL;            // D
 static const std::uint8_t diag_symbol = ABISMAL_BAM_CMATCH;           // M
 static const std::uint8_t soft_clip_symbol = ABISMAL_BAM_CSOFT_CLIP;  // S
 
-[[nodiscard]] static inline bool  // consumes reference
-is_deletion(const std::uint8_t c) {
+[[nodiscard]] static inline auto  // consumes reference
+is_deletion(const std::uint8_t c) -> bool {
   return c == above_symbol;
 }
 
-[[nodiscard]] static inline bool  // does not consume reference
-is_insertion(const std::uint8_t c) {
+[[nodiscard]] static inline auto  // does not consume reference
+is_insertion(const std::uint8_t c) -> bool {
   return c == left_symbol;
 }
 
@@ -196,15 +199,15 @@ max16(T &a, const T b) {
 }
 
 template <class T>
-inline T
-min16(const T a, const T b) {
+inline auto
+min16(const T a, const T b) -> T {
   return ((a < b) ? a : b);
 }
 
-[[nodiscard]] static inline score_t
+[[nodiscard]] static inline auto
 get_best_score(const std::vector<score_t> &table, const std::size_t n_cells,
                const std::size_t n_col, std::size_t &best_i,
-               std::size_t &best_j) {
+               std::size_t &best_j) -> score_t {
   const auto best_cell_itr =
     // NOLINTNEXTLINE(*-narrowing-conversions)
     std::max_element(std::begin(table), std::begin(table) + n_cells);
@@ -215,8 +218,9 @@ get_best_score(const std::vector<score_t> &table, const std::size_t n_cells,
   return *best_cell_itr;
 }
 
-[[nodiscard]] static inline score_t
-get_best_score(const std::vector<score_t> &table, const std::size_t n_cells) {
+[[nodiscard]] static inline auto
+get_best_score(const std::vector<score_t> &table,
+               const std::size_t n_cells) -> score_t {
   // NOLINTNEXTLINE(*-narrowing-conversions)
   return *std::max_element(std::cbegin(table), std::cbegin(table) + n_cells);
 }
@@ -316,10 +320,10 @@ make_default_cigar(const std::uint32_t len, bam_cigar_t &cigar) {
 template <score_t (*score_function)(const std::uint8_t, const std::uint8_t),
           score_t indel_penalty>
 template <const bool do_traceback>
-score_t
+auto
 AbismalAlign<score_function, indel_penalty>::align(
   const score_t diffs, const score_t max_diffs,
-  const std::vector<std::uint8_t> &qseq, const std::uint32_t t_pos) {
+  const std::vector<std::uint8_t> &qseq, const std::uint32_t t_pos) -> score_t {
   q_sz = qseq.size();
   // edge case: diffs = 0 so alignment is "trivial"
   if (diffs == 0)
