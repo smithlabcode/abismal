@@ -40,13 +40,13 @@ struct random_base_generator {
   // ADS: other RNG behaves differently across systems (e.g. macos vs ubuntu)
   // and caused problems for comparing results when testing
 
-  static random_base_generator &
-  init() noexcept {
+  static auto
+  init() noexcept -> random_base_generator & {
     static random_base_generator r;
     return r;
   }
-  constexpr char
-  operator()() {
+  constexpr auto
+  operator()() -> char {
     constexpr auto m = 0x7fffffffu;  // 2^31
     constexpr auto a = 1103515245u;
     constexpr auto c = 12345u;
@@ -81,8 +81,8 @@ static constexpr std::uint32_t n_sorting_positions = 256u;
 
 static constexpr std::size_t hash_mask = (1ull << seed::key_weight) - 1;
 
-[[nodiscard]] static constexpr std::size_t
-ipow(const std::size_t b, const std::size_t e) {
+[[nodiscard]] static constexpr auto
+ipow(const std::size_t b, const std::size_t e) -> std::size_t {
   return e == 0 ? 1 : (e & 1 ? b : 1) * ipow(b * b, e >> 1);
 }
 static constexpr std::size_t hash_mask_three = ipow(3, key_weight_three);
@@ -106,39 +106,40 @@ struct ChromLookup {
   get_chrom_idx_and_offset(const std::uint32_t pos, std::int32_t &chrom_idx,
                            std::uint32_t &offset) const;
 
-  bool
+  auto
   get_chrom_idx_and_offset(const std::uint32_t pos, const std::uint32_t readlen,
                            std::int32_t &chrom_idx,
-                           std::uint32_t &offset) const;
+                           std::uint32_t &offset) const -> bool;
 
-  std::uint32_t
-  get_pos(const std::string &chrom, const std::uint32_t offset) const;
+  [[nodiscard]] auto
+  get_pos(const std::string &chrom,
+          const std::uint32_t offset) const -> std::uint32_t;
 
-  std::uint32_t
-  get_genome_size() const {
+  [[nodiscard]] auto
+  get_genome_size() const -> std::uint32_t {
     return starts.back();
   }
 
-  FILE *
-  read(FILE *in);
+  auto
+  read(FILE *in) -> FILE *;
 
-  std::istream &
-  read(std::istream &in);
+  auto
+  read(std::istream &in) -> std::istream &;
 
   void
   read(const std::string &infile);
 
-  FILE *
-  write(FILE *out) const;
+  auto
+  write(FILE *out) const -> FILE *;
 
-  std::ostream &
-  write(std::ostream &out) const;
+  auto
+  write(std::ostream &out) const -> std::ostream &;
 
   void
   write(const std::string &outfile) const;
 
-  std::string
-  tostring() const;
+  [[nodiscard]] auto
+  tostring() const -> std::string;
 };
 
 void
@@ -149,8 +150,8 @@ void
 load_genome(const std::string &genome_file, std::string &genome,
             ChromLookup &cl);
 
-std::ostream &
-operator<<(std::ostream &out, const ChromLookup &cl);
+auto
+operator<<(std::ostream &out, const ChromLookup &cl) -> std::ostream &;
 
 enum three_conv_type : std::uint8_t {
   c_to_t,
@@ -247,18 +248,18 @@ struct AbismalIndex {
   static constexpr auto default_max_candidates{100u};
   static constexpr auto max_n_count = 256ul;
 
-  AbismalIndex() {}
+  AbismalIndex() = default;
 };
 
 // A/T nucleotide to 1-bit value (0100 | 0001 = 5) is for A or G.
-constexpr two_letter_t
-get_bit(const std::uint8_t nt) {
+constexpr auto
+get_bit(const std::uint8_t nt) -> two_letter_t {
   return (nt & 5) == 0;  // NOLINT(*-avoid-magic-numbers)
 }
 
 template <const three_conv_type the_conv>
-constexpr three_letter_t
-get_three_letter_num(const std::uint8_t nt) {
+constexpr auto
+get_three_letter_num(const std::uint8_t nt) -> three_letter_t {
   // the_conv = c_to_t: C=T=0, A=1, G=2
   // the_conv = g_to_a: A=G=0, C=1, T=2
   // NOLINTBEGIN(*-avoid-magic-numbers)

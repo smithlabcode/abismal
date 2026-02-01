@@ -62,15 +62,15 @@ initialize(const std::size_t the_seed) {
   initialized = true;
 }
 
-std::uint64_t
-rand() {
+auto
+rand() -> std::uint64_t {
   assert(initialized);
   // ADS: should have same range as ordinary rand() by properties of
   // std::uniform_int_distribution default constructor.
   return di(e);
 }
-double
-rand_double() {  // ADS: in the interval [0, 1]
+auto
+rand_double() -> double {  // ADS: in the interval [0, 1]
   assert(initialized);
   // ADS: default constructor for std::uniform_real_distribution
   // sets a range of [0,1)
@@ -78,8 +78,9 @@ rand_double() {  // ADS: in the interval [0, 1]
 }
 }  // namespace simreads_random
 
-static inline std::string
-format_fastq_record(const std::string &name, const std::string &read) {
+static inline auto
+format_fastq_record(const std::string &name,
+                    const std::string &read) -> std::string {
   assert(!name.empty());
   std::string s;
   s += '@';
@@ -91,8 +92,9 @@ format_fastq_record(const std::string &name, const std::string &read) {
   return s;
 }
 
-static inline std::string
-format_fasta_record(const std::string &name, const std::string &read) {
+static inline auto
+format_fasta_record(const std::string &name,
+                    const std::string &read) -> std::string {
   assert(!name.empty());
   std::string s;
   s += '>';
@@ -107,8 +109,9 @@ struct FragInfo {
   set_sequential_name() {
     name = "read" + std::to_string(frag_count++);
   }
-  std::string
-  read1() const {
+
+  [[nodiscard]] auto
+  read1() const -> std::string {
     assert(!name.empty());
     std::string read = seq.substr(0, read_length);
     for (std::size_t i = 0; i < read_length - std::size(read); ++i)
@@ -116,8 +119,9 @@ struct FragInfo {
     return fasta_format ? format_fasta_record(name + ".1", read)
                         : format_fastq_record(name + ".1", read);
   }
-  std::string
-  read2() const {
+
+  [[nodiscard]] auto
+  read2() const -> std::string {
     assert(!name.empty());
     std::string read(seq);
     revcomp_inplace(read);
@@ -127,6 +131,7 @@ struct FragInfo {
     return fasta_format ? format_fasta_record(name + ".2", read)
                         : format_fastq_record(name + ".2", read);
   }
+
   void
   erase_info_through_insert() {
     const std::size_t orig_ref_len = end_pos - start_pos;
@@ -145,30 +150,32 @@ struct FragInfo {
         seq.substr(std::size(seq) - read_length, read_length);
     }
   }
+
   void
   remove_cigar_match_symbols() {
     replace(begin(cigar), end(cigar), '=', 'M');
     merge_equal_neighbor_cigar_ops(cigar);
   }
+
   void
   bisulfite_conversion(const bool random_pbat, const double bs_conv) {
     constexpr auto coin_flip = 0.5;
     if (pbat || (random_pbat && simreads_random::rand_double() < coin_flip)) {
-      for (auto it(begin(seq)); it != end(seq); ++it) {
-        if (*it == 'G' && (simreads_random::rand_double() < bs_conv))
-          *it = 'A';
+      for (char &it : seq) {
+        if (it == 'G' && (simreads_random::rand_double() < bs_conv))
+          it = 'A';  // cppcheck-suppress useStlAlgorithm
       }
     }
     else {
-      for (auto it(begin(seq)); it != end(seq); ++it) {
-        if (*it == 'C' && (simreads_random::rand_double() < bs_conv))
-          *it = 'T';
+      for (char &it : seq) {
+        if (it == 'C' && (simreads_random::rand_double() < bs_conv))
+          it = 'T';  // cppcheck-suppress useStlAlgorithm
       }
     }
   }
 
-  bool
-  rc() const {
+  [[nodiscard]] auto
+  rc() const -> bool {
     return strand == '-';
   }
 
@@ -193,8 +200,8 @@ bool FragInfo::fasta_format = false;
 std::size_t FragInfo::frag_count = 0;
 std::size_t FragInfo::read_length = read_length_default;
 
-static std::ostream &
-operator<<(std::ostream &out, const FragInfo &the_info) {
+static auto
+operator<<(std::ostream &out, const FragInfo &the_info) -> std::ostream & {
   const bool rc = the_info.rc();
   std::uint16_t flags_read = 0;
   std::uint16_t flags_mate = 0;
@@ -284,8 +291,9 @@ sim_frag_position(const std::string &genome, const std::size_t frag_len,
 }
 
 // simulate from a uniform distribution in a range
-static std::size_t
-sim_frag_length(const std::size_t min_length, const std::size_t max_length) {
+static auto
+sim_frag_length(const std::size_t min_length,
+                const std::size_t max_length) -> std::size_t {
   assert(max_length >= min_length);
   if (min_length == max_length)
     return min_length;
@@ -294,11 +302,11 @@ sim_frag_length(const std::size_t min_length, const std::size_t max_length) {
 }
 
 struct FragSampler {
-  FragSampler(const std::string &g, const ChromLookup &c, const char sc,
+  FragSampler(const std::string &g, ChromLookup c, const char sc,
               const std::size_t milen, const std::size_t malen,
               const bool require_valid) :
-    genome(g), cl(c), strand_code(sc), min_length(milen), max_length(malen),
-    require_valid(require_valid) {}
+    genome(g), cl(std::move(c)), strand_code(sc), min_length(milen),
+    max_length(malen), require_valid(require_valid) {}
   void
   sample_fragment(FragInfo &the_info) const {
     const std::size_t frag_len = sim_frag_length(min_length, max_length);
@@ -318,8 +326,8 @@ struct FragSampler {
       revcomp_inplace(the_info.seq);
     the_info.cigar = std::to_string(frag_len) + "M";  // default, no muts
   }
-  char
-  sim_strand() const {
+  [[nodiscard]] auto
+  sim_strand() const -> char {
     switch (strand_code) {
     case 'f':
       return '+';
@@ -386,8 +394,8 @@ struct FragMutator {
     compress_cigar(std::cbegin(cigar), std::cend(cigar), the_info.cigar);
     std::swap(seq, the_info.seq);
   }
-  char
-  sample_mutation() const {
+  [[nodiscard]] auto
+  sample_mutation() const -> char {
     const double x = simreads_random::rand_double();
     if (x > mutation_rate)
       return '=';
@@ -401,8 +409,8 @@ struct FragMutator {
         return 'D';
     }
   }
-  std::string
-  tostring() const {
+  [[nodiscard]] auto
+  tostring() const -> std::string {
     std::ostringstream oss;
     oss << "mutation_rate=" << mutation_rate << '\n'
         << "substitution_rate=" << substitution_rate << '\n'
@@ -523,7 +531,7 @@ simreads(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
                              insertion_rate, deletion_rate);
 
     if (rng_seed == num_lim<std::size_t>::max())
-      rng_seed = time(0) + getpid();
+      rng_seed = time(nullptr) + getpid();
 
     if (VERBOSE)
       std::cerr << "rng seed: " << rng_seed << '\n';
