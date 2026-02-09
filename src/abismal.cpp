@@ -430,7 +430,7 @@ struct se_candidates {
   void
   prepare_for_alignments() {
     // no sort_heap here as heapify used "diffs"
-    std::sort(std::begin(v), std::begin(v) + sz,
+    std::stable_sort(std::begin(v), std::begin(v) + sz,
               [](const se_element &a, const se_element &b) {
                 return a.pos < b.pos || (a.pos == b.pos && a.flags < b.flags);
               });
@@ -843,7 +843,7 @@ struct pe_candidates {
 
   void
   prepare_for_mating() {
-    std::sort(
+    std::stable_sort(
       std::begin(v),
       std::begin(v) + sz,  // no sort_heap here as heapify used "diffs"
       [](const se_element &a, const se_element &b) { return a.pos < b.pos; });
