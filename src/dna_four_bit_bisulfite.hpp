@@ -56,33 +56,32 @@ constexpr auto encode_base_a_rich = std::array{
   0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  // p-z
 };
 
-// clang-format off
 constexpr auto dna_four_bit_decoding = std::array{
-  'Z', // = 0000 =  0 = {}        = Zero bases
-  'A', // = 0001 =  1 = {A}       = Adenine
-  'C', // = 0010 =  2 = {C}       = Cytosine
-  'M', // = 0011 =  3 = {C,A}     = aMino
-  'G', // = 0100 =  4 = {G}       = Guanine
-  'R', // = 0101 =  5 = {G,A}     = puRine
-  'S', // = 0110 =  6 = {G,C}     = Strong
-  'V', // = 0111 =  7 = {G,C,A}   = not T
-  'T', // = 1000 =  8 = {T}       = Thymine
-  'W', // = 1001 =  9 = {T,A}     = Weak
-  'Y', // = 1010 = 10 = {T,C}     = pYramidine
-  'H', // = 1011 = 11 = {T,C,A}   = not G
-  'K', // = 1100 = 12 = {T,G}     = Keto
-  'D', // = 1101 = 13 = {T,G,A}   = not C
-  'B', // = 1110 = 14 = {T,G,C}   = not A
-  'N'  // = 1111 = 15 = {T,G,C,A} = aNything
+  'Z',  // = 0000 =  0 = {}        = Zero bases
+  'A',  // = 0001 =  1 = {A}       = Adenine
+  'C',  // = 0010 =  2 = {C}       = Cytosine
+  'M',  // = 0011 =  3 = {C,A}     = aMino
+  'G',  // = 0100 =  4 = {G}       = Guanine
+  'R',  // = 0101 =  5 = {G,A}     = puRine
+  'S',  // = 0110 =  6 = {G,C}     = Strong
+  'V',  // = 0111 =  7 = {G,C,A}   = not T
+  'T',  // = 1000 =  8 = {T}       = Thymine
+  'W',  // = 1001 =  9 = {T,A}     = Weak
+  'Y',  // = 1010 = 10 = {T,C}     = pYramidine
+  'H',  // = 1011 = 11 = {T,C,A}   = not G
+  'K',  // = 1100 = 12 = {T,G}     = Keto
+  'D',  // = 1101 = 13 = {T,G,A}   = not C
+  'B',  // = 1110 = 14 = {T,G,C}   = not A
+  'N'   // = 1111 = 15 = {T,G,C,A} = aNything
 };
 
-enum base_in_byte : std::uint8_t {
+enum class base_in_byte : std::uint8_t {
   left,
   right,
 };
 
-static constexpr auto nibble_mask = 15;
-static constexpr auto nibble_per_word = 16;
+static constexpr auto nibble_mask = 15u;
+static constexpr auto nibble_per_word = 16u;
 
 template <typename uint_type>
 constexpr auto
@@ -98,7 +97,8 @@ decode_dna_four_bit(const uint_type x, const std::size_t offset) -> char {
 
 template <class InputItr, class OutputIt>
 auto
-decode_dna_four_bit(InputItr first, InputItr last, OutputIt d_first) -> OutputIt {
+decode_dna_four_bit(InputItr first, InputItr last, OutputIt d_first)
+  -> OutputIt {
   // ADS: assume destination has enough space
   for (; first != last; ++first)
     for (std::size_t offset = 0; offset < nibble_per_word; ++offset)
@@ -154,34 +154,30 @@ decode_dna_four_bit(const InCtr &source, OutCtr &dest) {
   Z = 0000 =  0 = {}        = Zero
 */
 constexpr auto dna_four_bit_encoding = std::array{
-  /*  0*/ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* 15*/
-  /* 16*/ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* 31*/
-  /* 32*/ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* 47*/
-  /* 48*/ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* 63*/
-  /* 64*/ 0, 1,14, 2,13, 0, 0, 4,11, 0, 0,12, 0, 3, 0, 0,  /* 79*/
-  /* 80*/ 0, 0, 5, 6, 8, 0, 7, 9, 0,10, 0, 0, 0, 0, 0, 0,  /* 95*/
-  /* 96*/ 0, 1,14, 2,13, 0, 0, 4,11, 0, 0,12, 0, 3, 0, 0,  /*111*/
-  /*112*/ 0, 0, 5, 6, 8, 0, 7, 9, 0,10, 0, 0, 0, 0, 0, 0,  /*127*/
+  /*  0*/ 0, 0, 0,  0, 0,  0, 0, 0, 0,  0,  0, 0,  0, 0, 0, 0, /* 15*/
+  /* 16*/ 0, 0, 0,  0, 0,  0, 0, 0, 0,  0,  0, 0,  0, 0, 0, 0, /* 31*/
+  /* 32*/ 0, 0, 0,  0, 0,  0, 0, 0, 0,  0,  0, 0,  0, 0, 0, 0, /* 47*/
+  /* 48*/ 0, 0, 0,  0, 0,  0, 0, 0, 0,  0,  0, 0,  0, 0, 0, 0, /* 63*/
+  /* 64*/ 0, 1, 14, 2, 13, 0, 0, 4, 11, 0,  0, 12, 0, 3, 0, 0, /* 79*/
+  /* 80*/ 0, 0, 5,  6, 8,  0, 7, 9, 0,  10, 0, 0,  0, 0, 0, 0, /* 95*/
+  /* 96*/ 0, 1, 14, 2, 13, 0, 0, 4, 11, 0,  0, 12, 0, 3, 0, 0, /*111*/
+  /*112*/ 0, 0, 5,  6, 8,  0, 7, 9, 0,  10, 0, 0,  0, 0, 0, 0, /*127*/
 };
-//      .  A  B  C  D  .  .  G  H  .  .  K  .  M  N  .
-//      .  .  R  S  T  .  V  W  .  Y  Z
-// clang-format on
+//        .  A  B   C  D   .  .  G  H   .   .  K   .  M  N  .
+//        .  .  R   S  T   .  V  W  .   Y   Z
 
 template <typename uint_type>
 constexpr auto
-encode_dna_four_bit(const uint_type x,
-                    const std::size_t offset) -> std::size_t {
-  // NOLINTBEGIN(*-constant-array-index)
-  return (static_cast<std::size_t>(
-           dna_four_bit_encoding[static_cast<unsigned>(x)]))
-         << (4 * offset);
-  // NOLINTEND(*-constant-array-index)
+encode_dna_four_bit(const uint_type x, const std::size_t offset)
+  -> std::size_t {
+  // NOLINTNEXTLINE(*-constant-array-index)
+  return static_cast<std::size_t>(dna_four_bit_encoding[x]) << (4 * offset);
 }
 
 template <class InputItr, class OutputIt>
 auto
-encode_dna_four_bit(InputItr first, InputItr last,
-                    OutputIt d_first) -> OutputIt {
+encode_dna_four_bit(InputItr first, InputItr last, OutputIt d_first)
+  -> OutputIt {
   for (; first != last; ++d_first) {
     *d_first = 0;
     for (std::size_t i = 0; i < nibble_per_word && first != last; ++i)
@@ -194,8 +190,10 @@ encode_dna_four_bit(InputItr first, InputItr last,
 // of std::size_t values
 struct genome_four_bit_itr {
   explicit genome_four_bit_itr(
-    const std::vector<std::size_t>::const_iterator itr, const int offset = 0) :
-    itr{itr}, offset{offset} {}
+    const std::vector<std::size_t>::const_iterator itr,
+    const std::uint32_t offset = 0) :
+    itr{itr},
+    offset{offset} {}
 
   auto
   operator*() const -> std::size_t {
@@ -232,15 +230,16 @@ struct genome_four_bit_itr {
     return tmp;
   }
 
+  // ADS: careful, this isn't going to work if a negative value is given to
+  // the 'step' argument...
   auto
   operator+(const std::size_t step) const -> genome_four_bit_itr {
     // check if the sum of offsets is >= 16
     const bool high_nibble =
-      ((offset + (static_cast<int>(step) & nibble_mask)) & nibble_per_word) >>
-      4;
-    const int new_offset = (offset + static_cast<int>(step)) & nibble_mask;
-    return genome_four_bit_itr(
-      itr + static_cast<int>(step) / nibble_per_word + high_nibble, new_offset);
+      ((offset + (step & nibble_mask)) & nibble_per_word) >> 4;
+    const auto new_offset = (offset + step) & nibble_mask;
+    const auto word_offset = static_cast<std::int64_t>(step / nibble_per_word);
+    return genome_four_bit_itr(itr + word_offset + high_nibble, new_offset);
   }
 
   auto
@@ -259,7 +258,7 @@ struct genome_four_bit_itr {
   }
 
   std::vector<std::size_t>::const_iterator itr;
-  int offset{};
+  std::uint32_t offset{};
 };
 
 #endif  // DNA_FOUR_BIT_BISULFITE_HPP
