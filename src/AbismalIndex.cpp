@@ -154,9 +154,10 @@ get_exclude_itrs(
   const auto g_beg = genome_iterator(std::cbegin(genome));
   std::vector<gi_pair> exclude_itrs;
   exclude_itrs.reserve(std::size(exclude));
-  std::transform(
-    std::cbegin(exclude), std::cend(exclude), std::back_inserter(exclude_itrs),
-    [&](const auto &e) { return gi_pair{g_beg + e.first, g_beg + e.second}; });
+  std::transform(std::cbegin(exclude), std::cend(exclude),
+                 std::back_inserter(exclude_itrs), [&](const auto &e) {
+                   return gi_pair{g_beg + e.first, g_beg + e.second};
+                 });
   return exclude_itrs;
 }
 
@@ -918,7 +919,7 @@ AbismalIndex::sort_buckets() {
       threads.push_back(std::thread([&, start_idx, stop_idx]() {
         for (std::size_t i = start_idx; i < stop_idx; ++i)
           if (counter[i + 1] > counter[i] + 1)
-            std::sort(b + counter[i], b + counter[i + 1], bucket_less);
+            std::stable_sort(b + counter[i], b + counter[i + 1], bucket_less);
       }));
     }
     for (auto &thread : threads)
@@ -941,7 +942,8 @@ AbismalIndex::sort_buckets() {
       threads.push_back(std::thread([&, start_idx, stop_idx]() {
         for (std::size_t i = start_idx; i < stop_idx; ++i)
           if (counter_t[i + 1] > counter_t[i] + 1)
-            std::sort(b + counter_t[i], b + counter_t[i + 1], bucket_less);
+            std::stable_sort(b + counter_t[i], b + counter_t[i + 1],
+                             bucket_less);
       }));
     }
     for (auto &thread : threads)
@@ -964,7 +966,8 @@ AbismalIndex::sort_buckets() {
       threads.push_back(std::thread([&, start_idx, stop_idx]() {
         for (std::size_t i = start_idx; i < stop_idx; ++i)
           if (counter_a[i + 1] > counter_a[i] + 1)
-            std::sort(b + counter_a[i], b + counter_a[i + 1], bucket_less);
+            std::stable_sort(b + counter_a[i], b + counter_a[i + 1],
+                             bucket_less);
       }));
     }
     for (auto &thread : threads)
