@@ -5,7 +5,6 @@ aff19aeae4184c38cf364b3a94527098  tests/reads_pbat_pe_2.fq
 64e17fc1e424f9cb21879d38ddf745e5  tests/reads_pe_2.fq
 e94e71292fccd255bad3f3694efe7a4b  tests/reads_rpbat_pe_1.fq
 8bfa00acd0639dc66acd5aa8ac0369d5  tests/reads_rpbat_pe_2.fq
-bcbf01be810cbf4051292813eb6b9225  tests/tRex1.idx
 e8a5fe0aec564a972ca7a3a36c0022f7  tests/reads_pbat_pe.sam
 14e935a5b8a20c8a7422834c3327d1c7  tests/reads_pe.sam
 98d6ad9d563e3318756bd5fc3fcbc263  tests/reads_rpbat_pe.sam
@@ -14,3 +13,4 @@ e8a5fe0aec564a972ca7a3a36c0022f7  tests/reads_pbat_pe.sam
 bd54ba1e720039cb4b662faa4f0e04b3  tests/reads_rpbat_pe.mstats
 a6e138f4b89ef2dc0b90004baadddb9b  tests/reads_pbat_pe.mstats
 d7a9e3f6a5ed7373a827f07aaf32803a  tests/reads_pe.mstats
+57fd6ff3b49f4656c9506688040b7ce6  tests/tRex1.idx
