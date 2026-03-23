@@ -2324,6 +2324,8 @@ abismal(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
     opt_parse.add_opt("bam", 'B', "output BAM format", false, write_bam_fmt);
     opt_parse.add_opt("stats", 's', "map statistics file (YAML)", false,
                       stats_outfile);
+    opt_parse.add_opt("json", 'j', "output stats as JSON", false,
+                      stats_as_json);
     opt_parse.add_opt("max-candidates", 'c',
                       "max candidates per seed (0: use default)", false,
                       max_candidates);
@@ -2343,8 +2345,6 @@ abismal(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
                       false, g_to_a_conversion);
     opt_parse.add_opt("threads", 't', "number of threads", false,
                       abismal_concurrency::n_threads);
-    opt_parse.add_opt("json", 'j', "output stats as JSON", false,
-                      stats_as_json);
     opt_parse.add_opt("verbose", 'v', "print more run info", false, verbose);
     std::vector<std::string> leftover_args;
     opt_parse.parse(argc, argv, leftover_args);
