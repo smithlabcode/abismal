@@ -106,12 +106,12 @@ Using this argument, the output will be in BAM format.
 Output mapping statistics file in YAML format. This file provides a summary of
 mapping efficiency, detailing how many reads were zero, one or multiple
 times. It also provides the error rate of mapped reads and the number of reads
-that were too short to be mapped
+that were too short to be mapped.
 
-The output is in YAML format, which is human-readable and can be parsed in
-several programming languages.
+The default stats output is in YAML format, which is human-readable and can be
+parsed in several programming languages.
 
-For single-end reads the statistics looks something like this:
+For single-end reads, here is an example of statistics output:
 
 ```
 total_reads: 1000000
@@ -132,7 +132,7 @@ percent_unmapped: 4.538
 percent_skipped: 0
 ```
 
-For paired-end reads it looks like this:
+For paired-end reads this is an example:
 
 ```
 pairs:
@@ -152,7 +152,7 @@ pairs:
     num_discordant: 16085
     percent_unmapped: 21.6991
     percent_discordant: 1.6085
-mate1:
+read1:
     total_reads: 279345
     mapped:
         num_mapped: 175933
@@ -169,7 +169,7 @@ mate1:
     num_skipped: 0
     percent_unmapped: 37.0195
     percent_skipped: 0
-mate2:
+read2:
     total_reads: 279345
     mapped:
         num_mapped: 115030
@@ -188,25 +188,29 @@ mate2:
     percent_skipped: 0
 ```
 
+-j, -json
+
+Stats output will be in JSON format instead of YAML.
+
 -t NUM-THREADS, -threads NUM-THREADS [default : 1]
 
-Number of threads that should be used to map reads. Each thread reads 1000
-reads in parallel, so increasing this number uses more memory by a few
-kilobytes per additional thread. In most practical cases this should not be
-significantly different than single-thread mapping.
-
+Number of threads that should be used to map reads. Each thread reads 1000 reads
+in parallel, so increasing this number uses more memory by a few kilobytes per
+additional thread. In most practical cases this should not be significantly
+different than single-thread mapping. When cores are available, abismal has
+shown speedup with efficient use of cores up to 128 threads.
 
 -l MIN-FRAG-VALUE, -min-frag MIN-FRAG-VALUE [default : 32]
 
 (paired-end only) The minimum size a concordant fragment can have. There are
 cases in which concordant pairs can "dovetail", that is, the end of the
-reverse mate can pass the start of the forward mate. Ths parameter dictates
+reverse read can pass the start of the forward read. Ths parameter dictates
 the minimum size a dovetail read can have while accepting concordance. The
 schematic below depicts what the value of -l represents:
 
 ```
-                    [==================================>] [FORWARD MATE]
-[<==================================] [REVERSE MATE]
+                    [==================================>] [FORWARD READ]
+[<==================================] [REVERSE READ]
                     |-------l-------|
 ```
 
@@ -215,13 +219,13 @@ schematic below depicts what the value of -l represents:
 
 (paired-end only) The maximum size a concordant fragment, defined as the
 maximum distance between the genome start (smallest) coordinate of the forward
-mapped mate and the start (largest) coordinate of the reverse mapped strand,
+mapped read and the start (largest) coordinate of the reverse mapped strand,
 for a pair to be considered concordant. The schematic below depics how L is
 calculated.
 
 ```
-[===============>] [FORWARD MATE]
-                                         [<==============] [REVERSE MATE]
+[===============>] [FORWARD READ]
+                                         [<==============] [REVERSE READ]
 |---------------------------L----------------------------|
 ```
 
@@ -264,13 +268,6 @@ highest sum of alignment scores is kept.
 (single-end only) Indicates that reads are A-rich.  Mapping with this flags
 assumes that the bisulfite conversion is G-to-A instead of C-to-T.
 
--S -sam-orientation
-
-Report read sequences (the QSEQ in SAM terminology) in the SAM/BAM output file
-using the SAM orientation, which reverse-complements the read if the flags
-indicate it is mapped to the negative strand. The default is to always report
-the read exactly as it appears in the FASTQ input file.
-
 -v -verbose
 
 Prints more run info on the mapping progress, including a progress bar showing
@@ -303,7 +300,7 @@ must be a multiple of 4. This is a necessary but not sufficient condition for
 properly formatted FASTQ.
 
 For paired-end data, it is mandatory that both FASTQ ends have the same number
-of lines. Corresponding entries in each file are assumed to be mates.
+of lines. Corresponding entries in each file are assumed to be reads.
 
 # OUTPUT SAM FORMAT
 
@@ -314,107 +311,97 @@ format. Detailed specification of SAM is available at the
 [samtools](https://samtools.github.io) documentation page.  BAM format is also
 supported.
 
-The output starts with SAM headers. Headers contain metadata information on
-the reference genome. Each header line starts with the @ character.
+The output starts with SAM headers. Headers contain metadata information on the
+reference genome. Each header line starts with the @ character.
 
 The first line in the SAM output file is given by
 
-```
+```text
 @HD VN:1.0
 ```
 
 followed by one line per chromosome in the input FASTA file, encoding the
-chromosome length. Each line is in the format
+chromosome length. Each line is in the format:
 
-```
+```text
 @SQ SN:[chrom-name] LN:[chrom-length]
 ```
 
-where [chrom-name] is given by the first word of the chromosome name in the
-FASTA file (anything after the first white space is deleted), and
-[chrom-length] is the number of bases in the chromosome sequence.
+where `[chrom-name]` is given by the first word of the chromosome name in the
+FASTA file (anything after the first white space is excluded), and
+`[chrom-length]` is the number of bases in the chromosome sequence.
 
 The last line of the headers is a copy of how the program was called to
-generate the SAM output, and is of the form
+generate the SAM output, and is of the form:
 
-```
+```text
 @PG ID:ABISMAL  VN:3.3.0  CL:[command-call]
 ```
 
-where [command-call] is the shell command used to run abismal.
+where `[command-call]` is the shell command used to run abismal.
 
 ## Output mapped lines
 
-Following the header lines, reads that are mapped once (or at least once if
-the -a flag is used) are reported. Each read is a set of thirteen
-tab-separated fields as follows.
+Following the header lines, reads that are mapped once (or at least once if the
+-a flag is used) are reported. Each read is a set of thirteen tab-separated
+fields as follows.
 
 The first eleven fields are mandatory SAM fields:
 
- - QNAME: The query name, given by the first word of the FASTQ read name
- - FLAG: List of samtools flags, according to the SAM file format
-   documentation
- - RNAME: The reference name, or the chromosome to which the read was mapped
- - POS: 1-based position in the chromosome in which the read was mapepd
- - MAPQ: Abismal does not provide MAPQ, so this value is always set to 255
-   ("not defined" according to the SAM documentation)
- - CIGAR: A CIGAR string representing the read alignment. M stands for
-   matches, S are soft-clipped bases, I are insertions to the reference and D
-   are deletions from the reference
- - RNEXT: This field is an equal sign (=) for reads that mapped concordantly
-   or an asterisk (*) for single-end reads or reads that map discordantly.
- - PNEXT: The position (POS field) of the read's mate. In single-end reads
-   this is given by an asterisk (*)
- - TLEN: The fragment length for paired-end reads. It is a positive value for
-   if the first end maps to the forward strand and negative otherwise.  For
+ - QNAME: The query name, given by the first word of the FASTQ read name.
+ - FLAG: List of samtools flags, according to the SAM file format documentation.
+ - RNAME: The reference name, or the chromosome to which the read was mapped.
+ - POS: 1-based position in the chromosome in which the read was mapepd.
+ - MAPQ: Abismal does not provide MAPQ, so this value is always set to 255 ("not
+   defined" according to the SAM documentation).
+ - CIGAR: A CIGAR string representing the read alignment. M stands for matches,
+   S are soft-clipped bases, I are insertions to the reference and D are
+   deletions from the reference.
+ - RNEXT: This field is an equal sign (=) for reads that mapped concordantly or
+   an asterisk (*) for single-end reads or reads that map discordantly.
+ - PNEXT: The position (POS field) of the read's mate. In single-end reads this
+   is given by an asterisk (*).
+ - TLEN: The fragment length for paired-end reads. It is a positive value for if
+   the first end maps to the forward strand and negative otherwise.  For
    discordant or single-end reads a value of 0 is reported.
- - SEQ: The input sequence identical to the FASTQ input (see "important note
-   on SEQ reads reported in the SAM output" below)
- - QUAL: An asterisk (*). QUAL values are discarded on mapping and not
-   reported
+ - SEQ: The input sequence identical to the FASTQ input (see "important note on
+   SEQ reads reported in the SAM output" below).
+ - QUAL: An asterisk (*). QUAL values are discarded on mapping and not reported.
 
 The last two fields are optional tags that can be used downstream
 
- - NM: The edit distance (mismatches + insertions + deletions) in the
-   alignment between the read and reference
+ - NM: The edit distance (mismatches + insertions + deletions) in the alignment
+   between the read and reference.
  - CV: The bisulfite letter conversion assumed when mapping the read.  If the
-   read was assumed A-rich (G-to-A conversion), the value CV:A:A is
-   reported. If the read was assumed T-rich (C-to-T conversion), then the
-   value CV:A:T is reported. If the -R flag is not set, all reads coming from
-   the same FASTQ file will have the same assumed conversion. If the -R flag
-   is used, this tag provides the conversion used in the reported alignment.
+   read was assumed A-rich (G-to-A conversion), the value CV:A:A is reported. If
+   the read was assumed T-rich (C-to-T conversion), then the value CV:A:T is
+   reported. If the -R flag is not set, all reads coming from the same FASTQ
+   file will have the same assumed conversion. If the -R flag is used, this tag
+   provides the conversion used in the reported alignment.
 
-## IMPORTANT NOTE ON SEQ READS REPORTED IN THE SAM OUTPUT
+## NOTICE ABOUT OUTPUT FORMAT (2026-03-23)
 
-In a strict sense, the SEQ field reported by abismal does not comply with the
-SAM standard. Properly formatted SAM files reverse-complement reads that map
-to the reverse strand of the reference genome, whereas abismal reports reads
-identical to the input FASTQ. This is done deliberately to maintain
-consistency with the conversion type reported in the CV tag. This standard
-allows downstream analyses on letter frequencies and conversion types.  Tools
-to reverse-complement the SEQ field and the letter in the CV tag can be used
-if properly formatted SAM files are necessary.
-
-**Update** As of version 3.3.1, `abismal map` includes an option `-S` that
-will do the reverse complement prior to writing the read sequence in the
+Orientation of read sequences in abismal output conforms to SAM standards, and
+previous notices about orientation should now be safe to ignore.  The reverse
+complement of a read sequence is taken prior to writing that sequence in the
 SAM/BAM output for any read that maps to the negative strand of the reference.
+(This change was made with commit `0ed41d4`.)
 
 ## Filtering concordant/discordant pairs in paired-end SAM
 
-In paired-end mapping, abismal will try to mate concordant pairs and find
-pairs whose sum of edit distances is below the user-defined cut-off (set to
-10\% of the mapped read length by default). If it cannot find such concordant
-pair (either due to ambiguity or low alignment score), abismal will map each
-end as single-end reads and report locations with sufficiently high
-similarity. In many cases, one may want to only keep concordant pairs, or even
-isolate discordant pairs to analyze their sequence patterns, mapping quality,
-etc.
+In paired-end mapping, abismal will try to mate concordant pairs and find pairs
+whose sum of edit distances is below the user-defined cut-off (set to 10\% of
+the mapped read length by default). If it cannot find such concordant pair
+(either due to ambiguity or low alignment score), abismal will map each end as
+single-end reads and report locations with sufficiently high similarity. In many
+cases, one may want to only keep concordant pairs, or even isolate discordant
+pairs to analyze their sequence patterns, mapping quality, etc.
 
-To isolate concordant pairs from paired-end output `out.sam`, use the
-following awk script, which isolates the SAM header and reads with an equal
-(=) symbol in the RNEXT field (reserved only for concordant pairs).
+To isolate concordant pairs from paired-end output `out.sam`, use the following
+awk script, which isolates the SAM header and reads with an equal (=) symbol in
+the RNEXT field (reserved only for concordant pairs).
 
-```
+```console
 awk '$1 ~ /^@/ || $7 == "="' out.sam >out_paired.sam
 ```
 
@@ -422,7 +409,7 @@ To isolate discordantly mapped reads from paired-end output `out.sam`, use the
 following awk script, which isolates the SAM header and reads with an asterisk
 (*) in the RNEXT field (reserved for discordantly mapped reads).
 
-```
+```console
 awk '$1 ~ /^@/ || $7 == "*"' out.sam >out_single.sam
 ```
 
@@ -436,16 +423,16 @@ options.
 Abismal uses the notation of T-rich and A-rich reads for input reads. We say a
 read is T-rich if it was sequenced directly after bisulfite conversion, and we
 say a read is A-rich if it the complement of the bisulfite-converted DNA was
-sequenced. Single-end and end 1 of paired-end reads are usually T-rich, and
-end 2 of paired-end reads are usually A-rich.
+sequenced. Single-end and end 1 of paired-end reads are usually T-rich, and end
+2 of paired-end reads are usually A-rich.
 
-For most organisms, we can infer if an input is T-rich based on the
-frequencies of Ts and Cs (for animal samples and most plants). Half of the
-T-rich bases should be Ts, and the frequency of Cs should be extremely
-low. Conversely, in A-rich samples half of the bases are As, and the frequency
-of Gs is very low. If neither case applies for the dataset, it may be either
-an RPBAT sample or not a bisulfite sequencing sample (see "notation used by
-abismal" below for a description of what RPBAT samples are)
+For most organisms, we can infer if an input is T-rich based on the frequencies
+of Ts and Cs (for animal samples and most plants). Half of the T-rich bases
+should be Ts, and the frequency of Cs should be extremely low. Conversely, in
+A-rich samples half of the bases are As, and the frequency of Gs is very low. If
+neither case applies for the dataset, it may be either an RPBAT sample or not a
+bisulfite sequencing sample (see "notation used by abismal" below for a
+description of what RPBAT samples are)
 
 ## Traditional, PBAT and RPBAT reads
 
@@ -456,31 +443,31 @@ will be assumed T-rich, and end 2 will be assumed A-rich.
 
 We say reads are PBAT (often from the Post-Bisulfite Adapter Tagging protocol)
 if they follow the opposite convention of traditional reads. This means that a
-PBAT single-end input is A-rich, and a PBAT paired-end input is A-rich in end
-1 and T-rich in end 2.  Reads can be mapped in PBAT mode by using the -p flag
-or the -pbat flag among the [options].
+PBAT single-end input is A-rich, and a PBAT paired-end input is A-rich in end 1
+and T-rich in end 2.  Reads can be mapped in PBAT mode by using the -p flag or
+the -pbat flag among the [options].
 
 We say reads are RPBAT (from the Random-priming PBAT protocol) if reads in the
 input can be T-rich or A-rich with equal probability, and both must be
 tried. For paired-end input, we always assume that corresponding ends of reads
-have complementary bisulfite bases. In other words, if end 1 is T-rich, then
-end 2 is A-rich, and vice-versa.  Reads can be mapped as RPBAT by passing the
--R flag or the -random-pbat flag among the [options].
+have complementary bisulfite bases. In other words, if end 1 is T-rich, then end
+2 is A-rich, and vice-versa.  Reads can be mapped as RPBAT by passing the -R
+flag or the -random-pbat flag among the [options].
 
 ### What if the protocol (traditional, PBAT, RPBAT) is not known?
 
 If the sequencing protocol is not known, we suggest trying all 3
-possibilities. You will always get most reads by mapping as RPBAT, but that
-does not mean this is always the best option. For instance, if reads come from
-the traditional single-end protocol, the reads mapped as A-rich may be false
+possibilities. You will always get most reads by mapping as RPBAT, but that does
+not mean this is always the best option. For instance, if reads come from the
+traditional single-end protocol, the reads mapped as A-rich may be false
 positives and lead to incorrect downstream analyses. You should only map as
 RPBAT if you are getting very low mapping values in both traditional and PBAT
 modes, which suggests that reads are truly RPBAT.
 
 ## Valid hits
 
-Abismal maps reads by first computing Hamming distances between the read and
-the candidates retrieved during seeding. Hamming distance is the number of
+Abismal maps reads by first computing Hamming distances between the read and the
+candidates retrieved during seeding. Hamming distance is the number of
 mismatches between the read and the candidate, so no insertions and deletions
 are made. We say a candidate is a valid hit for a read if the Hamming distance
 is below 40% of the read length.  Hits that are not valid will not be aligned,
@@ -489,8 +476,8 @@ as they are extremely unlikely to yield high alignment scores.
 ## Alignment scores and edit distances
 
 Abismal aligns reads through a banded Smith-Waterman alignment, using a band
-width of 3. We use a scoring system of +1 for matches, -1 for mismatches and
--1 for indels. In other words, if an alignment has M matches, m mismatches, I
+width of 3. We use a scoring system of +1 for matches, -1 for mismatches and -1
+for indels. In other words, if an alignment has M matches, m mismatches, I
 insertions and D deletions, the alignment score A is given by
 
 $$A = a - I - D$$
@@ -501,38 +488,35 @@ $$E = m + I + D$$
 
 Abismal selects the best alignment score, and only reports it if the edit
 distance is below a fraction m (set under the -m or -max-fraction flag) of the
-read length. For example, if the read length is 100 and m =0.1, the read is
-only reported if the edit distance is at most 10.
+read length. For example, if the read length is 100 and m =0.1, the read is only
+reported if the edit distance is at most 10.
 
 We also note that abismal does not use phred quality scores in alignment, so a
-mismatch on a low quality base is the same as a mismatch in a high-quality
-base.
+mismatch on a low quality base is the same as a mismatch in a high-quality base.
 
 ## Valid alignments
 
 We say a candidate is a valid alignment if the edit distance is at most a
-fraction m of the read length. The acceptable fraction can be set through the
--m or -max-distance flag in [options]. Some application-specific cases may
-require more or less acceptable error, so this parameter can be adjusted by
-the user.
+fraction m of the read length. The acceptable fraction can be set through the -m
+or -max-distance flag in [options]. Some application-specific cases may require
+more or less acceptable error, so this parameter can be adjusted by the user.
 
 ## Concordant pairs
 
-On paired-end input, we say reads $r1$ and $r2$ with lengths $n1$ and
-$n2$, respectively, are a corresponding pair are concordant if there exist
-positions $p1$ and $p2$ such that
+On paired-end input, we say reads $r1$ and $r2$ with lengths $n1$ and $n2$,
+respectively, are a corresponding pair are concordant if there exist positions
+$p1$ and $p2$ such that
 
-1. $p1$ is a valid alignment for $r1$ and $p2$ is a valid alignment for
-$r2$
+1. $p1$ is a valid alignment for $r1$ and $p2$ is a valid alignment for $r2$
 2. $p1$ and $p2$ are in opposite strands of the genome, and
 3. $p2 - p1 \geq l$ and $p2 - p1 \leq L - n2$.
 
-This means that the fragment lengths from which the pair originates is at
-least $l$ and at most $L$. The default values of $l$ and $L$ are 32 and 3000,
-respectively, and can be set by the `-l` and `-L` flags.  Those are
-conservative values that cover most of the current protocols. We will
-incorporate automatic calculations of these values in the future based on the
-first high-quality read pairs that are mapped.
+This means that the fragment lengths from which the pair originates is at least
+$l$ and at most $L$. The default values of $l$ and $L$ are 32 and 3000,
+respectively, and can be set by the `-l` and `-L` flags.  Those are conservative
+values that cover most of the current protocols. We will incorporate automatic
+calculations of these values in the future based on the first high-quality read
+pairs that are mapped.
 
 ## Discordant pairs
 
@@ -547,10 +531,10 @@ simultaneously
 
 Read pairs that are not concordant (including discordant reads) do not follow
 the expectations, but in cases where they map with high quality, they will be
-reported. If read pairs are not concordant, abismal maps each end
-independently as single-end reads. If users do not which to keep single-end
-alignments in paired-end data, they can filter out single-end reads of an
-output file out.sam though the following command.
+reported. If read pairs are not concordant, abismal maps each end independently
+as single-end reads. If users do not which to keep single-end alignments in
+paired-end data, they can filter out single-end reads of an output file out.sam
+though the following command.
 
 ```
 samtools view out.sam | awk '$7 == "="' >out_paired.sam
@@ -576,7 +560,7 @@ reproduce the issue and find the source of the problem.
 
 # COPYRIGHT
 
-Copyright (C) 2018-2025 Andrew D. Smith and Guilherme Sena
+Copyright (C) 2018-2026 Andrew D. Smith and Guilherme Sena
 
 abismal is free software: you can redistribute it and/or modify it under the
 terms of the GNU General Public License as published by the Free Software
@@ -586,3 +570,6 @@ version.
 abismal is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
 A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with
+this program. If not, see <https://www.gnu.org/licenses/>.

@@ -125,12 +125,12 @@ Output mapping statistics file in YAML format.
 This file provides a summary of mapping efficiency, detailing how many
 reads were zero, one or multiple times.
 It also provides the error rate of mapped reads and the number of reads
-that were too short to be mapped
+that were too short to be mapped.
 .PP
-The output is in YAML format, which is human-readable and can be parsed
-in several programming languages.
+The default stats output is in YAML format, which is human-readable and
+can be parsed in several programming languages.
 .PP
-For single-end reads the statistics looks something like this:
+For single-end reads, here is an example of statistics output:
 .IP
 .nf
 \f[C]
@@ -153,7 +153,7 @@ percent_skipped: 0
 \f[R]
 .fi
 .PP
-For paired-end reads it looks like this:
+For paired-end reads this is an example:
 .IP
 .nf
 \f[C]
@@ -174,7 +174,7 @@ pairs:
     num_discordant: 16085
     percent_unmapped: 21.6991
     percent_discordant: 1.6085
-mate1:
+read1:
     total_reads: 279345
     mapped:
         num_mapped: 175933
@@ -191,7 +191,7 @@ mate1:
     num_skipped: 0
     percent_unmapped: 37.0195
     percent_skipped: 0
-mate2:
+read2:
     total_reads: 279345
     mapped:
         num_mapped: 115030
@@ -211,6 +211,10 @@ mate2:
 \f[R]
 .fi
 .PP
+-j, -json
+.PP
+Stats output will be in JSON format instead of YAML.
+.PP
 -t NUM-THREADS, -threads NUM-THREADS [default : 1]
 .PP
 Number of threads that should be used to map reads.
@@ -218,20 +222,22 @@ Each thread reads 1000 reads in parallel, so increasing this number uses
 more memory by a few kilobytes per additional thread.
 In most practical cases this should not be significantly different than
 single-thread mapping.
+When cores are available, abismal has shown speedup with efficient use
+of cores up to 128 threads.
 .PP
 -l MIN-FRAG-VALUE, -min-frag MIN-FRAG-VALUE [default : 32]
 .PP
 (paired-end only) The minimum size a concordant fragment can have.
 There are cases in which concordant pairs can \[lq]dovetail\[rq], that
-is, the end of the reverse mate can pass the start of the forward mate.
+is, the end of the reverse read can pass the start of the forward read.
 Ths parameter dictates the minimum size a dovetail read can have while
 accepting concordance.
 The schematic below depicts what the value of -l represents:
 .IP
 .nf
 \f[C]
-                    [==================================>] [FORWARD MATE]
-[<==================================] [REVERSE MATE]
+                    [==================================>] [FORWARD READ]
+[<==================================] [REVERSE READ]
                     |-------l-------|
 \f[R]
 .fi
@@ -240,14 +246,14 @@ The schematic below depicts what the value of -l represents:
 .PP
 (paired-end only) The maximum size a concordant fragment, defined as the
 maximum distance between the genome start (smallest) coordinate of the
-forward mapped mate and the start (largest) coordinate of the reverse
+forward mapped read and the start (largest) coordinate of the reverse
 mapped strand, for a pair to be considered concordant.
 The schematic below depics how L is calculated.
 .IP
 .nf
 \f[C]
-[===============>] [FORWARD MATE]
-                                         [<==============] [REVERSE MATE]
+[===============>] [FORWARD READ]
+                                         [<==============] [REVERSE READ]
 |---------------------------L----------------------------|
 \f[R]
 .fi
@@ -295,14 +301,6 @@ The conversion that attains highest sum of alignment scores is kept.
 Mapping with this flags assumes that the bisulfite conversion is G-to-A
 instead of C-to-T.
 .PP
--S -sam-orientation
-.PP
-Report read sequences (the QSEQ in SAM terminology) in the SAM/BAM
-output file using the SAM orientation, which reverse-complements the
-read if the flags indicate it is mapped to the negative strand.
-The default is to always report the read exactly as it appears in the
-FASTQ input file.
-.PP
 -v -verbose
 .PP
 Prints more run info on the mapping progress, including a progress bar
@@ -343,7 +341,7 @@ FASTQ.
 .PP
 For paired-end data, it is mandatory that both FASTQ ends have the same
 number of lines.
-Corresponding entries in each file are assumed to be mates.
+Corresponding entries in each file are assumed to be reads.
 .SH OUTPUT SAM FORMAT
 .SS Output headers
 .PP
@@ -367,7 +365,7 @@ The first line in the SAM output file is given by
 .PP
 followed by one line per chromosome in the input FASTA file, encoding
 the chromosome length.
-Each line is in the format
+Each line is in the format:
 .IP
 .nf
 \f[C]
@@ -375,12 +373,13 @@ Each line is in the format
 \f[R]
 .fi
 .PP
-where [chrom-name] is given by the first word of the chromosome name in
-the FASTA file (anything after the first white space is deleted), and
-[chrom-length] is the number of bases in the chromosome sequence.
+where \f[C][chrom-name]\f[R] is given by the first word of the
+chromosome name in the FASTA file (anything after the first white space
+is excluded), and \f[C][chrom-length]\f[R] is the number of bases in the
+chromosome sequence.
 .PP
 The last line of the headers is a copy of how the program was called to
-generate the SAM output, and is of the form
+generate the SAM output, and is of the form:
 .IP
 .nf
 \f[C]
@@ -388,7 +387,7 @@ generate the SAM output, and is of the form
 \f[R]
 .fi
 .PP
-where [command-call] is the shell command used to run abismal.
+where \f[C][command-call]\f[R] is the shell command used to run abismal.
 .SS Output mapped lines
 .PP
 Following the header lines, reads that are mapped once (or at least once
@@ -397,29 +396,29 @@ Each read is a set of thirteen tab-separated fields as follows.
 .PP
 The first eleven fields are mandatory SAM fields:
 .IP \[bu] 2
-QNAME: The query name, given by the first word of the FASTQ read name
+QNAME: The query name, given by the first word of the FASTQ read name.
 .IP \[bu] 2
 FLAG: List of samtools flags, according to the SAM file format
-documentation
+documentation.
 .IP \[bu] 2
 RNAME: The reference name, or the chromosome to which the read was
-mapped
+mapped.
 .IP \[bu] 2
-POS: 1-based position in the chromosome in which the read was mapepd
+POS: 1-based position in the chromosome in which the read was mapepd.
 .IP \[bu] 2
 MAPQ: Abismal does not provide MAPQ, so this value is always set to 255
-(\[lq]not defined\[rq] according to the SAM documentation)
+(\[lq]not defined\[rq] according to the SAM documentation).
 .IP \[bu] 2
 CIGAR: A CIGAR string representing the read alignment.
 M stands for matches, S are soft-clipped bases, I are insertions to the
-reference and D are deletions from the reference
+reference and D are deletions from the reference.
 .IP \[bu] 2
 RNEXT: This field is an equal sign (=) for reads that mapped
 concordantly or an asterisk (*) for single-end reads or reads that map
 discordantly.
 .IP \[bu] 2
 PNEXT: The position (POS field) of the read\[cq]s mate.
-In single-end reads this is given by an asterisk (*)
+In single-end reads this is given by an asterisk (*).
 .IP \[bu] 2
 TLEN: The fragment length for paired-end reads.
 It is a positive value for if the first end maps to the forward strand
@@ -427,15 +426,15 @@ and negative otherwise.
 For discordant or single-end reads a value of 0 is reported.
 .IP \[bu] 2
 SEQ: The input sequence identical to the FASTQ input (see \[lq]important
-note on SEQ reads reported in the SAM output\[rq] below)
+note on SEQ reads reported in the SAM output\[rq] below).
 .IP \[bu] 2
 QUAL: An asterisk (*).
-QUAL values are discarded on mapping and not reported
+QUAL values are discarded on mapping and not reported.
 .PP
 The last two fields are optional tags that can be used downstream
 .IP \[bu] 2
 NM: The edit distance (mismatches + insertions + deletions) in the
-alignment between the read and reference
+alignment between the read and reference.
 .IP \[bu] 2
 CV: The bisulfite letter conversion assumed when mapping the read.
 If the read was assumed A-rich (G-to-A conversion), the value CV:A:A is
@@ -446,24 +445,15 @@ If the -R flag is not set, all reads coming from the same FASTQ file
 will have the same assumed conversion.
 If the -R flag is used, this tag provides the conversion used in the
 reported alignment.
-.SS IMPORTANT NOTE ON SEQ READS REPORTED IN THE SAM OUTPUT
+.SS NOTICE ABOUT OUTPUT FORMAT (2026-03-23)
 .PP
-In a strict sense, the SEQ field reported by abismal does not comply
-with the SAM standard.
-Properly formatted SAM files reverse-complement reads that map to the
-reverse strand of the reference genome, whereas abismal reports reads
-identical to the input FASTQ.
-This is done deliberately to maintain consistency with the conversion
-type reported in the CV tag.
-This standard allows downstream analyses on letter frequencies and
-conversion types.
-Tools to reverse-complement the SEQ field and the letter in the CV tag
-can be used if properly formatted SAM files are necessary.
-.PP
-\f[B]Update\f[R] As of version 3.3.1, \f[C]abismal map\f[R] includes an
-option \f[C]-S\f[R] that will do the reverse complement prior to writing
-the read sequence in the SAM/BAM output for any read that maps to the
-negative strand of the reference.
+Orientation of read sequences in abismal output conforms to SAM
+standards, and previous notices about orientation should now be safe to
+ignore.
+The reverse complement of a read sequence is taken prior to writing that
+sequence in the SAM/BAM output for any read that maps to the negative
+strand of the reference.
+(This change was made with commit \f[C]0ed41d4\f[R].)
 .SS Filtering concordant/discordant pairs in paired-end SAM
 .PP
 In paired-end mapping, abismal will try to mate concordant pairs and
@@ -672,7 +662,7 @@ the genome used so we can reproduce the issue and find the source of the
 problem.
 .SH COPYRIGHT
 .PP
-Copyright (C) 2018-2025 Andrew D.
+Copyright (C) 2018-2026 Andrew D.
 Smith and Guilherme Sena
 .PP
 abismal is free software: you can redistribute it and/or modify it under
@@ -684,5 +674,9 @@ abismal is distributed in the hope that it will be useful, but WITHOUT
 ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
 FITNESS FOR A PARTICULAR PURPOSE.
 See the GNU General Public License for more details.
+.PP
+You should have received a copy of the GNU General Public License along
+with this program.
+If not, see <https://www.gnu.org/licenses/>.
 .SH AUTHORS
 Andrew D Smith and Guilherme Sena.
