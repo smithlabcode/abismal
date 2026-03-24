@@ -18,8 +18,25 @@
  * with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-static constexpr auto about = "map bisulfite converted reads";
-static constexpr auto description = "map bisulfite converted reads";
+static constexpr auto about = "another bisulfite mapping algorithm";
+static constexpr auto description = R"(
+Examples:
+
+abismal map -t 16 -i hg38.idx -o SRR14416915.sam SRR14416915_1.fastq
+
+abismal map -t 128 -i hg38.idx -B -o SRR14416915.bam \
+    SRR14416915_1.fastq SRR14416915_2.fastq
+
+abismal map -t 8 -i mm39.idx -B -o SRR2722846.bam SRR2722846.fq.gz
+
+abismal map \
+    --verbose \
+    --threads 128 \
+    --index hg38.idx \
+    --stats SRR14416915.stats.json --json \
+    --output SRR14416915.bam --bam \
+    SRR14416915_1.fastq SRR14416915_2.fastq
+)";
 
 #include "abismal.hpp"
 #include "AbismalAlign.hpp"
@@ -2323,6 +2340,7 @@ abismal(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
       app.footer(description);
     app.get_formatter()->label("REQUIRED", "REQ");
     app.get_formatter()->long_option_alignment_ratio(0);
+    app.get_formatter()->enable_footer_formatting(false);
     // clang-format off
     app.add_option("reads1", reads_file,
                    "reads file in FASTQ format (gzip ok)")
