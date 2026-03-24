@@ -26,6 +26,7 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -55,14 +56,21 @@ void
 print_help(const std::vector<abismal_command> &commands) {
   std::cout << "Program: " << program_name << "\n"
             << "Version: " << VERSION << "\n"
-            << "Usage: " << program_name << " <command> [options]\n"
-            << "Commands:\n";
+            << "Usage: " << program_name << " command [options]\n"
+            << "commands:\n";
   for (const auto &c : commands)
     std::cout << c << '\n';
 }
 
 int
 main(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
+  using std::string_literals::operator""s;
+  const auto help_tokens = std::set{
+    "-h"s,
+    "--help"s,
+    "-help"s,
+    "-?"s,
+  };
   try {
     // clang-format off
     std::vector<abismal_command> commands = {
@@ -71,7 +79,7 @@ main(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
       {"sim", "simulate WGBS reads for a FASTA reference genome", simreads}
     };
     // clang-format on
-    if (argc < 2) {
+    if (argc < 2 || help_tokens.count(argv[1])) {
       print_help(commands);
       return EXIT_SUCCESS;
     }
