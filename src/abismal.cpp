@@ -800,11 +800,11 @@ struct pe_candidates {
 
   inline void
   reset(const std::uint32_t readlen) {
+    static constexpr auto denom = 10;
     v.front().reset(readlen);
     sure_ambig = false;
     cutoff = v.front().diffs;
-    good_cutoff =
-      static_cast<score_t>(readlen / 10);  // NOLINT(*-avoid-magic-numbers)
+    good_cutoff = static_cast<score_t>(readlen / denom);
     sz = 1;
     capacity = max_size_small;
   }
@@ -866,12 +866,11 @@ struct pe_candidates {
 
   void
   prepare_for_mating() {
-    std::sort(
-      std::begin(v),
-      std::begin(v) + sz,  // no sort_heap here as heapify used "diffs"
-      [](const se_element &a, const se_element &b) { return a.pos < b.pos; });
-    sz = std::distance(std::begin(v),
-                       std::unique(std::begin(v), std::begin(v) + sz));
+    const auto b = std::begin(v);
+    // no sort_heap here as heapify used "diffs"
+    std::sort(b, b + sz,
+              [](const auto &a, const auto &b) { return a.pos < b.pos; });
+    sz = std::distance(b, std::unique(b, b + sz));
   }
 
   bool sure_ambig{};
@@ -882,7 +881,7 @@ struct pe_candidates {
   std::vector<se_element> v;
 
   static const std::uint32_t max_size_small = 32u;
-  static const std::uint32_t max_size_large = (max_size_small) << 10u;
+  static const std::uint32_t max_size_large = max_size_small << 10u;
 };
 
 struct single_end_mapping_statistics {
@@ -1110,19 +1109,19 @@ select_output(
   }
 }
 
-/* GS: this function counts mismatches between read and genome when
- * they are packed as 64-bit integers, with 16 characters per integer.
- * The number of ones in the AND operation is the number of matches,
- * and there are at most 16 matches since each genome base has only 1
- * out of 4 active bits. Subtracting 16 from the popcount gives the
- * number of mismatches for 16 read bases.
- * The variable "offset" is the remainder of the position modulo 16,
- * and is necessary to adjust the genome bases to align them with the
- * read. The reason why we pad with << (63 - offset) << 1 instead of
- * << 64 - offset is that, when offset = 0 (i.e., the read is aligned
- * with the genome), offsetting 64 positions leads to undefined
- * behavior in some hardware architectures, so the compiler ignores
- * the directive and the number remains unchanged. This is a
+/* GS: this function counts mismatches between read and genome when they are
+ * packed as 64-bit integers, with 16 characters per integer. The number of 1s
+ * in the AND operation is the number of matches, and there are at most 16
+ * matches since each base in the genome has only 1 out of 4 active bits.
+ * Subtracting 16 from the popcount gives the number of mismatches for 16 read
+ * bases.
+ *
+ * The variable "offset" is the remainder of the position modulo 16, and is
+ * necessary to adjust the genome bases to align them with the read. The reason
+ * why we pad with << (63 - offset) << 1 instead of << 64 - offset is that, when
+ * offset = 0 (i.e., the read is aligned with the genome), offsetting 64
+ * positions leads to undefined behavior in some hardware architectures, so the
+ * compiler ignores the directive and the number remains unchanged. This is a
  * workaround and there is probably a better way to do it.
  */
 static auto
