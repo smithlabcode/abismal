@@ -27,7 +27,8 @@ abismal map -t 16 -i hg38.idx -o SRR14416915.sam SRR14416915_1.fastq
 abismal map -t 128 -i hg38.idx -B -o SRR14416915.bam \
     SRR14416915_1.fastq SRR14416915_2.fastq
 
-abismal map -t 8 -i mm39.idx -B -o SRR2722846.bam SRR2722846.fq.gz
+abismal map -t 8 -i mm39.idx -s SRR14416915.stats.yaml \
+    -B -o SRR2722846.bam SRR2722846.fq.gz
 
 abismal map \
     --verbose \
@@ -2325,7 +2326,7 @@ abismal(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
     bool write_bam_fmt{};
     bool stats_as_json{};
 
-    std::uint32_t max_candidates{};
+    std::uint32_t max_candidates{AbismalIndex::default_max_candidates};
     std::string index_file;
     std::string genome_file;
     std::string outfile;
@@ -2339,7 +2340,7 @@ abismal(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
     if (argc >= 2)
       app.footer(description);
     app.get_formatter()->label("REQUIRED", "REQ");
-    app.get_formatter()->long_option_alignment_ratio(0);
+    app.get_formatter()->long_option_alignment_ratio(0.2);
     app.get_formatter()->enable_footer_formatting(false);
     // clang-format off
     app.add_option("reads1", reads_file,
@@ -2364,7 +2365,9 @@ abismal(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
       ->required();
     app.add_option("-s,--stats", stats_outfile, "map statistics output file")
       ->option_text("FILE");
-    app.add_option("-c,--max-candidates", max_candidates, "max candidates per seed (0: use default)");
+    app.add_option("-c,--max-candidates", max_candidates, "max candidates per seed")
+      ->option_text("UINT")
+      ->check(CLI::PositiveNumber);
     app.add_option("-l,--min-frag", pe_element::min_dist, "min fragment size (pe mode)");
     app.add_option("-L,--max-frag", pe_element::max_dist, "max fragment size (pe mode)");
     app.add_option("-m,--max-distance", se_element::valid_frac, "max fractional edit distance")
@@ -2380,7 +2383,6 @@ abismal(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
     app.add_flag("-A,--a-rich", g_to_a_conversion, "indicates reads are a-rich (se mode)");
     app.add_flag("-j,--json", stats_as_json, "output stats as JSON (default is YAML)");
     app.add_flag("-v,--verbose", verbose, "print more run info");
-    app.set_help_flag("-h,--help", "print a detailed help message and exit");
     // clang-format on
     if (argc < 2) {
       std::cout << app.help() << '\n';
@@ -2404,11 +2406,8 @@ abismal(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
     abismal_concurrency::n_threads =
       std::min(abismal_concurrency::n_threads, n_cores);
     if (verbose && abismal_concurrency::n_threads > n_cores)
-      log_msg("[WARNING] requesting more threads than the "
-              "maximum of " +
-              std::to_string(n_cores) +
-              " processors available in "
-              "this device");
+      log_msg("[WARNING] requesting more threads than the maximum of " +
+              std::to_string(n_cores) + " processors available in this device");
 
     if (verbose)
       log_msg("threads to map reads: " +
@@ -2450,11 +2449,9 @@ abismal(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
         log_msg("indexing time: " + format_duration(start_time, stop_time));
     }
 
-    if (max_candidates != 0) {
-      log_msg("manually setting max_candidates to " +
-              std::to_string(max_candidates));
-      abismal_index.max_candidates = max_candidates;
-    }
+    abismal_index.max_candidates = max_candidates;
+    if (verbose)
+      log_msg("setting max candidates to " + std::to_string(max_candidates));
 
     bamxx::bam_out out(outfile, write_bam_fmt);
     if (!out)

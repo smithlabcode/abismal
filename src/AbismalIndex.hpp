@@ -174,11 +174,11 @@ struct AbismalIndex {
   std::vector<std::uint32_t> index_a;  // genome positions for each k-mer
 
   std::vector<std::uint32_t> counter;    // offset of each k-mer in "index"
-  std::vector<std::uint32_t> counter_t;  // offset of each k-mer in "index"
-  std::vector<std::uint32_t> counter_a;  // offset of each k-mer in "index"
+  std::vector<std::uint32_t> counter_t;  // offset of each k-mer in "index_t"
+  std::vector<std::uint32_t> counter_a;  // offset of each k-mer in "index_a"
 
-  // a vector indicating whether each position goes into two-
-  // or three-letter encoding
+  // a vector indicating whether each position goes into two or three letter
+  // encoding
   std::vector<bool> is_two_letter;
   std::vector<bool> keep;
   std::vector<std::pair<std::size_t, std::size_t>> exclude{};
