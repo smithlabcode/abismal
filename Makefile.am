@@ -13,6 +13,9 @@
 # WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 # General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program.  If not, see <https://www.gnu.org/licenses/>.
 
 EXTRA_DIST = \
 	README.md \
@@ -33,9 +36,7 @@ EXTRA_DIST = \
 
 ACLOCAL_AMFLAGS = -I m4
 
-SUBDIRS := src/smithlab_cpp
-install installdirs: SUBDIRS := $(filter-out src/smithlab_cpp, $(SUBDIRS))
-AM_CPPFLAGS = -I $(top_srcdir)/src/smithlab_cpp -I $(top_srcdir)/src/bamxx
+AM_CPPFLAGS = -I $(top_srcdir)/src/bamxx
 
 AM_CXXFLAGS = -Wall -Wextra -Wpedantic -Wno-unknown-attributes
 if ENABLE_SHORT
@@ -63,7 +64,7 @@ libabismal_a_SOURCES += \
 	src/bamxx/bamxx.hpp \
 	src/nlohmann/json.hpp
 
-LDADD = libabismal.a src/smithlab_cpp/libsmithlab_cpp.a
+LDADD = libabismal.a
 
 bin_PROGRAMS = abismal
 abismal_SOURCES = src/abismal_main.cpp
