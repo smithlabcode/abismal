@@ -29,10 +29,12 @@
 #include <type_traits>
 #include <vector>
 
-[[nodiscard]] inline bool
+[[nodiscard]] constexpr bool
 valid_base(char c) {
-  char i = std::toupper(c);
-  return (i == 'A' || i == 'C' || i == 'G' || i == 'T');
+  // clang-format off
+  return c == 'T' || c == 'A' || c == 'G' || c == 'C' ||
+         c == 't' || c == 'a' || c == 'g' || c == 'c';
+  // clang-format on
 }
 
 template <typename T>
@@ -54,6 +56,12 @@ revcomp(T &s) -> T {
 }
 
 struct progress_bar {
+  static constexpr auto pcnt_and_pipes = 5;
+  static constexpr auto tag_size = 3;
+  static constexpr auto left_tag = "\r[";
+  static constexpr auto right_tag = "%]";
+  static constexpr auto max_bar_width = 72;
+
   progress_bar(const std::size_t total,
                const std::string &message = "completion") :
     total{total}, mid_tag{message} {
@@ -89,18 +97,11 @@ struct progress_bar {
       out << '\n';
   }
 
-  static constexpr auto pcnt_and_pipes = 5;
-  static constexpr auto tag_size = 3;
-  static constexpr auto left_tag = "\r[";
-  static constexpr auto right_tag = "%]";
-
   std::size_t total{};
   std::size_t prev{};
   std::size_t bar_width{};
   std::string mid_tag;
   std::string bar;
-
-  static constexpr std::size_t max_bar_width{72};
 };
 
 // from 30 April 2020 SAM documentation
@@ -118,21 +119,23 @@ struct progress_bar {
 // 2048 0x800 supplementary alignment
 
 namespace samflags {
+// clang-format off
 // ADS: names of flags adjusted to how we typically interpret
-static constexpr std::uint16_t read_paired = 0x1;
-static constexpr std::uint16_t read_pair_mapped = 0x2;
-static constexpr std::uint16_t read_unmapped = 0x4;
-static constexpr std::uint16_t mate_unmapped = 0x8;
-static constexpr std::uint16_t read_rc = 0x10;
-static constexpr std::uint16_t mate_rc = 0x20;
-static constexpr std::uint16_t template_first = 0x40;
-static constexpr std::uint16_t template_last = 0x80;
-static constexpr std::uint16_t secondary_aln = 0x100;
-static constexpr std::uint16_t below_quality = 0x200;
-static constexpr std::uint16_t pcr_duplicate = 0x400;
-static constexpr std::uint16_t supplementary_aln = 0x800;
+static constexpr std::uint16_t  read_paired       = 0x1;
+static constexpr std::uint16_t  read_pair_mapped  = 0x2;
+static constexpr std::uint16_t  read_unmapped     = 0x4;
+static constexpr std::uint16_t  mate_unmapped     = 0x8;
+static constexpr std::uint16_t  read_rc           = 0x10;
+static constexpr std::uint16_t  mate_rc           = 0x20;
+static constexpr std::uint16_t  template_first    = 0x40;
+static constexpr std::uint16_t  template_last     = 0x80;
+static constexpr std::uint16_t  secondary_aln     = 0x100;
+static constexpr std::uint16_t  below_quality     = 0x200;
+static constexpr std::uint16_t  pcr_duplicate     = 0x400;
+static constexpr std::uint16_t  supplementary_aln = 0x800;
+// clang-format on
 
-constexpr auto
+[[nodiscard]] constexpr auto
 check(const std::uint16_t to_check, const std::uint16_t &f) -> bool {
   return to_check & f;
 }
