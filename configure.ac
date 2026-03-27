@@ -38,8 +38,6 @@ AX_CXX_COMPILE_STDCXX_17([noext], [mandatory])
 AM_PROG_AR
 AC_PROG_RANLIB
 
-AC_CONFIG_SUBDIRS([src/smithlab_cpp])
-
 dnl arg for using libdeflate, which might happen by default anyway
 AC_ARG_WITH([libdeflate],
   [AS_HELP_STRING([--with-libdeflate], [use libdeflate for BAM output])],
