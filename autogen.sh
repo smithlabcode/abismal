@@ -15,7 +15,7 @@
 # this script if you know what you are doing with autoreconf.
 
 runautoreconf() {
-    autoreconf -i .; # src/smithlab_cpp && autoreconf -i .;
+    autoreconf -i .;
 }
 
 if test -d .git && test "$(basename "${PWD}")" = "abismal"
