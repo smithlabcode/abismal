@@ -9,6 +9,9 @@
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
  * more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 #ifndef SRC_COMMON_HPP_
@@ -23,7 +26,14 @@
 #include <iterator>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <vector>
+
+[[nodiscard]] inline bool
+valid_base(char c) {
+  char i = std::toupper(c);
+  return (i == 'A' || i == 'C' || i == 'G' || i == 'T');
+}
 
 template <typename T>
 inline auto
@@ -36,9 +46,9 @@ revcomp_inplace(T &s) {
 }
 
 template <typename T>
-inline auto
+[[nodiscard]] inline auto
 revcomp(T &s) -> T {
-  T t(s);
+  auto t = std::remove_cv_t<T>(s);
   revcomp_inplace(t);
   return t;
 }
