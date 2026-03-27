@@ -1,27 +1,33 @@
-/* Copyright (C) 2018-2025 Andrew D. Smith
+/* Copyright (C) 2018-2026 Andrew D. Smith
  *
- * Author: Andrew D. Smith
+ * This program is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the Free
+ * Software Foundation, either version 3 of the License, or (at your option)
+ * any later version.
  *
- * This file is part of ABISMAL.
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
  *
- * ABISMAL is free software: you can redistribute it and/or modify it
- * under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * ABISMAL is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+
+static constexpr auto about = "simulations to test abismal";
+static constexpr auto description = R"(
+Examples:
+
+abismal sim -o reads -n 10000 -m 0.01 -b 0.98 hg38.fa
+)";
 
 #include "simreads.hpp"
 
 #include "AbismalIndex.hpp"
-#include "OptionParser.hpp"
 #include "cigar_utils.hpp"
-#include "sam_record.hpp"
-#include "smithlab_utils.hpp"
+#include "common.hpp"
+
+#include "CLI11/CLI11.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -447,8 +453,9 @@ simreads(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
   try {
     std::string output_prefix;
     std::string locations_file;
+    std::string genome_file;
 
-    bool VERBOSE = false;
+    bool verbose = false;
     bool single_end = false;
     bool show_cigar_matches = true;
     bool random_pbat = false;
@@ -472,60 +479,65 @@ simreads(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
 
     std::size_t max_mutations = num_lim<std::size_t>::max();
 
-    /****************** COMMAND LINE OPTIONS ********************/
-    OptionParser opt_parse(argv[0],  // NOLINT(*-pointer-arithmetic)
-                           "simulate reads for "
-                           "testing walt2",
-                           "<reference-genome-fasta>", 1);
-    opt_parse.set_show_defaults();
-    opt_parse.add_opt("out", 'o', "output file prefix", true, output_prefix);
-    opt_parse.add_opt("single", '\0', "output single end", false, single_end);
-    opt_parse.add_opt("loc", '\0', "write locations here", false,
-                      locations_file);
-    opt_parse.add_opt("read-len", 'l', "read length", false,
-                      FragInfo::read_length);
-    opt_parse.add_opt("min-fraglen", '\0', "min fragment length", false,
-                      min_frag_len);
-    opt_parse.add_opt("max-fraglen", '\0', "max fragment length", false,
-                      max_frag_len);
-    opt_parse.add_opt("n-reads", 'n', "number of reads", false, n_reads);
-    opt_parse.add_opt("mut", 'm', "mutation rate", false, mutation_rate);
-    opt_parse.add_opt("bis", 'b', "bisulfite conversion rate", false, bs_conv);
-    opt_parse.add_opt("show-matches", '\0', "show match symbols in cigar",
-                      false, show_cigar_matches);
-    opt_parse.add_opt("changes", 'c', "change types (comma sep relative vals)",
-                      false, change_type_vals);
-    opt_parse.add_opt("max-mut", 'M', "max mutations", false, max_mutations);
-    opt_parse.add_opt("pbat", 'a', "pbat", false, FragInfo::pbat);
-    opt_parse.add_opt("random-pbat", 'R', "random pbat", false, random_pbat);
-    opt_parse.add_opt("strand", 's', "strand {f, r, b}", false, strand_arg);
-    opt_parse.add_opt("fasta", '\0', "output fasta format (no quality scores)",
-                      false, FragInfo::fasta_format);
-    opt_parse.add_opt("seed", '\0', "rng seed (default: from system)", false,
-                      rng_seed);
-    opt_parse.add_opt("require-valid", '\0', "require valid bases in fragments",
-                      false, require_valid);
-    opt_parse.add_opt("verbose", 'v', "print more run info", false, VERBOSE);
-    std::vector<std::string> leftover_args;
-    opt_parse.parse(argc, argv, leftover_args);
-    if (argc == 1 || opt_parse.help_requested()) {
-      std::cerr << opt_parse.help_message() << '\n';
+    CLI::App app{about};
+    argv = app.ensure_utf8(argv);
+    app.usage("Usage: abismal sim [OPTIONS] input");
+    if (argc >= 2)
+      app.footer(description);
+    app.get_formatter()->label("REQUIRED", "REQ");
+    app.get_formatter()->long_option_alignment_ratio(0.2);
+    app.get_formatter()->enable_footer_formatting(false);
+
+    // clang-format off
+    app.add_option("input", genome_file,
+                   "reference genome in FASTA format (gzip ok)")
+      ->option_text("FILE REQUIRED")
+      ->required()
+      ->check(CLI::ExistingFile);
+    app.add_option("-o,--out", output_prefix, "output file prefix")
+      ->required();
+    app.add_option("--loc", locations_file, "write locations here")
+      ->option_text("FILE");
+    app.add_option("-l,--read-len", FragInfo::read_length, "read length")
+      ->option_text("UINT")
+      ->check(CLI::PositiveNumber);
+    app.add_option("--min-fraglen", min_frag_len, "min fragment length")
+      ->option_text("UINT")
+      ->check(CLI::PositiveNumber);
+    app.add_option("--max-fraglen", max_frag_len, "max fragment length")
+      ->option_text("UINT")
+      ->check(CLI::PositiveNumber);
+    app.add_option("-n,--n-reads", n_reads, "number of reads")
+      ->option_text("UINT")
+      ->check(CLI::PositiveNumber);
+    app.add_option("-m,--mut", mutation_rate, "mutation rate")
+      ->option_text("NONEG")
+      ->check(CLI::NonNegativeNumber);
+    app.add_option("-b,--bis", bs_conv, "bisulfite conversion rate")
+      ->option_text("NONEG")
+      ->check(CLI::NonNegativeNumber);
+    app.add_option("-c,--changes", change_type_vals, "change types (comma sep relative vals)");
+    app.add_option("-M,--max-mut", max_mutations, "max mutations");
+    app.add_option("--seed", rng_seed, "rng seed (default: from system)");
+    app.add_flag("--single", single_end, "output single end");
+    app.add_flag("--show-matches", show_cigar_matches, "show match symbols in cigar");
+    app.add_flag("-a,--pbat", FragInfo::pbat, "pbat");
+    app.add_flag("-R,--random-pbat", random_pbat, "random pbat");
+    app.add_option("-s,--strand", strand_arg, "strand {f, r, b}")
+      ->check(CLI::IsMember({'f', 'r', 'b'}));
+    app.add_flag("--fasta", FragInfo::fasta_format, "output fasta format (no quality scores)");
+    app.add_flag("--require-valid", require_valid, "require valid bases in fragments");
+    app.add_flag("-v,--verbose", verbose, "print more run info");
+    // clang-format off
+    // clang-format on
+    if (argc < 2) {
+      std::cout << app.help() << '\n';
       return EXIT_SUCCESS;
     }
-    if (opt_parse.about_requested()) {
-      std::cerr << opt_parse.about_message() << '\n';
-      return EXIT_SUCCESS;
-    }
-    if (opt_parse.option_missing()) {
-      std::cerr << opt_parse.option_missing_message() << '\n';
-      return EXIT_SUCCESS;
-    }
-    if (std::size(leftover_args) != 1) {
-      std::cerr << opt_parse.help_message() << '\n';
-      return EXIT_SUCCESS;
-    }
-    const std::string genome_file(leftover_args.front());
-    /****************** END COMMAND LINE OPTIONS *****************/
+    CLI11_PARSE(app, argc, argv);
+
+    if (!std::filesystem::is_regular_file(genome_file))
+      throw std::runtime_error("not regular file: " + genome_file);
 
     extract_change_type_vals(change_type_vals, substitution_rate,
                              insertion_rate, deletion_rate);
@@ -533,11 +545,11 @@ simreads(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
     if (rng_seed == num_lim<std::size_t>::max())
       rng_seed = time(nullptr) + getpid();
 
-    if (VERBOSE)
+    if (verbose)
       std::cerr << "rng seed: " << rng_seed << '\n';
     simreads_random::initialize(rng_seed);
 
-    if (VERBOSE)
+    if (verbose)
       std::cerr << "[loading genome]\n";
     std::ifstream in(genome_file);
     if (!in)
@@ -550,7 +562,7 @@ simreads(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
 
     std::ofstream loc_out;
     if (!locations_file.empty()) {
-      if (VERBOSE)
+      if (verbose)
         std::cerr << "[opening frag locations file: " << locations_file << "]"
                   << '\n';
       loc_out.open(locations_file);
@@ -561,7 +573,7 @@ simreads(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
 
     const std::string read1_outfile =
       output_prefix + (FragInfo::fasta_format ? "_1.fa" : "_1.fq");
-    if (VERBOSE) {
+    if (verbose) {
       if (FragInfo::fasta_format)
         std::cerr << "[opening read1 fastq: " << read1_outfile << "]\n";
       else
@@ -575,7 +587,7 @@ simreads(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
     if (!single_end) {
       const std::string read2_outfile =
         output_prefix + (FragInfo::fasta_format ? "_2.fa" : "_2.fq");
-      if (VERBOSE) {
+      if (verbose) {
         if (FragInfo::fasta_format)
           std::cerr << "[opening read2 fastq: " << read2_outfile << "]\n";
         else
@@ -588,12 +600,12 @@ simreads(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
 
     FragSampler frag_samp(genome, cl, strand_arg, min_frag_len, max_frag_len,
                           require_valid);
-    if (VERBOSE)
+    if (verbose)
       std::cerr << "[constructed fragment sampler]\n";
 
     FragMutator frag_mut(mutation_rate, substitution_rate, insertion_rate,
                          deletion_rate);
-    if (VERBOSE)
+    if (verbose)
       std::cerr << "[constructed mutator]\n"
                 << "[simulating frags]\n";
 
