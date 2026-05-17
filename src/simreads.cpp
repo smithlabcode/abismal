@@ -283,7 +283,7 @@ sim_frag_position(const std::string &genome, const std::size_t frag_len,
   // NOLINTBEGIN(*-narrowing-conversions)
   the_frag = std::string(g_beg + the_posn, g_beg + the_posn + frag_len);
   while (require_valid &&
-         std::all_of(std::cbegin(the_frag), std::cend(the_frag), is_valid)) {
+         !std::all_of(std::cbegin(the_frag), std::cend(the_frag), is_valid)) {
     the_posn = simreads_random::rand() % lim;
     the_frag = std::string(g_beg + the_posn, g_beg + the_posn + frag_len);
   }
