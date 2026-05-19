@@ -484,6 +484,7 @@ format_se(const bool allow_ambig, const se_element &res, const ChromLookup &cl,
   // ADS: 'read' should not be used after a call to 'format_se'
   static constexpr auto mapq_max_val = 255u;
   static constexpr auto aux_len = 16u;
+  static constexpr auto cv = std::array<std::uint8_t, 2>{'T', 'A'};
 
   const bool ambig = res.ambig();
   const bool valid = !res.empty();
@@ -498,9 +499,11 @@ format_se(const bool allow_ambig, const se_element &res, const ChromLookup &cl,
 
   // ADS: we might be doing format_se for an end in paried reads
   std::uint16_t flag{};
+  auto is_a_rich = res.elem_is_a_rich();
   if (res.rc()) {
     flag |= BAM_FREVERSE;
     revcomp_inplace(r.read);
+    is_a_rich = !is_a_rich;
   }
 
   if (allow_ambig && ambig)
@@ -511,21 +514,21 @@ format_se(const bool allow_ambig, const se_element &res, const ChromLookup &cl,
   r.rec.b = bam_init1();
   // clang-format off
   int ret = bam_set1(r.rec.b,
-    std::size(r.name),     // size_t l_qname,
-    std::data(r.name),     // const char *qname,
-    flag,                  // uint16_t flag,
-    chrom_idx - 1,         // int32_t tid (-1 for padding)
-    ref_s,                 // hts_pos_t pos,
-    mapq_max_val,          // std::uint8_t mapq,
-    std::size(r.cig),      // size_t n_cigar,
-    std::data(r.cig),      // const uint32_t *cigar,
-    -1,                    // int32_t mtid,
-    -1,                    //  hts_pos_t mpos,
-    0,                     // hts_pos_t isize,
-    std::size(r.read),     // size_t l_seq,
-    std::data(r.read),     // const char *seq,
-    nullptr,               // const char *qual,
-    aux_len);              // size_t l_aux);
+    std::size(r.name),  // size_t l_qname,
+    std::data(r.name),  // const char *qname,
+    flag,               // uint16_t flag,
+    chrom_idx - 1,      // int32_t tid (-1 for padding)
+    ref_s,              // hts_pos_t pos,
+    mapq_max_val,       // std::uint8_t mapq,
+    std::size(r.cig),   // size_t n_cigar,
+    std::data(r.cig),   // const uint32_t *cigar,
+    -1,                 // int32_t mtid,
+    -1,                 //  hts_pos_t mpos,
+    0,                  // hts_pos_t isize,
+    std::size(r.read),  // size_t l_seq,
+    std::data(r.read),  // const char *seq,
+    nullptr,            // const char *qual,
+    aux_len);           // size_t l_aux);
   // clang-format on
   if (ret < 0)
     throw std::runtime_error("failed to format bam");
@@ -534,10 +537,7 @@ format_se(const bool allow_ambig, const se_element &res, const ChromLookup &cl,
   if (ret < 0)
     throw std::runtime_error("bam_aux_update_int");
 
-  ret = bam_aux_append(
-    r.rec.b, "CV", 'A', 1,
-    // NOLINTNEXTLINE(*-reinterpret-cast)
-    reinterpret_cast<const std::uint8_t *>(res.elem_is_a_rich() ? "A" : "T"));
+  ret = bam_aux_append(r.rec.b, "CV", 'A', 1, std::data(cv) + is_a_rich);
   if (ret < 0)
     throw std::runtime_error("bam_aux_append");
 
@@ -652,10 +652,7 @@ format_pe(
   read_holder &r1, read_holder &r2) -> map_type {
   static constexpr auto mapq_max_val = 255u;
   static constexpr auto aux_len = 16u;
-  static const std::array<std::uint8_t, 2> cv = {
-    'T',
-    'A',
-  };
+  static constexpr auto cv = std::array<std::uint8_t, 2>{'T', 'A'};
 
   if (p.empty())
     return map_unmapped;
@@ -689,15 +686,19 @@ format_pe(
 
   flag2 |= BAM_FPAIRED | BAM_FPROPER_PAIR;
 
+  auto r1_is_a_rich = p.r1.elem_is_a_rich();
   if (p.r1.rc()) {  // ADS: is p.r1.rc() always !p.r2.rc()?
     flag1 |= BAM_FREVERSE;
     flag2 |= BAM_FMREVERSE;
     revcomp_inplace(r1.read);
+    r1_is_a_rich = !r1_is_a_rich;
   }
+  auto r2_is_a_rich = p.r2.elem_is_a_rich();
   if (p.r2.rc()) {
     flag2 |= BAM_FREVERSE;
     flag1 |= BAM_FMREVERSE;
     revcomp_inplace(r2.read);
+    r2_is_a_rich = !r2_is_a_rich;
   }
   if (allow_ambig && ambig) {
     // ADS: mark ambig for both the same way?
@@ -733,8 +734,7 @@ format_pe(
   if (ret < 0)
     throw std::runtime_error("error adding aux field");
 
-  ret = bam_aux_append(r1.rec.b, "CV", 'A', 1,
-                       std::data(cv) + p.r1.elem_is_a_rich());
+  ret = bam_aux_append(r1.rec.b, "CV", 'A', 1, std::data(cv) + r1_is_a_rich);
   if (ret < 0)
     throw std::runtime_error("error adding aux field");
 
@@ -764,8 +764,7 @@ format_pe(
   if (ret < 0)
     throw std::runtime_error("error adding aux field");
 
-  ret = bam_aux_append(r2.rec.b, "CV", 'A', 1,
-                       std::data(cv) + p.r2.elem_is_a_rich());
+  ret = bam_aux_append(r2.rec.b, "CV", 'A', 1, std::data(cv) + r2_is_a_rich);
   if (ret < 0)
     throw std::runtime_error("error adding aux field");
 
