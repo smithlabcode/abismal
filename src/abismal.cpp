@@ -1067,7 +1067,7 @@ struct paired_end_mapping_statistics {
     return oss.str();
   }
   NLOHMANN_DEFINE_TYPE_INTRUSIVE(paired_end_mapping_statistics, read_pair_stats,
-                                 end1_stats, end2_stats);
+                                 end1_stats, end2_stats)
 };
 
 static void
