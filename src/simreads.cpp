@@ -78,9 +78,10 @@ rand_double() -> double {  // ADS: in the interval [0, 1]
 }
 }  // namespace simreads_random
 
-static inline auto
+[[nodiscard]] static inline auto
 format_fastq_record(const std::string &name,
                     const std::string &read) -> std::string {
+  static constexpr auto assumed_quality_score = 63;
   assert(!name.empty());
   std::string s;
   s += '@';
@@ -88,7 +89,7 @@ format_fastq_record(const std::string &name,
   s += '\n';
   s += read;
   s += "\n+\n";
-  s += std::string(std::size(read), 'B');
+  s += std::string(std::size(read), assumed_quality_score);
   return s;
 }
 
