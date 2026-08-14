@@ -1280,11 +1280,6 @@ process_seeds(const std::uint32_t max_candidates,
 
   auto read_idx = std::cbegin(read_seed);
 
-  // std::uint32_t d_two{};
-  // std::uint32_t d_three{};
-  // std::uint32_t l_two{};
-  // std::uint32_t l_three{};
-
   std::uint32_t k = 0u;
   get_1bit_hash(read_idx, k);
   std::uint32_t k_three = 0u;
