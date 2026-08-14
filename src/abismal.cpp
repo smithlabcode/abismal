@@ -228,14 +228,14 @@ struct se_element {  // size = 8
   static constexpr auto invalid_hit_frac{0.4};
   static constexpr score_t MAX_DIFFS{std::numeric_limits<score_t>::max()};
 
-  score_t diffs{};      // 2 bytes
-  flags_t flags{};      // 2 bytes
-  std::uint32_t pos{};  // 4 bytes
+  score_t diffs{};     // 2 bytes
+  flags_t flags{};     // 2 bytes
+  genome_pos_t pos{};  // 4 bytes
 
   se_element() : diffs{MAX_DIFFS} {}
 
-  se_element(const score_t diffs, const flags_t flags,
-             const std::uint32_t pos) : diffs{diffs}, flags{flags}, pos{pos} {}
+  se_element(const score_t diffs, const flags_t flags, const genome_pos_t pos) :
+    diffs{diffs}, flags{flags}, pos{pos} {}
 
   auto
   operator==(const se_element &rhs) const -> bool {
@@ -345,7 +345,7 @@ struct se_candidates {
   };
 
   void
-  update_exact_match(const flags_t s, const std::uint32_t p) {
+  update_exact_match(const flags_t s, const genome_pos_t p) {
     const se_element cand(0, s, p);
     if (best.empty())
       best = cand;  // cand has ambig flag set to false
@@ -380,7 +380,7 @@ struct se_candidates {
   }
 
   void
-  update_cand(const score_t d, const flags_t s, const std::uint32_t p) {
+  update_cand(const score_t d, const flags_t s, const genome_pos_t p) {
     if (full()) {
       std::pop_heap(std::begin(v), std::begin(v) + sz);
       v[sz - 1] = se_element(d, s, p);
@@ -393,7 +393,7 @@ struct se_candidates {
 
   void
   update(const bool specific, const score_t d, const flags_t s,
-         const std::uint32_t p) {
+         const genome_pos_t p) {
     if (d == 0)
       update_exact_match(s, p);
     else
@@ -463,8 +463,8 @@ cigar_rseq_ops(const bam_cigar_t &cig) -> std::uint32_t {
 
 [[nodiscard]] static inline auto
 chrom_and_posn(const ChromLookup &cl, const bam_cigar_t &cig,
-               const std::uint32_t p, std::uint32_t &r_p, std::uint32_t &r_e,
-               std::int32_t &r_chr) -> bool {
+               const genome_pos_t p, chrom_pos_t &r_p, chrom_pos_t &r_e,
+               chrom_idx_t &r_chr) -> bool {
   const std::uint32_t ref_ops = cigar_rseq_ops(cig);
   if (!cl.get_chrom_idx_and_offset(p, ref_ops, r_chr, r_p))
     return false;
@@ -491,9 +491,9 @@ format_se(const bool allow_ambig, const se_element &res, const ChromLookup &cl,
   if (!allow_ambig && ambig)
     return map_ambig;
 
-  std::uint32_t ref_s{};
-  std::uint32_t ref_e{};
-  std::int32_t chrom_idx{};
+  chrom_pos_t ref_s{};
+  chrom_pos_t ref_e{};
+  chrom_idx_t chrom_idx{};
   if (!valid || !chrom_and_posn(cl, r.cig, res.pos, ref_s, ref_e, chrom_idx))
     return map_unmapped;
 
@@ -662,13 +662,13 @@ format_pe(
     return map_ambig;
 
   // positions in chroms (0-based)
-  std::int32_t chr1{};
-  std::uint32_t r_s1{};
-  std::uint32_t r_e1{};
+  chrom_idx_t chr1{};
+  chrom_pos_t r_s1{};
+  chrom_pos_t r_e1{};
 
-  std::int32_t chr2{};
-  std::uint32_t r_s2{};
-  std::uint32_t r_e2{};
+  chrom_idx_t chr2{};
+  chrom_pos_t r_s2{};
+  chrom_pos_t r_e2{};
 
   // PE chromosomes differ or couldn't be found, treat read as unmapped
   if (!chrom_and_posn(cl, r1.cig, p.r1.pos, r_s1, r_e1, chr1) ||
@@ -679,8 +679,8 @@ format_pe(
   const int isize = rc ? (static_cast<int>(r_s1) - static_cast<int>(r_e2))
                        : (static_cast<int>(r_e2) - static_cast<int>(r_s1));
 
-  std::uint16_t flag1 = 0;
-  std::uint16_t flag2 = 0;
+  std::uint16_t flag1{};
+  std::uint16_t flag2{};
 
   flag1 |= BAM_FPAIRED | BAM_FPROPER_PAIR;
 
@@ -822,7 +822,7 @@ struct pe_candidates {
 
   void
   update(const bool specific, const score_t d, const flags_t s,
-         const std::uint32_t p) {
+         const chrom_pos_t p) {
     if (full()) {
       // doubles capacity if heap is filled with good matches
       if (specific && capacity != max_size_large && good_diff(d)) {
@@ -842,10 +842,9 @@ struct pe_candidates {
 
   void
   prepare_for_mating() {
-    std::sort(
-      std::begin(v),
-      std::begin(v) + sz,  // no sort_heap here as heapify used "diffs"
-      [](const se_element &a, const se_element &b) { return a.pos < b.pos; });
+    // no sort_heap here as heapify used "diffs"
+    std::sort(std::begin(v), std::begin(v) + sz,
+              [](const auto &a, const auto &b) { return a.pos < b.pos; });
     sz = std::distance(std::begin(v),
                        std::unique(std::begin(v), std::begin(v) + sz));
   }
@@ -1126,9 +1125,8 @@ static inline void
 check_hits(const std::uint32_t offset, const PackedRead::const_iterator read_st,
            const PackedRead::const_iterator read_end,
            const Genome::const_iterator genome_st,
-           const std::vector<std::uint32_t>::const_iterator &end_idx,
-           std::vector<std::uint32_t>::const_iterator start_idx,
-           result_type &res) {
+           const AbismalIndex::index_const_iterator &end_idx,
+           AbismalIndex::index_const_iterator start_idx, result_type &res) {
   for (; start_idx != end_idx && !res.sure_ambig; ++start_idx) {
     // GS: adds the next candidate to L1d cache while current is compared
 #ifdef __SSE__
@@ -1161,11 +1159,11 @@ struct compare_bases {
 
 template <const std::uint32_t start_length>
 static auto
-find_candidates(
-  const std::uint32_t max_candidates, const Read::const_iterator read_start,
-  const genome_iterator gi, const std::uint32_t read_lim,
-  std::vector<std::uint32_t>::const_iterator &low,
-  std::vector<std::uint32_t>::const_iterator &high) -> std::uint32_t {
+find_candidates(const std::uint32_t max_candidates,
+                const Read::const_iterator read_start, const genome_iterator gi,
+                const std::uint32_t read_lim,
+                AbismalIndex::index_const_iterator &low,
+                AbismalIndex::index_const_iterator &high) -> std::uint32_t {
   std::uint32_t p = start_length;
   auto prev_low = low;
   auto prev_high = high;
@@ -1215,8 +1213,8 @@ static auto
 find_candidates_three(
   const std::uint32_t max_candidates, const Read::const_iterator read_start,
   const genome_iterator gi, const std::uint32_t max_size,
-  std::vector<std::uint32_t>::const_iterator &low,
-  std::vector<std::uint32_t>::const_iterator &high) -> std::uint32_t {
+  AbismalIndex::index_const_iterator &low,
+  AbismalIndex::index_const_iterator &high) -> std::uint32_t {
   std::uint32_t p = start_length;
   auto prev_low = low;
   auto prev_high = high;
@@ -1268,10 +1266,10 @@ get_conv_type(const std::uint16_t strand_code) -> three_conv_type {
 template <const std::uint16_t strand_code, class result_type>
 static void
 process_seeds(const std::uint32_t max_candidates,
-              const std::vector<std::uint32_t>::const_iterator counter_st,
-              const std::vector<std::uint32_t>::const_iterator counter_three_st,
-              const std::vector<std::uint32_t>::const_iterator index_st,
-              const std::vector<std::uint32_t>::const_iterator index_three_st,
+              const AbismalIndex::counter_const_iterator counter_st,
+              const AbismalIndex::counter_const_iterator counter_three_st,
+              const AbismalIndex::index_const_iterator index_st,
+              const AbismalIndex::index_const_iterator index_three_st,
               const genome_iterator genome_st, const Read &read_seed,
               const PackedRead &packed_read, result_type &res) {
   static constexpr three_conv_type the_conv = get_conv_type(strand_code);
@@ -1280,44 +1278,39 @@ process_seeds(const std::uint32_t max_candidates,
   const auto pack_s_idx(std::cbegin(packed_read));
   const auto pack_e_idx(std::cend(packed_read));
 
+  auto read_idx = std::cbegin(read_seed);
+
+  // std::uint32_t d_two{};
+  // std::uint32_t d_three{};
+  // std::uint32_t l_two{};
+  // std::uint32_t l_three{};
+
   std::uint32_t k = 0u;
-  std::uint32_t k_three = 0u;
-  std::uint32_t i = 0u;
-
-  auto read_idx(std::cbegin(read_seed));
-  std::vector<std::uint32_t>::const_iterator s_idx;
-  std::vector<std::uint32_t>::const_iterator e_idx;
-  std::vector<std::uint32_t>::const_iterator s_idx_three;
-  std::vector<std::uint32_t>::const_iterator e_idx_three;
-
-  std::uint32_t d_two{};
-  std::uint32_t d_three{};
-  std::uint32_t l_two{};
-  std::uint32_t l_three{};
-
   get_1bit_hash(read_idx, k);
+  std::uint32_t k_three = 0u;
   get_base_3_hash<the_conv>(read_idx, k_three);
 
-  const std::uint32_t specific_len =
-    min16(readlen - seed::window_size, readlen >> 1u);
-  const std::uint32_t specific_lim =
+  const auto specific_len = min16(readlen - seed::window_size, readlen >> 1u);
+  const auto specific_lim =
     max16(seed::window_size, static_cast<std::uint32_t>(readlen >> 1u));
 
   res.set_specific();
-  for (i = 0; i < specific_lim && !res.sure_ambig; ++i, ++read_idx) {
-    s_idx = index_st + *(counter_st + k);
-    e_idx = index_st + *(counter_st + k + 1);
-    l_two = find_candidates<seed::key_weight>(
+  for (auto i = 0U; i < specific_lim && !res.sure_ambig; ++i, ++read_idx) {
+    AbismalIndex::index_const_iterator s_idx = index_st + *(counter_st + k);
+    AbismalIndex::index_const_iterator e_idx = index_st + *(counter_st + k + 1);
+    auto l_two = find_candidates<seed::key_weight>(
       max_candidates, read_idx, genome_st, readlen - i, s_idx, e_idx);
-    d_two = (e_idx - s_idx);
+    auto d_two = (e_idx - s_idx);
 
-    s_idx_three = index_three_st + *(counter_three_st + k_three);
-    e_idx_three = index_three_st + *(counter_three_st + k_three + 1);
-    l_three = find_candidates_three<seed::key_weight_three, the_conv>(
+    AbismalIndex::index_const_iterator s_idx_three =
+      index_three_st + *(counter_three_st + k_three);
+    AbismalIndex::index_const_iterator e_idx_three =
+      index_three_st + *(counter_three_st + k_three + 1);
+    auto l_three = find_candidates_three<seed::key_weight_three, the_conv>(
       max_candidates, read_idx, genome_st, readlen - i, s_idx_three,
       e_idx_three);
 
-    d_three = (e_idx_three - s_idx_three);
+    auto d_three = (e_idx_three - s_idx_three);
 
     // two-letter seeds
     if (d_two <= max_candidates || l_two >= specific_len)
@@ -1342,20 +1335,22 @@ process_seeds(const std::uint32_t max_candidates,
 
   res.set_sensitive();
 
-  const std::uint32_t lim_two = readlen - seed::key_weight + 1;
+  const auto lim_two = readlen - seed::key_weight + 1;
 
   // GS: this is to avoid chasing down uninformative two-letter seeds when
   // there is a sufficiently high number of three letter seeds that is lower
   // than the number of two-letter hits
   static const std::uint32_t MIN_FOLD_SIZE = 10;
-  for (i = 0; i < lim_two && !res.sure_ambig; ++i, ++read_idx) {
-    s_idx = index_st + *(counter_st + k);
-    e_idx = index_st + *(counter_st + k + 1);
-    d_two = (e_idx - s_idx);
+  for (auto i = 0U; i < lim_two && !res.sure_ambig; ++i, ++read_idx) {
+    AbismalIndex::index_const_iterator s_idx = index_st + *(counter_st + k);
+    AbismalIndex::index_const_iterator e_idx = index_st + *(counter_st + k + 1);
+    auto d_two = (e_idx - s_idx);
 
-    s_idx_three = index_three_st + *(counter_three_st + k_three);
-    e_idx_three = index_three_st + *(counter_three_st + k_three + 1);
-    d_three = (e_idx_three - s_idx_three);
+    AbismalIndex::index_const_iterator s_idx_three =
+      index_three_st + *(counter_three_st + k_three);
+    AbismalIndex::index_const_iterator e_idx_three =
+      index_three_st + *(counter_three_st + k_three + 1);
+    auto d_three = (e_idx_three - s_idx_three);
 
     // two-letter seeds
     if (d_two != 0 && d_two <= max_candidates &&
@@ -1514,13 +1509,13 @@ map_single_ended(const bool show_progress, const bool allow_ambig,
                  single_end_mapping_statistics &se_stats,
                  const bamxx::bam_header &hdr, bamxx::bam_out &out,
                  progress_bar &progress) {
-  const auto counter_st(std::cbegin(abismal_index.counter));
-  const auto counter_t_st(std::cbegin(abismal_index.counter_t));
-  const auto counter_a_st(std::cbegin(abismal_index.counter_a));
+  const auto counter_st = std::cbegin(abismal_index.counter);
+  const auto counter_t_st = std::cbegin(abismal_index.counter_t);
+  const auto counter_a_st = std::cbegin(abismal_index.counter_a);
 
-  const auto index_st(std::cbegin(abismal_index.index));
-  const auto index_t_st(std::cbegin(abismal_index.index_t));
-  const auto index_a_st(std::cbegin(abismal_index.index_a));
+  const auto index_st = std::cbegin(abismal_index.index);
+  const auto index_t_st = std::cbegin(abismal_index.index_t);
+  const auto index_a_st = std::cbegin(abismal_index.index_a);
 
   const genome_iterator genome_st(std::cbegin(abismal_index.genome));
   const std::uint32_t max_candidates = abismal_index.max_candidates;
@@ -1747,8 +1742,8 @@ best_pair(const pe_candidates &res1, const pe_candidates &res2,
   score_t scr1 = 0;
   score_t best_scr1 = 0;
   score_t best_scr2 = 0;
-  std::uint32_t best_pos1 = 0;
-  std::uint32_t best_pos2 = 0;
+  genome_pos_t best_pos1 = 0;
+  genome_pos_t best_pos2 = 0;
 
   se_element s1;
   se_element s2;
@@ -1850,10 +1845,10 @@ template <const bool cmp, const bool swap_ends,
 static inline auto
 map_fragments(const std::uint32_t max_candidates, read_holder &r1,
               read_holder &r2,
-              const std::vector<std::uint32_t>::const_iterator counter_st,
-              const std::vector<std::uint32_t>::const_iterator counter_three_st,
-              const std::vector<std::uint32_t>::const_iterator index_st,
-              const std::vector<std::uint32_t>::const_iterator index_three_st,
+              const AbismalIndex::counter_const_iterator counter_st,
+              const AbismalIndex::counter_const_iterator counter_three_st,
+              const AbismalIndex::index_const_iterator index_st,
+              const AbismalIndex::index_const_iterator index_three_st,
               const genome_iterator genome_st, Read &pread1, Read &pread2,
               PackedRead &packed_pread, AbismalAlignSimple &aln,
               pe_candidates &res1, pe_candidates &res2,

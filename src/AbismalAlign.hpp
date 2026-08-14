@@ -18,6 +18,10 @@
 #ifndef SRC_ABISMAL_ALIGN_HPP_
 #define SRC_ABISMAL_ALIGN_HPP_
 
+#include "AbismalIndex.hpp"
+#include "abismal_cigar_utils.hpp"
+#include "dna_four_bit_bisulfite.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -25,9 +29,6 @@
 #include <numeric>
 #include <string>
 #include <vector>
-
-#include "abismal_cigar_utils.hpp"
-#include "dna_four_bit_bisulfite.hpp"
 
 // AbismalAlign class has a templated function for the comparison operation
 // between letters in a sequence. This function currently returns a boolean
@@ -116,7 +117,7 @@ struct AbismalAlign {
   void
   build_cigar_len_and_pos(const score_t diffs, const score_t max_diffs,
                           bam_cigar_t &cigar, std::uint32_t &len,
-                          std::uint32_t &t_pos);
+                          genome_pos_t &t_pos);
 
   void
   reset(const std::uint32_t max_read_length);
@@ -391,7 +392,7 @@ void
 AbismalAlign<score_function,
              indel_penalty>::build_cigar_len_and_pos(  // uses cigar
   const score_t diffs, const score_t max_diffs, bam_cigar_t &cigar,
-  std::uint32_t &len, std::uint32_t &t_pos) {
+  std::uint32_t &len, genome_pos_t &t_pos) {
   // locate the end of the alignment as max score
   const std::size_t bandwidth =
     min16(bw, static_cast<std::size_t>(2 * min16(diffs, max_diffs) + 1));

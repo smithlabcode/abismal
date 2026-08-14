@@ -31,6 +31,13 @@
 #include <utility>
 #include <vector>
 
+using chrom_idx_t = std::int32_t;  // Must be able to count chromosomes (target
+                                   // sequences). SAM format uses a 32-bit
+                                   // signed integer for this, so we can too
+
+using genome_pos_t = std::uint64_t;  // Position in a genome
+using chrom_pos_t = std::uint32_t;   // Position in a chromosome
+
 using element_t = std::size_t;
 using Genome = std::vector<element_t>;
 using two_letter_t = bool;
@@ -100,23 +107,23 @@ write(FILE *out);
 
 struct ChromLookup {
   std::vector<std::string> names;
-  std::vector<std::uint32_t> starts;
+  std::vector<genome_pos_t> starts;
 
   void
-  get_chrom_idx_and_offset(const std::uint32_t pos, std::int32_t &chrom_idx,
-                           std::uint32_t &offset) const;
+  get_chrom_idx_and_offset(const genome_pos_t pos, chrom_idx_t &chrom_idx,
+                           chrom_pos_t &offset) const;
 
   auto
-  get_chrom_idx_and_offset(const std::uint32_t pos, const std::uint32_t readlen,
-                           std::int32_t &chrom_idx,
-                           std::uint32_t &offset) const -> bool;
+  get_chrom_idx_and_offset(const genome_pos_t pos, const std::uint32_t readlen,
+                           chrom_idx_t &chrom_idx,
+                           chrom_pos_t &offset) const -> bool;
 
   [[nodiscard]] auto
   get_pos(const std::string &chrom,
-          const std::uint32_t offset) const -> std::uint32_t;
+          const chrom_pos_t offset) const -> genome_pos_t;
 
   [[nodiscard]] auto
-  get_genome_size() const -> std::uint32_t {
+  get_genome_size() const -> genome_pos_t {
     return starts.back();
   }
 
@@ -157,6 +164,7 @@ enum three_conv_type : std::uint8_t {
   c_to_t,
   g_to_a,
 };
+
 struct AbismalIndex {
   static bool VERBOSE;
   static std::size_t n_threads_global;
@@ -169,13 +177,19 @@ struct AbismalIndex {
   std::size_t index_size{};        // number of genome positions indexed
   std::size_t index_size_three{};  // (3 letters)
 
-  std::vector<std::uint32_t> index;    // genome positions for each k-mer
-  std::vector<std::uint32_t> index_t;  // genome positions for each k-mer
-  std::vector<std::uint32_t> index_a;  // genome positions for each k-mer
+  std::vector<genome_pos_t> index;    // genome positions for each k-mer
+  std::vector<genome_pos_t> index_t;  // genome positions for each k-mer
+  std::vector<genome_pos_t> index_a;  // genome positions for each k-mer
 
-  std::vector<std::uint32_t> counter;    // offset of each k-mer in "index"
-  std::vector<std::uint32_t> counter_t;  // offset of each k-mer in "index"
-  std::vector<std::uint32_t> counter_a;  // offset of each k-mer in "index"
+  using index_iterator = std::vector<genome_pos_t>::iterator;
+  using index_const_iterator = std::vector<genome_pos_t>::const_iterator;
+
+  std::vector<genome_pos_t> counter;    // offset of each k-mer in "index"
+  std::vector<genome_pos_t> counter_t;  // offset of each k-mer in "index"
+  std::vector<genome_pos_t> counter_a;  // offset of each k-mer in "index"
+
+  using counter_iterator = std::vector<genome_pos_t>::iterator;
+  using counter_const_iterator = std::vector<genome_pos_t>::const_iterator;
 
   // a vector indicating whether each position goes into two-
   // or three-letter encoding

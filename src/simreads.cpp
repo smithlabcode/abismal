@@ -43,8 +43,6 @@
 
 #include <unistd.h>  // getpid()
 
-template <typename T> using num_lim = std::numeric_limits<T>;
-
 namespace simreads_random {
 // ADS: I made this namespace and functions because different
 // implementations of rand() on different OS meant that even with
@@ -181,8 +179,8 @@ struct FragInfo {
   }
 
   std::string chrom;
-  std::size_t start_pos{};
-  std::size_t end_pos{};
+  std::size_t start_pos{};  // used both for chrom pos and genome pos
+  std::size_t end_pos{};    // used both for chrom pos and genome pos
   std::string name;
   double score{};
   char strand{};
@@ -219,8 +217,8 @@ operator<<(std::ostream &out, const FragInfo &the_info) -> std::ostream & {
   samflags::set(flags_mate,
                 the_info.rc() ? samflags::mate_rc : samflags::read_rc);
 
-  const std::size_t read_pos = the_info.start_pos + 1;
-  const std::size_t mate_pos = the_info.end_pos - FragInfo::read_length + 1;
+  const chrom_pos_t read_pos = the_info.start_pos + 1;
+  const chrom_pos_t mate_pos = the_info.end_pos - FragInfo::read_length + 1;
 
   const int tlen = rc ? -static_cast<int>(std::size(the_info.seq))
                       : static_cast<int>(std::size(the_info.seq));
@@ -241,8 +239,8 @@ operator<<(std::ostream &out, const FragInfo &the_info) -> std::ostream & {
   const std::string seq1 = the_info.seq.substr(0, FragInfo::read_length);
   const std::string read_rc = revcomp(the_info.seq);
   const std::string seq2 = read_rc.substr(0, FragInfo::read_length);
-  const std::size_t pos1 = rc ? mate_pos : read_pos;
-  const std::size_t pos2 = rc ? read_pos : mate_pos;
+  const chrom_pos_t pos1 = rc ? mate_pos : read_pos;
+  const chrom_pos_t pos2 = rc ? read_pos : mate_pos;
 
   // clang-format off
   return out << the_info.name << ".1" << '\t'
@@ -314,8 +312,8 @@ struct FragSampler {
     sim_frag_position(genome, frag_len, the_info.seq, the_info.start_pos,
                       require_valid);
 
-    uint32_t offset = 0;
-    std::int32_t chrom_idx = 0;
+    chrom_pos_t offset{};
+    chrom_idx_t chrom_idx{};
     cl.get_chrom_idx_and_offset(the_info.start_pos, chrom_idx, offset);
     the_info.chrom = cl.names[chrom_idx];
     the_info.start_pos = offset;
@@ -354,7 +352,7 @@ struct FragMutator {
     deletion_rate(d) {
     const double total =
       std::max(substitution_rate + insertion_rate + deletion_rate,
-               num_lim<double>::min());
+               std::numeric_limits<double>::min());
     substitution_rate /= total;
     insertion_rate /= total;
     deletion_rate /= total;
@@ -461,7 +459,7 @@ simreads(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
 
     char strand_arg = 'b';
 
-    std::size_t rng_seed = num_lim<std::size_t>::max();
+    std::size_t rng_seed = std::numeric_limits<std::size_t>::max();
 
     double mutation_rate = 0.0;
     std::string change_type_vals;
@@ -471,7 +469,7 @@ simreads(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
 
     double bs_conv = 1.0;
 
-    std::size_t max_mutations = num_lim<std::size_t>::max();
+    std::size_t max_mutations = std::numeric_limits<std::size_t>::max();
 
     /****************** COMMAND LINE OPTIONS ********************/
     OptionParser opt_parse(argv[0],  // NOLINT(*-pointer-arithmetic)
@@ -531,7 +529,7 @@ simreads(int argc, char *argv[]) {  // NOLINT(*-c-arrays)
     extract_change_type_vals(change_type_vals, substitution_rate,
                              insertion_rate, deletion_rate);
 
-    if (rng_seed == num_lim<std::size_t>::max())
+    if (rng_seed == std::numeric_limits<std::size_t>::max())
       rng_seed = time(nullptr) + getpid();
 
     if (VERBOSE)
