@@ -35,7 +35,7 @@ using chrom_idx_t = std::int32_t;  // Must be able to count chromosomes (target
                                    // sequences). SAM format uses a 32-bit
                                    // signed integer for this, so we can too
 
-using genome_pos_t = std::uint64_t;  // Position in a genome
+using genome_pos_t = std::uint32_t;  // Position in a genome
 using chrom_pos_t = std::uint32_t;   // Position in a chromosome
 
 using element_t = std::size_t;
